@@ -7,6 +7,7 @@ import java.nio.channels.CompletionHandler;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -335,27 +336,30 @@ public class AsyncTrainingDataManager {
                 return;
             }
             
-            List<CompletableFuture<Void>> saveTasks = dirtyFlags.entrySet().parallelStream()
+            java.util.List<CompletableFuture<Void>> saveTasks = new java.util.ArrayList<>();
+            
+            dirtyFlags.entrySet().parallelStream()
                 .filter(entry -> entry.getValue().get())
-                .map(entry -> {
+                .forEach(entry -> {
                     String filename = entry.getKey();
                     Object cachedData = dataCache.get(filename);
                     
                     if (cachedData != null) {
                         logger.info("*** ASYNC I/O: Flushing dirty file: {} ***", filename);
-                        return writeDataAsync(filename, cachedData)
+                        CompletableFuture<Void> task = writeDataAsync(filename, cachedData)
                             .thenRun(() -> {
                                 entry.getValue().set(false);
                                 // Clear cache after successful save to prevent memory leaks
                                 dataCache.remove(filename);
                             });
+                        synchronized(saveTasks) {
+                            saveTasks.add(task);
+                        }
                     } else {
                         logger.warn("*** ASYNC I/O: No cached data for dirty file: {} - marking clean ***", filename);
                         entry.getValue().set(false);
-                        return CompletableFuture.completedFuture(null);
                     }
-                })
-                .collect(java.util.stream.Collectors.toList());
+                });
             
             // Wait for all saves to complete
             CompletableFuture.allOf(saveTasks.toArray(new CompletableFuture[0])).join();
