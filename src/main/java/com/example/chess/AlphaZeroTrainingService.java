@@ -15,6 +15,7 @@ public class AlphaZeroTrainingService {
     private final AlphaZeroInterfaces.MCTSEngine mctsEngine;
     private final AlphaZeroInterfaces.ChessRules chessRules;
     private final LeelaChessZeroOpeningBook openingBook;
+    private final ChessLegalMoveAdapter moveAdapter;
     private volatile boolean stopRequested = false;
     
     public AlphaZeroTrainingService(AlphaZeroInterfaces.NeuralNetwork neuralNetwork, 
@@ -25,6 +26,7 @@ public class AlphaZeroTrainingService {
         this.mctsEngine = mctsEngine;
         this.chessRules = chessRules;
         this.openingBook = openingBook;
+        this.moveAdapter = new ChessLegalMoveAdapter();
     }
     
     public void runSelfPlayTraining(int games) {
@@ -73,10 +75,10 @@ public class AlphaZeroTrainingService {
         boolean whiteTurn = virtualBoard.isWhiteTurn();
         int moveCount = 0;
         
-        while (moveCount < 100 && !chessRules.isGameOver(board) && !stopRequested) {
+        while (moveCount < 100 && !moveAdapter.isGameOver(board) && !stopRequested) {
             if (stopRequested) break;
             
-            List<int[]> validMoves = chessRules.getValidMoves(board, whiteTurn);
+            List<int[]> validMoves = moveAdapter.getAllLegalMoves(board, whiteTurn);
             if (validMoves.isEmpty()) break;
             
             int[] selectedMove = selectMove(board, validMoves, moveCount);
@@ -97,8 +99,7 @@ public class AlphaZeroTrainingService {
     
     private int[] selectMove(String[][] board, List<int[]> validMoves, int moveCount) {
         if (moveCount < 15 && openingBook != null) {
-            VirtualChessBoard virtualBoard = new VirtualChessBoard(board, true);
-            LeelaChessZeroOpeningBook.OpeningMoveResult openingResult = openingBook.getOpeningMove(board, validMoves, virtualBoard.getRuleValidator(), true);
+            LeelaChessZeroOpeningBook.OpeningMoveResult openingResult = openingBook.getOpeningMove(board, validMoves, moveAdapter.getValidator(), true);
             if (openingResult != null) {
                 return openingResult.move;
             }

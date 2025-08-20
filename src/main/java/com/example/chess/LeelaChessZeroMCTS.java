@@ -18,6 +18,7 @@ public class LeelaChessZeroMCTS {
     private static final Logger logger = LogManager.getLogger(LeelaChessZeroMCTS.class);
     private LeelaChessZeroNetwork neuralNetwork;
     private boolean debugEnabled;
+    private final ChessLegalMoveAdapter moveAdapter;
     
     // MCTS parameters optimized for chess
     private static final int SIMULATIONS = 200; // Reduced for faster response
@@ -31,6 +32,7 @@ public class LeelaChessZeroMCTS {
     public LeelaChessZeroMCTS(LeelaChessZeroNetwork neuralNetwork, boolean debugEnabled) {
         this.neuralNetwork = neuralNetwork;
         this.debugEnabled = debugEnabled;
+        this.moveAdapter = new ChessLegalMoveAdapter();
         
         logger.info("*** LeelaZero MCTS: Initialized with enhanced chess algorithms ***");
     }
@@ -257,7 +259,7 @@ public class LeelaChessZeroMCTS {
             applyMove(newBoard, move);
             
             // Generate valid moves for new position
-            List<int[]> newValidMoves = generateValidMoves(newBoard);
+            List<int[]> newValidMoves = moveAdapter.getAllLegalMoves(newBoard, false); // AI plays black
             
             MCTSNode child = new MCTSNode(move, newBoard, newValidMoves);
             node.children.add(child);
@@ -481,11 +483,7 @@ public class LeelaChessZeroMCTS {
         return !hasBlackKing || !hasWhiteKing;
     }
     
-    private List<int[]> generateValidMoves(String[][] board) {
-        // Simplified move generation - return empty list for now
-        // In a full implementation, this would generate all legal moves
-        return new ArrayList<>();
-    }
+
     
     // MCTS Node class
     private static class MCTSNode {

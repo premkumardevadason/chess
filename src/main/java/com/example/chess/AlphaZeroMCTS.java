@@ -16,12 +16,14 @@ public class AlphaZeroMCTS implements AlphaZeroInterfaces.MCTSEngine {
     private final double cPuct;
     private final double cPuctBase = 19652.0; // AlphaZero paper value
     private final double cPuctInit = 1.25;    // AlphaZero paper value
+    private final ChessLegalMoveAdapter moveAdapter;
     
     public AlphaZeroMCTS(AlphaZeroInterfaces.NeuralNetwork neuralNetwork, AlphaZeroInterfaces.ChessRules chessRules, int simulations, double cPuct) {
         this.neuralNetwork = neuralNetwork;
         this.chessRules = chessRules;
         this.simulations = simulations;
         this.cPuct = cPuct;
+        this.moveAdapter = new ChessLegalMoveAdapter();
         logger.debug("*** AlphaZero MCTS: Initialized with {} simulations ***", simulations);
     }
     
@@ -83,7 +85,7 @@ public class AlphaZeroMCTS implements AlphaZeroInterfaces.MCTSEngine {
             totalCompletedSimulations, simulations, totalTime);
         
         if (bestChild != null) {
-            logger.debug("*** AlphaZero: Selected move [{},{}]→[{},{}] with {} visits, value: {:.3f}, prior: {:.3f} ***", 
+            logger.debug("*** AlphaZero: Selected move [{},{}]→[{},{}] with {} visits, value: {}, prior: {} ***", 
                 bestChild.move[0], bestChild.move[1], bestChild.move[2], bestChild.move[3],
                 bestChild.visits, bestChild.visits > 0 ? bestChild.totalValue / bestChild.visits : 0.0, 
                 bestChild.priorProbability);
@@ -241,8 +243,8 @@ public class AlphaZeroMCTS implements AlphaZeroInterfaces.MCTSEngine {
     private synchronized void expand(AlphaZeroNode node) {
         if (!node.children.isEmpty()) return; // Already expanded
         
-        // CRITICAL FIX: AI always plays BLACK, so always get BLACK moves
-        List<int[]> validMoves = getAllValidMoves(node.board, false); // false = BLACK moves
+        // Use unified move adapter for consistent legal moves
+        List<int[]> validMoves = moveAdapter.getAllLegalMoves(node.board, !node.isWhiteTurn);
         logger.debug("*** AlphaZero MCTS: Found {} total valid moves for expansion ***", validMoves.size());
         
         if (validMoves.isEmpty()) {
@@ -320,7 +322,7 @@ public class AlphaZeroMCTS implements AlphaZeroInterfaces.MCTSEngine {
     }
     
     private List<int[]> getAllValidMoves(String[][] board, boolean forWhite) {
-        return chessRules.getValidMoves(board, forWhite);
+        return moveAdapter.getAllLegalMoves(board, forWhite);
     }
     
     private boolean isBasicValidMove(String[][] board, int[] move, boolean forWhite) {
@@ -340,25 +342,7 @@ public class AlphaZeroMCTS implements AlphaZeroInterfaces.MCTSEngine {
         return true;
     }
     
-    private void addPieceMoves(String[][] board, int row, int col, String piece, List<int[]> moves) {
-        boolean isPieceWhite = "♔♕♖♗♘♙".contains(piece);
-        
-        for (int r = 0; r < 8; r++) {
-            for (int c = 0; c < 8; c++) {
-                if (r == row && c == col) continue;
-                
-                String target = board[r][c];
-                if (target.isEmpty()) {
-                    moves.add(new int[]{row, col, r, c});
-                } else {
-                    boolean isTargetWhite = "♔♕♖♗♘♙".contains(target);
-                    if (isPieceWhite != isTargetWhite) {
-                        moves.add(new int[]{row, col, r, c});
-                    }
-                }
-            }
-        }
-    }
+
     
     private String[][] makeMove(String[][] board, int[] move) {
         return chessRules.makeMove(board, move);
