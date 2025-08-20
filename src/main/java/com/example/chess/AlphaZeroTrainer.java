@@ -25,6 +25,7 @@ public class AlphaZeroTrainer {
     private ConcurrentLinkedQueue<AlphaZeroInterfaces.TrainingExample> trainingData;
     private ExecutorService parallelExecutor;
     private volatile boolean stopRequested = false;
+    private final ChessLegalMoveAdapter moveAdapter;
     
     public AlphaZeroTrainer(AlphaZeroInterfaces.NeuralNetwork neuralNetwork, AlphaZeroInterfaces.MCTSEngine mcts, LeelaChessZeroOpeningBook openingBook, boolean debugEnabled) {
         this.neuralNetwork = neuralNetwork;
@@ -33,6 +34,7 @@ public class AlphaZeroTrainer {
         this.debugEnabled = debugEnabled;
         this.trainingData = new ConcurrentLinkedQueue<>();
         this.parallelExecutor = Executors.newVirtualThreadPerTaskExecutor();
+        this.moveAdapter = new ChessLegalMoveAdapter();
         logger.debug("*** AlphaZero Trainer: Initialized with Lc0 opening book ***");
     }
     
@@ -53,6 +55,12 @@ public class AlphaZeroTrainer {
             parallelGames, gamesPerBatch);
         
         List<CompletableFuture<GameResult>> futures = new ArrayList<>();
+        
+        // Reinitialize executor if terminated
+        if (parallelExecutor.isTerminated() || parallelExecutor.isShutdown()) {
+            logger.debug("*** AlphaZero Trainer: Reinitializing terminated ExecutorService ***");
+            parallelExecutor = Executors.newVirtualThreadPerTaskExecutor();
+        }
         
         // Launch parallel self-play batches
         for (int batch = 0; batch < parallelGames && !stopRequested; batch++) {
@@ -102,7 +110,7 @@ public class AlphaZeroTrainer {
         }
         
         long totalTrainingTime = System.currentTimeMillis() - trainingStartTime;
-        logger.info("AlphaZero: Enhanced parallel training completed - {} games, {} examples, {:.1f}s", 
+        logger.info("AlphaZero: Enhanced parallel training completed - {} games, {} examples, {}s", 
             completedGames, totalTrainingExamples, totalTrainingTime/1000.0);
     }
     
@@ -184,7 +192,7 @@ public class AlphaZeroTrainer {
                 break;
             }
             
-            List<int[]> validMoves = getAllValidMoves(board, whiteTurn);
+            List<int[]> validMoves = moveAdapter.getAllLegalMoves(board, whiteTurn);
             if (validMoves.isEmpty()) break;
             
             int[] selectedMove;
@@ -354,32 +362,13 @@ public class AlphaZeroTrainer {
     }
     
     private List<int[]> getAllValidMoves(String[][] board, boolean forWhite) {
-        List<int[]> moves = new ArrayList<>();
-        String pieces = forWhite ? "♔♕♖♗♘♙" : "♚♛♜♝♞♟";
-        
-        for (int i = 0; i < 8; i++) {
-            for (int j = 0; j < 8; j++) {
-                String piece = board[i][j];
-                if (!piece.isEmpty() && pieces.contains(piece)) {
-                    addPieceMoves(board, i, j, piece, moves);
-                }
-            }
-        }
-        
-        return moves;
+        return moveAdapter.getAllLegalMoves(board, forWhite);
     }
     
-    private void addPieceMoves(String[][] board, int row, int col, String piece, List<int[]> moves) {
-        for (int r = 0; r < 8; r++) {
-            for (int c = 0; c < 8; c++) {
-                if (r == row && c == col) continue;
-                moves.add(new int[]{row, col, r, c});
-            }
-        }
-    }
+
     
     private boolean isGameOver(String[][] board) {
-        return getAllValidMoves(board, true).isEmpty() && getAllValidMoves(board, false).isEmpty();
+        return moveAdapter.isGameOver(board);
     }
     
     private String[][] makeMove(String[][] board, int[] move) {
@@ -448,9 +437,13 @@ public class AlphaZeroTrainer {
         try {
             if (parallelExecutor != null && !parallelExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
                 parallelExecutor.shutdownNow();
+                // Reinitialize executor for potential next use
+                parallelExecutor = Executors.newVirtualThreadPerTaskExecutor();
             }
         } catch (InterruptedException e) {
             parallelExecutor.shutdownNow();
+            // Reinitialize executor for potential next use
+            parallelExecutor = Executors.newVirtualThreadPerTaskExecutor();
             Thread.currentThread().interrupt();
         }
     }

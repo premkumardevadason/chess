@@ -39,7 +39,6 @@ public class TrainingDataIOWrapper {
     public void saveQTable(Map<String, Double> qTable, String filename) {
         if (useAsync) {
             asyncManager.saveAIData("QLearning", qTable, filename);
-            asyncManager.markDirty(filename);
         } else {
             // Existing synchronous code unchanged
             try (PrintWriter writer = new PrintWriter(new FileWriter(filename))) {
@@ -56,7 +55,6 @@ public class TrainingDataIOWrapper {
         if (useAsync && isAIEnabled(aiName) && isAsyncEnabledForAI(aiName)) {
             logger.info("*** ASYNC I/O: {} using NIO.2 async SAVE path (AI enabled: true, Async enabled: true) ***", aiName);
             asyncManager.saveAIData(aiName, data, filename);
-            asyncManager.markDirty(filename);
         } else {
             if (!isAIEnabled(aiName)) {
                 logger.debug("*** ASYNC I/O: {} skipped - AI disabled ***", aiName);
@@ -104,6 +102,13 @@ public class TrainingDataIOWrapper {
     
     public boolean isAsyncEnabled() {
         return useAsync;
+    }
+    
+    public void flushAllData() {
+        if (useAsync) {
+            logger.info("*** ASYNC I/O: Flushing all cached data during shutdown ***");
+            asyncManager.shutdown().join();
+        }
     }
     
     private boolean isAIEnabled(String aiName) {

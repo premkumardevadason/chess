@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.Random;
 import java.util.Map;
 import java.util.HashMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -38,6 +39,7 @@ public class AlphaFold3AI {
     private final Random random;
     private final boolean debugMode;
     private final LeelaChessZeroOpeningBook openingBook;
+    private final ChessLegalMoveAdapter moveAdapter;
     private ChessGame chessGameValidator;
     
     private volatile boolean isThinking = false;
@@ -46,9 +48,9 @@ public class AlphaFold3AI {
     private volatile boolean stopTrainingFlag = false;
     private ExecutorService executorService;
     
-    // Persistent learning state
-    private Map<String, Double> positionEvaluations = new HashMap<>();
-    private Map<String, List<int[]>> learnedTrajectories = new HashMap<>();
+    // Persistent learning state - thread-safe for concurrent access
+    private final ConcurrentHashMap<String, Double> positionEvaluations = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, List<int[]>> learnedTrajectories = new ConcurrentHashMap<>();
     private int trainingEpisodes = 0;
     private static final String STATE_FILE = "alphafold3_state.dat";
     
@@ -69,6 +71,7 @@ public class AlphaFold3AI {
         this.evaluator = new Evaluator();
         this.sampler = new Sampler();
         this.openingBook = new LeelaChessZeroOpeningBook(debugMode);
+        this.moveAdapter = new ChessLegalMoveAdapter();
         
         this.executorService = Executors.newSingleThreadExecutor(r -> {
             Thread t = new Thread(r, "AlphaFold3-Thread");
@@ -255,6 +258,12 @@ public class AlphaFold3AI {
     public void stopThinking() {
         if (executorService != null) {
             executorService.shutdownNow();
+            // Reinitialize executor for next use
+            executorService = Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "AlphaFold3-Thread");
+                t.setDaemon(true);
+                return t;
+            });
         }
     }
     
@@ -573,25 +582,10 @@ public class AlphaFold3AI {
     }
     
     /**
-     * Basic chess move validation
+     * Chess move validation using unified adapter
      */
     private boolean isValidChessMove(int fromRow, int fromCol, int toRow, int toCol, String[][] board) {
-        if (fromRow < 0 || fromRow > 7 || fromCol < 0 || fromCol > 7 ||
-            toRow < 0 || toRow > 7 || toCol < 0 || toCol > 7) {
-            return false;
-        }
-        
-        String piece = board[fromRow][fromCol];
-        if (piece.isEmpty()) return false;
-        
-        String target = board[toRow][toCol];
-        if (!target.isEmpty()) {
-            boolean pieceBlack = "♚♛♜♝♞♟".contains(piece);
-            boolean targetBlack = "♚♛♜♝♞♟".contains(target);
-            if (pieceBlack == targetBlack) return false; // Can't capture own piece
-        }
-        
-        return true; // Simplified validation for diffusion sampling
+        return moveAdapter.isLegalMove(board, fromRow, fromCol, toRow, toCol, false); // AI plays black
     }
     
     public String getTrainingStatus() {
@@ -607,16 +601,18 @@ public class AlphaFold3AI {
         // Phase 3: Dual-path implementation
         if (ioWrapper.isAsyncEnabled()) {
             Map<String, Object> stateData = new HashMap<>();
-            stateData.put("positionEvaluations", positionEvaluations);
-            stateData.put("learnedTrajectories", learnedTrajectories);
+            // Create snapshots to avoid concurrent modification during serialization
+            stateData.put("positionEvaluations", new HashMap<>(positionEvaluations));
+            stateData.put("learnedTrajectories", new HashMap<>(learnedTrajectories));
             stateData.put("trainingEpisodes", trainingEpisodes);
             ioWrapper.saveAIData("AlphaFold3", stateData, STATE_FILE);
         } else {
-            // Existing synchronous code - unchanged
+            // Existing synchronous code with snapshot protection
             try (GZIPOutputStream gzos = new GZIPOutputStream(new FileOutputStream(STATE_FILE));
                  ObjectOutputStream oos = new ObjectOutputStream(gzos)) {
-                oos.writeObject(positionEvaluations);
-                oos.writeObject(learnedTrajectories);
+                // Create snapshots to avoid concurrent modification during serialization
+                oos.writeObject(new HashMap<>(positionEvaluations));
+                oos.writeObject(new HashMap<>(learnedTrajectories));
                 oos.writeInt(trainingEpisodes);
                 
                 // Always log saves to track state changes
@@ -638,8 +634,10 @@ public class AlphaFold3AI {
                 Object data = ioWrapper.loadAIData("AlphaFold3", STATE_FILE);
                 if (data instanceof Map) {
                     Map<String, Object> stateData = (Map<String, Object>) data;
-                    positionEvaluations = (Map<String, Double>) stateData.get("positionEvaluations");
-                    learnedTrajectories = (Map<String, List<int[]>>) stateData.get("learnedTrajectories");
+                    Map<String, Double> loadedPositions = (Map<String, Double>) stateData.get("positionEvaluations");
+                    Map<String, List<int[]>> loadedTrajectories = (Map<String, List<int[]>>) stateData.get("learnedTrajectories");
+                    if (loadedPositions != null) positionEvaluations.putAll(loadedPositions);
+                    if (loadedTrajectories != null) learnedTrajectories.putAll(loadedTrajectories);
                     trainingEpisodes = (Integer) stateData.get("trainingEpisodes");
                     logger.info("*** AlphaFold3: State loaded using async I/O - {} episodes, {} positions, {} trajectories ***", 
                         trainingEpisodes, positionEvaluations.size(), learnedTrajectories.size());
@@ -650,17 +648,19 @@ public class AlphaFold3AI {
             }
         }
         
-        // Existing synchronous code - unchanged
+        // Existing synchronous code with thread-safe loading
         try (GZIPInputStream gzis = new GZIPInputStream(new FileInputStream(STATE_FILE));
              ObjectInputStream ois = new ObjectInputStream(gzis)) {
-            positionEvaluations = (Map<String, Double>) ois.readObject();
-            learnedTrajectories = (Map<String, List<int[]>>) ois.readObject();
+            Map<String, Double> loadedPositions = (Map<String, Double>) ois.readObject();
+            Map<String, List<int[]>> loadedTrajectories = (Map<String, List<int[]>>) ois.readObject();
+            if (loadedPositions != null) positionEvaluations.putAll(loadedPositions);
+            if (loadedTrajectories != null) learnedTrajectories.putAll(loadedTrajectories);
             trainingEpisodes = ois.readInt();
             logger.info("*** AlphaFold3: State loaded successfully - {} episodes, {} positions, {} trajectories ***", 
                 trainingEpisodes, positionEvaluations.size(), learnedTrajectories.size());
         } catch (Exception e) {
-            positionEvaluations = new HashMap<>();
-            learnedTrajectories = new HashMap<>();
+            positionEvaluations.clear();
+            learnedTrajectories.clear();
             trainingEpisodes = 0;
             logger.info("*** AlphaFold3: Starting fresh - no saved state ({}): {} ***", STATE_FILE, e.getMessage());
         }

@@ -210,8 +210,9 @@ public class GeneticAlgorithmAI {
                 // Enhanced progress reporting with improvement tracking
                 if (gen % 10 == 0) {
                     double avgFitness = population.stream().mapToDouble(c -> c.fitness).average().orElse(0.0);
-                    logger.info("*** GA AI: Generation {} - Best: {:.3f} (+{:.3f}), Avg: {:.3f}, Diversity: {:.3f} ***", 
-                        generation, bestFitness, improvement, avgFitness, populationDiversity);
+                    logger.info("*** GA AI: Generation {} - Best: {} (+{}), Avg: {}, Diversity: {} ***", 
+                        generation, String.format("%.3f", bestFitness), String.format("%.3f", improvement), 
+                        String.format("%.3f", avgFitness), String.format("%.3f", populationDiversity));
                     
                     // Assess population improvement
                     assessPopulationImprovement(gen, maxGenerations);
@@ -282,8 +283,8 @@ public class GeneticAlgorithmAI {
             double totalImprovement = bestFitness - initialBestFitness;
             
             logger.info("*** GA AI: Evolution completed - Final statistics ***");
-            logger.info("Generations: {}, Time: {:.1f} min, Best fitness: {:.3f} (+{:.3f})", 
-                generation, trainingTimeMinutes, bestFitness, totalImprovement);
+            logger.info("Generations: {}, Time: {} min, Best fitness: {} (+{})", 
+                generation, String.format("%.1f", trainingTimeMinutes), String.format("%.3f", bestFitness), String.format("%.3f", totalImprovement));
             
             // Assess final effectiveness
             assessEvolutionEffectiveness(generation, totalImprovement);
@@ -301,7 +302,7 @@ public class GeneticAlgorithmAI {
             double progress = (double) currentGen / maxGenerations;
             
             if (populationDiversity < 0.1) {
-                logger.warn("*** GA AI: Low population diversity ({:.3f}) - consider increasing mutation rate ***", populationDiversity);
+                logger.warn("*** GA AI: Low population diversity ({}) - consider increasing mutation rate ***", String.format("%.3f", populationDiversity));
             }
             
             if (currentGen >= 50 && bestFitness < 0.1) {
