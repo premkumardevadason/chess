@@ -1,0 +1,26 @@
+# Large training data files (>100MB GitHub limit)
+alphazero_cache.dat
+chess_cnn_model.zip
+
+# Build artifacts
+target/
+target/**
+
+# Other training data files
+*.dat
+*.zip
+*.model
+*.bin
+
+# IDE files
+.vscode/
+.idea/
+*.iml
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
