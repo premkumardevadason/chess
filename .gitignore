@@ -1,6 +1,7 @@
 # Large training data files (>100MB GitHub limit)
 alphazero_cache.dat
 chess_cnn_model.zip
+*corrupt*
 
 # Build artifacts
 target/
