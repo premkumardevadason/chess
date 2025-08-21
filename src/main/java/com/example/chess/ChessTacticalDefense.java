@@ -13,21 +13,77 @@ public class ChessTacticalDefense {
     public static int[] findBestDefensiveMove(String[][] board, List<int[]> validMoves, String aiName) {
         if (validMoves.isEmpty()) return null;
         
-        // Priority 1: Immediate checkmate threats
+        // Priority 1: Queen under attack
+        int[] queenDefense = detectQueenThreats(board, validMoves, aiName);
+        if (queenDefense != null) return queenDefense;
+        
+        // Priority 2: Immediate checkmate threats
         int[] checkmateDefense = detectCheckmateThreats(board, validMoves, aiName);
         if (checkmateDefense != null) return checkmateDefense;
         
-        // Priority 2: Opening traps
+        // Priority 3: Opening traps
         int[] trapDefense = detectOpeningTraps(board, validMoves, aiName);
         if (trapDefense != null) return trapDefense;
         
-        // Priority 3: Tactical patterns
+        // Priority 4: Tactical patterns
         int[] tacticalDefense = detectTacticalThreats(board, validMoves, aiName);
         if (tacticalDefense != null) return tacticalDefense;
         
-        // Priority 4: Positional threats
-        int[] positionalDefense = detectPositionalThreats(board, validMoves, aiName);
-        if (positionalDefense != null) return positionalDefense;
+        return null;
+    }
+    
+    private static int[] detectQueenThreats(String[][] board, List<int[]> validMoves, String aiName) {
+        // Find Black Queen position
+        int[] queenPos = null;
+        for (int i = 0; i < 8; i++) {
+            for (int j = 0; j < 8; j++) {
+                if ("♛".equals(board[i][j])) {
+                    queenPos = new int[]{i, j};
+                    break;
+                }
+            }
+            if (queenPos != null) break;
+        }
+        
+        if (queenPos == null) return null;
+        
+        // Check if Queen is under attack
+        boolean queenUnderAttack = isSquareUnderAttack(board, queenPos[0], queenPos[1], true);
+        if (!queenUnderAttack) return null;
+        
+        logger.info("*** TACTICAL DEFENSE: Queen under attack at [{},{}] ***", queenPos[0], queenPos[1]);
+        
+        // Try Queen escape moves first
+        for (int[] move : validMoves) {
+            if (move[0] == queenPos[0] && move[1] == queenPos[1]) {
+                // Simulate Queen move to check safety
+                String captured = board[move[2]][move[3]];
+                board[move[2]][move[3]] = "♛";
+                board[move[0]][move[1]] = "";
+                
+                boolean safe = !isSquareUnderAttack(board, move[2], move[3], true);
+                
+                // Restore board
+                board[move[0]][move[1]] = "♛";
+                board[move[2]][move[3]] = captured;
+                
+                if (safe) {
+                    logger.info("*** TACTICAL DEFENSE: Queen escape to [{},{}] ***", move[2], move[3]);
+                    return move;
+                }
+            }
+        }
+        
+        // Try capturing attackers
+        List<int[]> attackers = findAttackersOfSquare(board, queenPos[0], queenPos[1], true);
+        for (int[] attacker : attackers) {
+            for (int[] move : validMoves) {
+                if (move[2] == attacker[0] && move[3] == attacker[1]) {
+                    logger.info("*** TACTICAL DEFENSE: Capture Queen attacker ***");
+                    return move;
+                }
+            }
+        }
         
         return null;
     }
@@ -673,5 +729,22 @@ public class ChessTacticalDefense {
         
         // Check if moving this piece would remove critical defense against checkmate
         return isPieceDefendingAgainstCheckmate(board, move[0], move[1]);
+    }
+    
+    private static List<int[]> findAttackersOfSquare(String[][] board, int row, int col, boolean byWhite) {
+        List<int[]> attackers = new ArrayList<>();
+        String enemyPieces = byWhite ? "♔♕♖♗♘♙" : "♚♛♜♝♞♟";
+        
+        for (int i = 0; i < 8; i++) {
+            for (int j = 0; j < 8; j++) {
+                String piece = board[i][j];
+                if (!piece.isEmpty() && enemyPieces.contains(piece)) {
+                    if (canPieceAttackSquare(board, i, j, row, col, piece)) {
+                        attackers.add(new int[]{i, j});
+                    }
+                }
+            }
+        }
+        return attackers;
     }
 }
