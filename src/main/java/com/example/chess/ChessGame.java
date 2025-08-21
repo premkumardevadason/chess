@@ -122,6 +122,10 @@ public class ChessGame {
     private TrainingManager trainingManager; // Extracted training coordination
     private volatile long lastSaveTime = 0; // Track last save time to prevent redundant saves
     
+    // AI selection for current game
+    private String selectedAIForGame = null;
+    private Random aiSelector = new Random();
+    
     private static class GameState {
         String[][] board;
         boolean whiteTurn;
@@ -193,6 +197,34 @@ public class ChessGame {
         leelaOpeningBook = new LeelaChessZeroOpeningBook(logger.isDebugEnabled());
         
         initializeAISystems();
+        selectRandomAIForGame(); // Select AI for initial game
+    }
+    
+    /**
+     * Randomly select one AI to use for the current game
+     */
+    private void selectRandomAIForGame() {
+        List<String> availableAIs = new ArrayList<>();
+        
+        if (qLearningEnabled && qLearningAI != null) availableAIs.add("QLearning");
+        if (deepLearningEnabled && deepLearningAI != null) availableAIs.add("DeepLearning");
+        if (deepLearningCNNEnabled && deepLearningCNNAI != null) availableAIs.add("DeepLearningCNN");
+        if (dqnEnabled && dqnAI != null) availableAIs.add("DQN");
+        if (mctsEnabled && mctsAI != null) availableAIs.add("MCTS");
+        if (alphaZeroEnabled && alphaZeroAI != null) availableAIs.add("AlphaZero");
+        if (negamaxEnabled && negamaxAI != null) availableAIs.add("Negamax");
+        if (openAiEnabled && openAiAI != null) availableAIs.add("OpenAI");
+        if (leelaZeroEnabled && leelaZeroAI != null) availableAIs.add("LeelaZero");
+        if (geneticEnabled && geneticAI != null) availableAIs.add("Genetic");
+        if (alphaFold3Enabled && alphaFold3AI != null) availableAIs.add("AlphaFold3");
+        
+        if (!availableAIs.isEmpty()) {
+            selectedAIForGame = availableAIs.get(aiSelector.nextInt(availableAIs.size()));
+            logger.info("Selected AI for this game: {}", selectedAIForGame);
+        } else {
+            selectedAIForGame = "None";
+            logger.warn("No AI systems available for this game");
+        }
     }
     
     /**
@@ -1392,91 +1424,93 @@ public class ChessGame {
             filteredMoves = movesToEvaluate;
         }
         
-        // Compare ALL EIGHT AI suggestions
-        List<int[]> aiMoves = new ArrayList<>();
-        List<String> aiNames = new ArrayList<>();
+        // Use only the selected AI for this game
+        int[] bestMove = null;
+        String selectedAIName = "None";
         
-        if (qLearningMove != null) {
-            aiMoves.add(qLearningMove);
-            aiNames.add("Q-Learning");
-        }
-        if (deepLearningMove != null) {
-            aiMoves.add(deepLearningMove);
-            aiNames.add("Deep Learning");
-        }
-        if (deepLearningCNNMove != null) {
-            aiMoves.add(deepLearningCNNMove);
-            aiNames.add("CNN Deep Learning");
-        }
-        if (dqnMove != null) {
-            aiMoves.add(dqnMove);
-            aiNames.add("Deep Q-Network");
-        }
-        if (mctsMove != null) {
-            aiMoves.add(mctsMove);
-            aiNames.add("MCTS");
-        }
-        if (alphaZeroMove != null) {
-            aiMoves.add(alphaZeroMove);
-            aiNames.add("AlphaZero");
-        }
-        if (negamaxMove != null) {
-            aiMoves.add(negamaxMove);
-            aiNames.add("Negamax");
-        }
-        if (openAiMove != null) {
-            aiMoves.add(openAiMove);
-            aiNames.add("OpenAI");
-        }
-        if (leelaZeroMove != null) {
-            aiMoves.add(leelaZeroMove);
-            aiNames.add("LeelaZero");
-        }
-        if (geneticMove != null) {
-            aiMoves.add(geneticMove);
-            aiNames.add("Genetic");
-        }
-        if (alphaFold3Move != null) {
-            aiMoves.add(alphaFold3Move);
-            aiNames.add("AlphaFold3");
-        }
-        
-        if (aiMoves.size() > 1) {
-            int[] bestMove = compareMoves(aiMoves, aiNames);
-            
-            // RE-EVALUATION: If all AIs suggest same move or flip-flop detected, re-evaluate
-            if (isFlipFlopMove(bestMove) && !reEvaluationMode) {
-                logger.info("*** FLIP-FLOP DETECTED - RE-EVALUATING ***");
-                reEvaluationMode = true;
-                return findBestMove(); // Recursive re-evaluation
-            }
-            reEvaluationMode = false;
-            
-            int bestIndex = -1;
-            for (int i = 0; i < aiMoves.size(); i++) {
-                int[] currentMove = aiMoves.get(i);
-                if (bestMove[0] == currentMove[0] && bestMove[1] == currentMove[1] && 
-                    bestMove[2] == currentMove[2] && bestMove[3] == currentMove[3]) {
-                    bestIndex = i;
+        if (selectedAIForGame != null && !"None".equals(selectedAIForGame)) {
+            switch (selectedAIForGame) {
+                case "QLearning":
+                    if (qLearningMove != null) {
+                        bestMove = qLearningMove;
+                        selectedAIName = "Q-Learning";
+                    }
                     break;
-                }
+                case "DeepLearning":
+                    if (deepLearningMove != null) {
+                        bestMove = deepLearningMove;
+                        selectedAIName = "Deep Learning";
+                    }
+                    break;
+                case "DeepLearningCNN":
+                    if (deepLearningCNNMove != null) {
+                        bestMove = deepLearningCNNMove;
+                        selectedAIName = "CNN Deep Learning";
+                    }
+                    break;
+                case "DQN":
+                    if (dqnMove != null) {
+                        bestMove = dqnMove;
+                        selectedAIName = "Deep Q-Network";
+                    }
+                    break;
+                case "MCTS":
+                    if (mctsMove != null) {
+                        bestMove = mctsMove;
+                        selectedAIName = "MCTS";
+                    }
+                    break;
+                case "AlphaZero":
+                    if (alphaZeroMove != null) {
+                        bestMove = alphaZeroMove;
+                        selectedAIName = "AlphaZero";
+                    }
+                    break;
+                case "Negamax":
+                    if (negamaxMove != null) {
+                        bestMove = negamaxMove;
+                        selectedAIName = "Negamax";
+                    }
+                    break;
+                case "OpenAI":
+                    if (openAiMove != null) {
+                        bestMove = openAiMove;
+                        selectedAIName = "OpenAI";
+                    }
+                    break;
+                case "LeelaZero":
+                    if (leelaZeroMove != null) {
+                        bestMove = leelaZeroMove;
+                        selectedAIName = "LeelaZero";
+                    }
+                    break;
+                case "Genetic":
+                    if (geneticMove != null) {
+                        bestMove = geneticMove;
+                        selectedAIName = "Genetic";
+                    }
+                    break;
+                case "AlphaFold3":
+                    if (alphaFold3Move != null) {
+                        bestMove = alphaFold3Move;
+                        selectedAIName = "AlphaFold3";
+                    }
+                    break;
             }
-            String winner = (bestIndex >= 0) ? aiNames.get(bestIndex) : "Unknown";
-            logger.info("AI COMPARISON: " + winner + " suggestion selected as better move");
-            
+        }
+        
+        if (bestMove != null) {
+            logger.info("Selected AI '{}' move: {}", selectedAIName, java.util.Arrays.toString(bestMove));
             // Track move for flip-flop prevention
             trackMove(bestMove);
             
             // Report result to MCTS with winning move information for learning
             if (mctsAI != null) {
-                boolean mctsWon = "MCTS".equals(winner);
-                mctsAI.reportMoveResult(mctsWon, bestMove, winner);
+                boolean mctsWon = "MCTS".equals(selectedAIName);
+                mctsAI.reportMoveResult(mctsWon, bestMove, selectedAIName);
             }
             
             return bestMove;
-        } else if (!aiMoves.isEmpty()) {
-            logger.info("Using " + aiNames.get(0) + " AI for strategic move selection");
-            return aiMoves.get(0);
         }
         
         // Check for checkmate/stalemate FIRST
@@ -1524,6 +1558,13 @@ public class ChessGame {
         }
         
         return allValidMoves.get(0);
+    }
+    
+    /**
+     * Get the currently selected AI for this game
+     */
+    public String getSelectedAIForGame() {
+        return selectedAIForGame;
     }
     
     /**
@@ -2644,6 +2685,9 @@ public class ChessGame {
         synchronized (aiInitLock) {
             aiSystemsReady = true; // Keep ready state during reset
         }
+        
+        // Select a new random AI for this game
+        selectRandomAIForGame();
         
         logger.info("NEW GAME STARTED - AI KNOWLEDGE SAVED & PRESERVED (9 AI SYSTEMS + LEELA OPENINGS)");
     }

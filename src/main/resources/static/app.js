@@ -325,6 +325,14 @@ window.trainAI = trainAI;
 window.stopTraining = stopTraining;
 window.deleteTraining = deleteTraining;
 
+// Function to display which AI is being used
+function updateAIInfo(selectedAI) {
+    const aiInfoElement = document.getElementById('ai-info');
+    if (aiInfoElement) {
+        aiInfoElement.textContent = `Current AI: ${selectedAI || 'None'}`;
+    }
+}
+
 // WebSocket connection functions
 function connect() {
     const socket = new SockJS('/ws');
@@ -357,6 +365,9 @@ function connect() {
             gameState = data;
             renderBoard();
             updateTurnInfo();
+            
+            // Update AI information
+            updateAIInfo(data.selectedAI);
         });
         
         // Subscribe to training progress updates
