@@ -239,6 +239,7 @@ public class LeelaChessZeroAI {
                 // CRITICAL FIX: Save neural network models after training with verification
                 logger.info("*** LeelaZero: Training completed - saving neural network models ***");
                 saveStateWithVerification();
+                saveTrainingGames();
                 
                 logger.debug("*** LeelaZero: TRAINING THREAD COMPLETED ***");
             } catch (Exception e) {
@@ -255,6 +256,7 @@ public class LeelaChessZeroAI {
                 // Always save state when training thread ends with verification
                 logger.info("*** LeelaZero: Training thread ending - saving final state ***");
                 saveStateWithVerification();
+                saveTrainingGames();
                 trainingInProgress = false; // Clear flag when training ends
             }
         });
@@ -290,11 +292,11 @@ public class LeelaChessZeroAI {
                 int trainingGames = neuralNetwork.getTrainingGames();
                 String status = neuralNetwork.getTrainingStatus();
                 
-                // Phase 3: Dual-path implementation
+                // CONSISTENT PATH: Always save to root directory
                 if (ioWrapper.isAsyncEnabled()) {
                     // LeelaZero has policyNetwork and valueNetwork - need to save both via NIO.2
-                    ioWrapper.saveAIData("LeelaZero-Policy", neuralNetwork.getPolicyNetwork(), "leela_models/lc0_policy.zip");
-                    ioWrapper.saveAIData("LeelaZero-Value", neuralNetwork.getValueNetwork(), "leela_models/lc0_value.zip");
+                    ioWrapper.saveAIData("LeelaZero-Policy", neuralNetwork.getPolicyNetwork(), "leela_policy.zip");
+                    ioWrapper.saveAIData("LeelaZero-Value", neuralNetwork.getValueNetwork(), "leela_value.zip");
                 } else {
                     // Create backup of existing models
                     java.io.File policyFile = new java.io.File("leela_policy.zip");
@@ -438,12 +440,26 @@ public class LeelaChessZeroAI {
                     String line = reader.readLine();
                     if (line != null && neuralNetwork != null) {
                         int games = Integer.parseInt(line.trim());
+                        neuralNetwork.setTrainingGames(games);
                         logger.info("LeelaZero: Loaded training games: {}", games);
                     }
                 }
             }
         } catch (Exception e) {
             logger.debug("LeelaZero: Failed to load training games - {}", e.getMessage());
+        }
+    }
+    
+    public void saveTrainingGames() {
+        try {
+            int games = neuralNetwork != null ? neuralNetwork.getTrainingGames() : 0;
+            java.io.File gamesFile = new java.io.File("leela_training_games.dat");
+            try (java.io.FileWriter writer = new java.io.FileWriter(gamesFile)) {
+                writer.write(String.valueOf(games));
+            }
+            logger.info("*** LeelaZero: Saved training games count: {} ***", games);
+        } catch (Exception e) {
+            logger.error("*** LeelaZero: Failed to save training games - {} ***", e.getMessage());
         }
     }
 }
