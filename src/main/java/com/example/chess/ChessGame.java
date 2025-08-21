@@ -2823,7 +2823,7 @@ public class ChessGame {
      * - Preserves AI learning progress
      */
     public void resetGame() {
-        // PARALLEL AI GAME DATA PROCESSING - Convert sequential to parallel execution
+        // Only process game data and save if there were actual moves made
         if (moveHistory.size() > 0) {
             logger.info("*** PARALLEL AI GAME DATA PROCESSING: Starting all enabled AIs simultaneously ***");
             
@@ -2896,30 +2896,32 @@ public class ChessGame {
             } catch (Exception e) {
                 logger.error("AI game data processing error: {}", e.getMessage());
             }
-        }
-        
-        // Add game to LeelaZero opening book learning and save AI state
-        if (leelaOpeningBook != null && moveHistory.size() > 0) {
-            try {
-                leelaOpeningBook.addGameMoves(moveHistory);
-                logger.info("*** LeelaZero: Game added to opening book ***");
-            } catch (Exception e) {
-                logger.error("*** LeelaZero: Opening book update error - " + e.getMessage() + " ***");
+            
+            // Add game to LeelaZero opening book learning
+            if (leelaOpeningBook != null) {
+                try {
+                    leelaOpeningBook.addGameMoves(moveHistory);
+                    logger.info("*** LeelaZero: Game added to opening book ***");
+                } catch (Exception e) {
+                    logger.error("*** LeelaZero: Opening book update error - " + e.getMessage() + " ***");
+                }
             }
-        }
-        
-        // Save LeelaZero AI state
-        if (isLeelaZeroEnabled()) {
-            try {
-                // LeelaZero state saving handled automatically
-                logger.info("*** LeelaZero AI: State preserved during game reset ***");
-            } catch (Exception e) {
-                logger.error("*** LeelaZero AI save error: " + e.getMessage() + " ***");
+            
+            // Save LeelaZero AI state only if there were moves
+            if (isLeelaZeroEnabled()) {
+                try {
+                    // LeelaZero state saving handled automatically
+                    logger.info("*** LeelaZero AI: State preserved during game reset ***");
+                } catch (Exception e) {
+                    logger.error("*** LeelaZero AI save error: " + e.getMessage() + " ***");
+                }
             }
+            
+            // Save training data only when there were actual moves
+            saveTrainingData();
+        } else {
+            logger.debug("*** No moves made - skipping game data processing and save ***");
         }
-        
-        // All AI saves handled in saveTrainingData() - no duplicates needed
-        saveTrainingData();
         
         // Clear AI trees and reset states
         if (mctsAI != null) {
