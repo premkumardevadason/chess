@@ -5,11 +5,13 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Component;
+
 import javax.annotation.PostConstruct;
+
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
 
 /**
  * ChessGame - Advanced chess engine with comprehensive AI integration
@@ -856,12 +858,15 @@ public class ChessGame {
             return null;
         }
         
-        // PRIORITY 2: CRITICAL - Defend Queen if under attack
+        // PRIORITY 2: CRITICAL - Defend Queen if under attack (but respect single AI selection)
         logger.debug("=== PRIORITY 2: QUEEN DEFENSE ===");
         int[] queenPos = findPiecePosition("♛");
         boolean queenUnderAttack = queenPos != null && isSquareUnderAttack(queenPos[0], queenPos[1], true);
         logger.debug("PRIORITY 2 CHECK: Queen position: {}, under attack: {}", 
             queenPos != null ? java.util.Arrays.toString(queenPos) : "NULL", queenUnderAttack);
+        
+        // Store critical defense move but don't return immediately - let single AI selection handle it
+        int[] criticalDefenseMove = null;
         if (queenUnderAttack) {
             logger.info("*** CRITICAL: BLACK QUEEN UNDER ATTACK at [{},{}] ***", queenPos[0], queenPos[1]);
             
@@ -883,28 +888,35 @@ public class ChessGame {
                             // Allow Queen sacrifice if capturing valuable piece (Rook, Bishop, Knight+)
                             if (capturedValue >= 300) {
                                 logger.info("*** QUEEN SACRIFICE: Pinned Queen captures {} ({}) - better than losing Queen for nothing! ***", captured, capturedValue);
-                                return move;
+                                criticalDefenseMove = move;
+                                break;
                             }
                         }
                     }
                 }
                 
                 // PRIORITY 2: Try to capture attackers with other pieces
-                for (int[] attacker : attackers) {
-                    for (int[] move : allValidMoves) {
-                        String piece = board[move[0]][move[1]];
-                        if (!"♛".equals(piece) && move[2] == attacker[0] && move[3] == attacker[1]) {
-                            if (isValidMove(move[0], move[1], move[2], move[3])) {
-                                String attackerPiece = board[attacker[0]][attacker[1]];
-                                System.out.println("PINNED QUEEN DEFENSE: " + piece + " captures " + attackerPiece + " threatening pinned Queen");
-                                return move;
+                if (criticalDefenseMove == null) {
+                    for (int[] attacker : attackers) {
+                        for (int[] move : allValidMoves) {
+                            String piece = board[move[0]][move[1]];
+                            if (!"♛".equals(piece) && move[2] == attacker[0] && move[3] == attacker[1]) {
+                                if (isValidMove(move[0], move[1], move[2], move[3])) {
+                                    String attackerPiece = board[attacker[0]][attacker[1]];
+                                    System.out.println("PINNED QUEEN DEFENSE: " + piece + " captures " + attackerPiece + " threatening pinned Queen");
+                                    criticalDefenseMove = move;
+                                    break;
+                                }
                             }
                         }
+                        if (criticalDefenseMove != null) break;
                     }
                 }
                 
                 // PRIORITY 3: If can't save Queen, make best alternative move
-                logger.info("*** QUEEN LOST - Making best alternative move ***");
+                if (criticalDefenseMove == null) {
+                    logger.info("*** QUEEN LOST - Making best alternative move ***");
+                }
             } else {
                 // Queen not pinned - PRIORITIZE capturing attacking pieces first
                 List<int[]> allValidMoves = getAllValidMoves(false);
@@ -922,74 +934,83 @@ public class ChessGame {
                             if (move[2] == attacker[0] && move[3] == attacker[1]) {
                                 if (isValidMove(move[0], move[1], move[2], move[3])) {
                                     System.out.println("CAPTURE VALUABLE ATTACKER: " + piece + " captures " + attackerPiece + " (" + attackerValue + ") threatening Queen");
-                                    return move;
+                                    criticalDefenseMove = move;
+                                    break;
                                 }
                             }
                         }
+                        if (criticalDefenseMove != null) break;
                     }
                 }
                 
                 // PRIORITY 2: Queen escape move - PREFERRED over capturing low-value attackers
-                for (int[] move : allValidMoves) {
-                    String piece = board[move[0]][move[1]];
-                    if ("♛".equals(piece) && move[0] == queenPos[0] && move[1] == queenPos[1]) {
-                        if (isValidMove(move[0], move[1], move[2], move[3])) {
-                            // CRITICAL: Check if Queen will be safe at destination
-                            String captured = board[move[2]][move[3]];
-                            board[move[2]][move[3]] = piece;
-                            board[move[0]][move[1]] = "";
-                            
-                            boolean queenSafeAtDestination = !isSquareUnderAttack(move[2], move[3], true);
-                            
-                            // Restore board
-                            board[move[0]][move[1]] = piece;
-                            board[move[2]][move[3]] = captured;
-                            
-                            if (queenSafeAtDestination) {
-                                System.out.println("QUEEN ESCAPE: Moving Queen to safety [" + move[2] + "," + move[3] + "]");
-                                return move;
-                            } else {
-                                System.out.println("QUEEN ESCAPE REJECTED: [" + move[2] + "," + move[3] + "] still under attack");
+                if (criticalDefenseMove == null) {
+                    for (int[] move : allValidMoves) {
+                        String piece = board[move[0]][move[1]];
+                        if ("♛".equals(piece) && move[0] == queenPos[0] && move[1] == queenPos[1]) {
+                            if (isValidMove(move[0], move[1], move[2], move[3])) {
+                                // CRITICAL: Check if Queen will be safe at destination
+                                String captured = board[move[2]][move[3]];
+                                board[move[2]][move[3]] = piece;
+                                board[move[0]][move[1]] = "";
+                                
+                                boolean queenSafeAtDestination = !isSquareUnderAttack(move[2], move[3], true);
+                                
+                                // Restore board
+                                board[move[0]][move[1]] = piece;
+                                board[move[2]][move[3]] = captured;
+                                
+                                if (queenSafeAtDestination) {
+                                    System.out.println("QUEEN ESCAPE: Moving Queen to safety [" + move[2] + "," + move[3] + "]");
+                                    criticalDefenseMove = move;
+                                    break;
+                                } else {
+                                    System.out.println("QUEEN ESCAPE REJECTED: [" + move[2] + "," + move[3] + "] still under attack");
+                                }
                             }
                         }
                     }
                 }
                 
                 // PRIORITY 3: Capture low-value attackers only if Queen has no safe escape
-                boolean queenHasSafeEscape = false;
-                for (int[] move : allValidMoves) {
-                    String piece = board[move[0]][move[1]];
-                    if ("♛".equals(piece) && move[0] == queenPos[0] && move[1] == queenPos[1]) {
-                        if (isValidMove(move[0], move[1], move[2], move[3])) {
-                            String captured = board[move[2]][move[3]];
-                            board[move[2]][move[3]] = piece;
-                            board[move[0]][move[1]] = "";
-                            
-                            boolean safeAtDestination = !isSquareUnderAttack(move[2], move[3], true);
-                            
-                            board[move[0]][move[1]] = piece;
-                            board[move[2]][move[3]] = captured;
-                            
-                            if (safeAtDestination) {
-                                queenHasSafeEscape = true;
-                                break;
+                if (criticalDefenseMove == null) {
+                    boolean queenHasSafeEscape = false;
+                    for (int[] move : allValidMoves) {
+                        String piece = board[move[0]][move[1]];
+                        if ("♛".equals(piece) && move[0] == queenPos[0] && move[1] == queenPos[1]) {
+                            if (isValidMove(move[0], move[1], move[2], move[3])) {
+                                String captured = board[move[2]][move[3]];
+                                board[move[2]][move[3]] = piece;
+                                board[move[0]][move[1]] = "";
+                                
+                                boolean safeAtDestination = !isSquareUnderAttack(move[2], move[3], true);
+                                
+                                board[move[0]][move[1]] = piece;
+                                board[move[2]][move[3]] = captured;
+                                
+                                if (safeAtDestination) {
+                                    queenHasSafeEscape = true;
+                                    break;
+                                }
                             }
                         }
                     }
-                }
-                
-                // Only capture low-value attackers if Queen has no escape
-                if (!queenHasSafeEscape) {
-                    for (int[] attacker : attackers) {
-                        for (int[] move : allValidMoves) {
-                            String piece = board[move[0]][move[1]];
-                            if (move[2] == attacker[0] && move[3] == attacker[1]) {
-                                if (isValidMove(move[0], move[1], move[2], move[3])) {
-                                    String attackerPiece = board[attacker[0]][attacker[1]];
-                                    System.out.println("DESPERATE CAPTURE: " + piece + " captures " + attackerPiece + " - Queen has no escape");
-                                    return move;
+                    
+                    // Only capture low-value attackers if Queen has no escape
+                    if (!queenHasSafeEscape) {
+                        for (int[] attacker : attackers) {
+                            for (int[] move : allValidMoves) {
+                                String piece = board[move[0]][move[1]];
+                                if (move[2] == attacker[0] && move[3] == attacker[1]) {
+                                    if (isValidMove(move[0], move[1], move[2], move[3])) {
+                                        String attackerPiece = board[attacker[0]][attacker[1]];
+                                        System.out.println("DESPERATE CAPTURE: " + piece + " captures " + attackerPiece + " - Queen has no escape");
+                                        criticalDefenseMove = move;
+                                        break;
+                                    }
                                 }
                             }
+                            if (criticalDefenseMove != null) break;
                         }
                     }
                 }
@@ -1067,9 +1088,9 @@ public class ChessGame {
             allValidMoves.size() - safeValidMoves.size(), movesToUse.size());
         
         int[] tacticalDefense = ChessTacticalDefense.findBestDefensiveMove(board, movesToUse, "TACTICAL_DEFENSE");
-        if (tacticalDefense != null) {
-            logger.info("*** CENTRALIZED TACTICAL DEFENSE: Critical threat detected - bypassing AI evaluation ***");
-            return tacticalDefense;
+        if (tacticalDefense != null && criticalDefenseMove == null) {
+            logger.info("*** CENTRALIZED TACTICAL DEFENSE: Critical threat detected - storing for AI evaluation ***");
+            criticalDefenseMove = tacticalDefense;
         }
         
         // PRIORITY 3: STRATEGIC - Let AI choose from safe moves
@@ -1082,119 +1103,273 @@ public class ChessGame {
         List<int[]> movesToEvaluate = safeValidMoves.isEmpty() ? (safeMoves.isEmpty() ? allValidMoves : safeMoves) : safeValidMoves;
         logger.info("*** MOVE EVALUATION: Using {} moves (after critical defense filtering) ***", movesToEvaluate.size());
         
-        // Get suggestions from all eight AI systems IN PARALLEL
-        logger.debug("*** PARALLEL AI EXECUTION: Starting all enabled AIs simultaneously ***");
+        // OPTIMIZED: Only evaluate the selected AI (unless critical defense needed)
+        logger.debug("*** OPTIMIZED AI EXECUTION: Only evaluating selected AI '{}' ***", selectedAIForGame);
         long parallelStartTime = System.currentTimeMillis();
         
-        java.util.concurrent.CompletableFuture<int[]> qLearningTask = isQLearningEnabled() ? 
-            java.util.concurrent.CompletableFuture.supplyAsync(() -> {
-                try {
-                    return qLearningAI.selectMove(board, movesToEvaluate, false);
-                } catch (Exception e) {
-                    System.err.println("Q-Learning error: " + e.getMessage());
-                    return null;
-                }
-            }) : java.util.concurrent.CompletableFuture.completedFuture(null);
+        // Initialize all tasks as null
+        java.util.concurrent.CompletableFuture<int[]> qLearningTask = java.util.concurrent.CompletableFuture.completedFuture(null);
+        java.util.concurrent.CompletableFuture<int[]> deepLearningTask = java.util.concurrent.CompletableFuture.completedFuture(null);
+        java.util.concurrent.CompletableFuture<int[]> deepLearningCNNTask = java.util.concurrent.CompletableFuture.completedFuture(null);
+        java.util.concurrent.CompletableFuture<int[]> dqnTask = java.util.concurrent.CompletableFuture.completedFuture(null);
+        java.util.concurrent.CompletableFuture<int[]> mctsTask = java.util.concurrent.CompletableFuture.completedFuture(null);
+        java.util.concurrent.CompletableFuture<int[]> alphaZeroTask = java.util.concurrent.CompletableFuture.completedFuture(null);
+        java.util.concurrent.CompletableFuture<int[]> negamaxTask = java.util.concurrent.CompletableFuture.completedFuture(null);
+        java.util.concurrent.CompletableFuture<int[]> openAiTask = java.util.concurrent.CompletableFuture.completedFuture(null);
+        java.util.concurrent.CompletableFuture<int[]> leelaZeroTask = java.util.concurrent.CompletableFuture.completedFuture(null);
+        java.util.concurrent.CompletableFuture<int[]> geneticTask = java.util.concurrent.CompletableFuture.completedFuture(null);
+        java.util.concurrent.CompletableFuture<int[]> alphaFold3Task = java.util.concurrent.CompletableFuture.completedFuture(null);
         
-        java.util.concurrent.CompletableFuture<int[]> deepLearningTask = isDeepLearningEnabled() ? 
-            java.util.concurrent.CompletableFuture.supplyAsync(() -> {
-                try {
-                    return deepLearningAI.selectMove(board, movesToEvaluate);
-                } catch (Exception e) {
-                    System.err.println("Deep Learning error: " + e.getMessage());
-                    return null;
-                }
-            }) : java.util.concurrent.CompletableFuture.completedFuture(null);
-        
-        java.util.concurrent.CompletableFuture<int[]> deepLearningCNNTask = isDeepLearningCNNEnabled() ? 
-            java.util.concurrent.CompletableFuture.supplyAsync(() -> {
-                try {
-                    return deepLearningCNNAI.selectMove(board, movesToEvaluate);
-                } catch (Exception e) {
-                    System.err.println("CNN Deep Learning error: " + e.getMessage());
-                    return null;
-                }
-            }) : java.util.concurrent.CompletableFuture.completedFuture(null);
-        
-        java.util.concurrent.CompletableFuture<int[]> dqnTask = isDQNEnabled() ? 
-            java.util.concurrent.CompletableFuture.supplyAsync(() -> {
-                try {
-                    return dqnAI.selectMove(board, movesToEvaluate);
-                } catch (Exception e) {
-                    System.err.println("DQN error: " + e.getMessage());
-                    return null;
-                }
-            }) : java.util.concurrent.CompletableFuture.completedFuture(null);
-        
-        java.util.concurrent.CompletableFuture<int[]> mctsTask = isMCTSEnabled() ? 
-            java.util.concurrent.CompletableFuture.supplyAsync(() -> {
-                try {
-                    return mctsAI.selectMove(board, movesToEvaluate);
-                } catch (Exception e) {
-                    System.err.println("MCTS error: " + e.getMessage());
-                    return null;
-                }
-            }) : java.util.concurrent.CompletableFuture.completedFuture(null);
-        
-        java.util.concurrent.CompletableFuture<int[]> alphaZeroTask = isAlphaZeroEnabled() ? 
-            java.util.concurrent.CompletableFuture.supplyAsync(() -> {
-                try {
-                    return alphaZeroAI.selectMove(board, movesToEvaluate);
-                } catch (Exception e) {
-                    System.err.println("AlphaZero error: " + e.getMessage());
-                    return null;
-                }
-            }) : java.util.concurrent.CompletableFuture.completedFuture(null);
-        
-        java.util.concurrent.CompletableFuture<int[]> negamaxTask = isNegamaxEnabled() ? 
-            java.util.concurrent.CompletableFuture.supplyAsync(() -> {
-                try {
-                    return negamaxAI.selectMove(board, movesToEvaluate);
-                } catch (Exception e) {
-                    System.err.println("Negamax error: " + e.getMessage());
-                    return null;
-                }
-            }) : java.util.concurrent.CompletableFuture.completedFuture(null);
-        
-        java.util.concurrent.CompletableFuture<int[]> openAiTask = isOpenAiEnabled() ? 
-            java.util.concurrent.CompletableFuture.supplyAsync(() -> {
-                try {
-                    return openAiAI.selectMove(board, movesToEvaluate);
-                } catch (Exception e) {
-                    System.err.println("OpenAI error: " + e.getMessage());
-                    return null;
-                }
-            }) : java.util.concurrent.CompletableFuture.completedFuture(null);
-        
-        java.util.concurrent.CompletableFuture<int[]> leelaZeroTask = isLeelaZeroEnabled() ? 
-            java.util.concurrent.CompletableFuture.supplyAsync(() -> {
-                try {
-                    return leelaZeroAI.selectMove(board, movesToEvaluate);
-                } catch (Exception e) {
-                    System.err.println("LeelaZero error: " + e.getMessage());
-                    return null;
-                }
-            }) : java.util.concurrent.CompletableFuture.completedFuture(null);
-        
-        java.util.concurrent.CompletableFuture<int[]> geneticTask = isGeneticEnabled() ? 
-            java.util.concurrent.CompletableFuture.supplyAsync(() -> {
-                try {
-                    return geneticAI.selectMove(board, movesToEvaluate);
-                } catch (Exception e) {
-                    System.err.println("Genetic error: " + e.getMessage());
-                    return null;
-                }
-            }) : java.util.concurrent.CompletableFuture.completedFuture(null);
-        
-        java.util.concurrent.CompletableFuture<int[]> alphaFold3Task = isAlphaFold3Enabled() ? 
-            java.util.concurrent.CompletableFuture.supplyAsync(() -> {
-                try {
-                    return alphaFold3AI.selectMove(board, movesToEvaluate);
-                } catch (Exception e) {
-                    System.err.println("AlphaFold3 error: " + e.getMessage());
-                    return null;
-                }
-            }) : java.util.concurrent.CompletableFuture.completedFuture(null);
+        // Only evaluate the selected AI (unless critical defense override needed)
+        if (criticalDefenseMove == null && selectedAIForGame != null && !"None".equals(selectedAIForGame)) {
+            switch (selectedAIForGame) {
+                case "QLearning":
+                    if (isQLearningEnabled()) {
+                        qLearningTask = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                            try {
+                                return qLearningAI.selectMove(board, movesToEvaluate, false);
+                            } catch (Exception e) {
+                                System.err.println("Q-Learning error: " + e.getMessage());
+                                return null;
+                            }
+                        });
+                    }
+                    break;
+                case "DeepLearning":
+                    if (isDeepLearningEnabled()) {
+                        deepLearningTask = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                            try {
+                                return deepLearningAI.selectMove(board, movesToEvaluate);
+                            } catch (Exception e) {
+                                System.err.println("Deep Learning error: " + e.getMessage());
+                                return null;
+                            }
+                        });
+                    }
+                    break;
+                case "DeepLearningCNN":
+                    if (isDeepLearningCNNEnabled()) {
+                        deepLearningCNNTask = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                            try {
+                                return deepLearningCNNAI.selectMove(board, movesToEvaluate);
+                            } catch (Exception e) {
+                                System.err.println("CNN Deep Learning error: " + e.getMessage());
+                                return null;
+                            }
+                        });
+                    }
+                    break;
+                case "DQN":
+                    if (isDQNEnabled()) {
+                        dqnTask = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                            try {
+                                return dqnAI.selectMove(board, movesToEvaluate);
+                            } catch (Exception e) {
+                                System.err.println("DQN error: " + e.getMessage());
+                                return null;
+                            }
+                        });
+                    }
+                    break;
+                case "MCTS":
+                    if (isMCTSEnabled()) {
+                        mctsTask = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                            try {
+                                return mctsAI.selectMove(board, movesToEvaluate);
+                            } catch (Exception e) {
+                                System.err.println("MCTS error: " + e.getMessage());
+                                return null;
+                            }
+                        });
+                    }
+                    break;
+                case "AlphaZero":
+                    if (isAlphaZeroEnabled()) {
+                        alphaZeroTask = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                            try {
+                                return alphaZeroAI.selectMove(board, movesToEvaluate);
+                            } catch (Exception e) {
+                                System.err.println("AlphaZero error: " + e.getMessage());
+                                return null;
+                            }
+                        });
+                    }
+                    break;
+                case "Negamax":
+                    if (isNegamaxEnabled()) {
+                        negamaxTask = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                            try {
+                                return negamaxAI.selectMove(board, movesToEvaluate);
+                            } catch (Exception e) {
+                                System.err.println("Negamax error: " + e.getMessage());
+                                return null;
+                            }
+                        });
+                    }
+                    break;
+                case "OpenAI":
+                    if (isOpenAiEnabled()) {
+                        openAiTask = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                            try {
+                                return openAiAI.selectMove(board, movesToEvaluate);
+                            } catch (Exception e) {
+                                System.err.println("OpenAI error: " + e.getMessage());
+                                return null;
+                            }
+                        });
+                    }
+                    break;
+                case "LeelaZero":
+                    if (isLeelaZeroEnabled()) {
+                        leelaZeroTask = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                            try {
+                                return leelaZeroAI.selectMove(board, movesToEvaluate);
+                            } catch (Exception e) {
+                                System.err.println("LeelaZero error: " + e.getMessage());
+                                return null;
+                            }
+                        });
+                    }
+                    break;
+                case "Genetic":
+                    if (isGeneticEnabled()) {
+                        geneticTask = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                            try {
+                                return geneticAI.selectMove(board, movesToEvaluate);
+                            } catch (Exception e) {
+                                System.err.println("Genetic error: " + e.getMessage());
+                                return null;
+                            }
+                        });
+                    }
+                    break;
+                case "AlphaFold3":
+                    if (isAlphaFold3Enabled()) {
+                        alphaFold3Task = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                            try {
+                                return alphaFold3AI.selectMove(board, movesToEvaluate);
+                            } catch (Exception e) {
+                                System.err.println("AlphaFold3 error: " + e.getMessage());
+                                return null;
+                            }
+                        });
+                    }
+                    break;
+            }
+        } else {
+            // Fallback: evaluate all AIs if no specific AI selected or critical defense needed
+            logger.debug("*** FALLBACK: Evaluating all AIs (no specific selection or critical defense) ***");
+            
+            qLearningTask = isQLearningEnabled() ? 
+                java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                    try {
+                        return qLearningAI.selectMove(board, movesToEvaluate, false);
+                    } catch (Exception e) {
+                        System.err.println("Q-Learning error: " + e.getMessage());
+                        return null;
+                    }
+                }) : java.util.concurrent.CompletableFuture.completedFuture(null);
+            
+            deepLearningTask = isDeepLearningEnabled() ? 
+                java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                    try {
+                        return deepLearningAI.selectMove(board, movesToEvaluate);
+                    } catch (Exception e) {
+                        System.err.println("Deep Learning error: " + e.getMessage());
+                        return null;
+                    }
+                }) : java.util.concurrent.CompletableFuture.completedFuture(null);
+            
+            deepLearningCNNTask = isDeepLearningCNNEnabled() ? 
+                java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                    try {
+                        return deepLearningCNNAI.selectMove(board, movesToEvaluate);
+                    } catch (Exception e) {
+                        System.err.println("CNN Deep Learning error: " + e.getMessage());
+                        return null;
+                    }
+                }) : java.util.concurrent.CompletableFuture.completedFuture(null);
+            
+            dqnTask = isDQNEnabled() ? 
+                java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                    try {
+                        return dqnAI.selectMove(board, movesToEvaluate);
+                    } catch (Exception e) {
+                        System.err.println("DQN error: " + e.getMessage());
+                        return null;
+                    }
+                }) : java.util.concurrent.CompletableFuture.completedFuture(null);
+            
+            mctsTask = isMCTSEnabled() ? 
+                java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                    try {
+                        return mctsAI.selectMove(board, movesToEvaluate);
+                    } catch (Exception e) {
+                        System.err.println("MCTS error: " + e.getMessage());
+                        return null;
+                    }
+                }) : java.util.concurrent.CompletableFuture.completedFuture(null);
+            
+            alphaZeroTask = isAlphaZeroEnabled() ? 
+                java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                    try {
+                        return alphaZeroAI.selectMove(board, movesToEvaluate);
+                    } catch (Exception e) {
+                        System.err.println("AlphaZero error: " + e.getMessage());
+                        return null;
+                    }
+                }) : java.util.concurrent.CompletableFuture.completedFuture(null);
+            
+            negamaxTask = isNegamaxEnabled() ? 
+                java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                    try {
+                        return negamaxAI.selectMove(board, movesToEvaluate);
+                    } catch (Exception e) {
+                        System.err.println("Negamax error: " + e.getMessage());
+                        return null;
+                    }
+                }) : java.util.concurrent.CompletableFuture.completedFuture(null);
+            
+            openAiTask = isOpenAiEnabled() ? 
+                java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                    try {
+                        return openAiAI.selectMove(board, movesToEvaluate);
+                    } catch (Exception e) {
+                        System.err.println("OpenAI error: " + e.getMessage());
+                        return null;
+                    }
+                }) : java.util.concurrent.CompletableFuture.completedFuture(null);
+            
+            leelaZeroTask = isLeelaZeroEnabled() ? 
+                java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                    try {
+                        return leelaZeroAI.selectMove(board, movesToEvaluate);
+                    } catch (Exception e) {
+                        System.err.println("LeelaZero error: " + e.getMessage());
+                        return null;
+                    }
+                }) : java.util.concurrent.CompletableFuture.completedFuture(null);
+            
+            geneticTask = isGeneticEnabled() ? 
+                java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                    try {
+                        return geneticAI.selectMove(board, movesToEvaluate);
+                    } catch (Exception e) {
+                        System.err.println("Genetic error: " + e.getMessage());
+                        return null;
+                    }
+                }) : java.util.concurrent.CompletableFuture.completedFuture(null);
+            
+            alphaFold3Task = isAlphaFold3Enabled() ? 
+                java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                    try {
+                        return alphaFold3AI.selectMove(board, movesToEvaluate);
+                    } catch (Exception e) {
+                        System.err.println("AlphaFold3 error: " + e.getMessage());
+                        return null;
+                    }
+                }) : java.util.concurrent.CompletableFuture.completedFuture(null);
+        }
         
         // Wait for all AIs to complete with timeout
         java.util.concurrent.CompletableFuture<Void> allTasks = java.util.concurrent.CompletableFuture.allOf(
@@ -1296,104 +1471,157 @@ public class ChessGame {
         logger.debug("*** PARALLEL AI EXECUTION: Completed in " + parallelTime + "ms (" + 
             String.format("%.1f", parallelTime/1000.0) + "s) ***");
         
-        logger.info("=== PARALLEL AI RESULTS ===");
-        
-        if (isQLearningEnabled()) {
-            if (qLearningMove != null) {
+        // OPTIMIZED LOGGING: Only log the selected AI's result (unless fallback mode)
+        if (criticalDefenseMove == null && selectedAIForGame != null && !"None".equals(selectedAIForGame)) {
+            logger.info("=== SELECTED AI RESULT ===");
+            
+            switch (selectedAIForGame) {
+                case "QLearning":
+                    if (qLearningMove != null) {
+                        String piece = board[qLearningMove[0]][qLearningMove[1]];
+                        logger.info("Q-Learning: " + piece + " [" + qLearningMove[0] + "," + qLearningMove[1] + "] → [" + qLearningMove[2] + "," + qLearningMove[3] + "]");
+                    } else {
+                        logger.info("Q-Learning: No move");
+                    }
+                    break;
+                case "DeepLearning":
+                    if (deepLearningMove != null) {
+                        String piece = board[deepLearningMove[0]][deepLearningMove[1]];
+                        logger.info("Deep Learning: " + piece + " [" + deepLearningMove[0] + "," + deepLearningMove[1] + "] → [" + deepLearningMove[2] + "," + deepLearningMove[3] + "]");
+                    } else {
+                        logger.info("Deep Learning: No move");
+                    }
+                    break;
+                case "DeepLearningCNN":
+                    if (deepLearningCNNMove != null) {
+                        String piece = board[deepLearningCNNMove[0]][deepLearningCNNMove[1]];
+                        logger.info("CNN Deep Learning: " + piece + " [" + deepLearningCNNMove[0] + "," + deepLearningCNNMove[1] + "] → [" + deepLearningCNNMove[2] + "," + deepLearningCNNMove[3] + "]");
+                    } else {
+                        logger.info("CNN Deep Learning: No move");
+                    }
+                    break;
+                case "DQN":
+                    if (dqnMove != null) {
+                        String piece = board[dqnMove[0]][dqnMove[1]];
+                        logger.info("DQN: " + piece + " [" + dqnMove[0] + "," + dqnMove[1] + "] → [" + dqnMove[2] + "," + dqnMove[3] + "]");
+                    } else {
+                        logger.info("DQN: No move");
+                    }
+                    break;
+                case "MCTS":
+                    if (mctsMove != null) {
+                        String piece = board[mctsMove[0]][mctsMove[1]];
+                        logger.info("MCTS: " + piece + " [" + mctsMove[0] + "," + mctsMove[1] + "] → [" + mctsMove[2] + "," + mctsMove[3] + "]");
+                    } else {
+                        logger.info("MCTS: No move");
+                    }
+                    break;
+                case "AlphaZero":
+                    if (alphaZeroMove != null) {
+                        String piece = board[alphaZeroMove[0]][alphaZeroMove[1]];
+                        logger.info("AlphaZero: " + piece + " [" + alphaZeroMove[0] + "," + alphaZeroMove[1] + "] → [" + alphaZeroMove[2] + "," + alphaZeroMove[3] + "]");
+                    } else {
+                        logger.info("AlphaZero: No move");
+                    }
+                    break;
+                case "Negamax":
+                    if (negamaxMove != null) {
+                        String piece = board[negamaxMove[0]][negamaxMove[1]];
+                        logger.info("Negamax: " + piece + " [" + negamaxMove[0] + "," + negamaxMove[1] + "] → [" + negamaxMove[2] + "," + negamaxMove[3] + "]");
+                    } else {
+                        logger.info("Negamax: No move");
+                    }
+                    break;
+                case "OpenAI":
+                    if (openAiMove != null) {
+                        String piece = board[openAiMove[0]][openAiMove[1]];
+                        logger.info("OpenAI: " + piece + " [" + openAiMove[0] + "," + openAiMove[1] + "] → [" + openAiMove[2] + "," + openAiMove[3] + "]");
+                    } else {
+                        logger.info("OpenAI: No move");
+                    }
+                    break;
+                case "LeelaZero":
+                    if (leelaZeroMove != null) {
+                        String piece = board[leelaZeroMove[0]][leelaZeroMove[1]];
+                        logger.info("LeelaZero: " + piece + " [" + leelaZeroMove[0] + "," + leelaZeroMove[1] + "] → [" + leelaZeroMove[2] + "," + leelaZeroMove[3] + "]");
+                    } else {
+                        logger.info("LeelaZero: No move");
+                    }
+                    break;
+                case "Genetic":
+                    if (geneticMove != null) {
+                        String piece = board[geneticMove[0]][geneticMove[1]];
+                        logger.info("Genetic: " + piece + " [" + geneticMove[0] + "," + geneticMove[1] + "] → [" + geneticMove[2] + "," + geneticMove[3] + "]");
+                    } else {
+                        logger.info("Genetic: No move");
+                    }
+                    break;
+                case "AlphaFold3":
+                    if (alphaFold3Move != null) {
+                        String piece = board[alphaFold3Move[0]][alphaFold3Move[1]];
+                        logger.info("AlphaFold3: " + piece + " [" + alphaFold3Move[0] + "," + alphaFold3Move[1] + "] → [" + alphaFold3Move[2] + "," + alphaFold3Move[3] + "]");
+                    } else {
+                        logger.info("AlphaFold3: No move");
+                    }
+                    break;
+            }
+        } else {
+            // Fallback mode: log all AI results
+            logger.info("=== ALL AI RESULTS (FALLBACK MODE) ===");
+            
+            if (isQLearningEnabled() && qLearningMove != null) {
                 String piece = board[qLearningMove[0]][qLearningMove[1]];
                 logger.info("Q-Learning: " + piece + " [" + qLearningMove[0] + "," + qLearningMove[1] + "] → [" + qLearningMove[2] + "," + qLearningMove[3] + "]");
-            } else {
-                logger.info("Q-Learning: No move");
             }
-        }
-        
-        if (isDeepLearningEnabled()) {
-            if (deepLearningMove != null) {
+            
+            if (isDeepLearningEnabled() && deepLearningMove != null) {
                 String piece = board[deepLearningMove[0]][deepLearningMove[1]];
                 logger.info("Deep Learning: " + piece + " [" + deepLearningMove[0] + "," + deepLearningMove[1] + "] → [" + deepLearningMove[2] + "," + deepLearningMove[3] + "]");
-            } else {
-                logger.info("Deep Learning: No move");
             }
-        }
-        
-        if (isDeepLearningCNNEnabled()) {
-            if (deepLearningCNNMove != null) {
+            
+            if (isDeepLearningCNNEnabled() && deepLearningCNNMove != null) {
                 String piece = board[deepLearningCNNMove[0]][deepLearningCNNMove[1]];
                 logger.info("CNN Deep Learning: " + piece + " [" + deepLearningCNNMove[0] + "," + deepLearningCNNMove[1] + "] → [" + deepLearningCNNMove[2] + "," + deepLearningCNNMove[3] + "]");
-            } else {
-                logger.info("CNN Deep Learning: No move");
             }
-        }
-        
-        if (isDQNEnabled()) {
-            if (dqnMove != null) {
+            
+            if (isDQNEnabled() && dqnMove != null) {
                 String piece = board[dqnMove[0]][dqnMove[1]];
                 logger.info("DQN: " + piece + " [" + dqnMove[0] + "," + dqnMove[1] + "] → [" + dqnMove[2] + "," + dqnMove[3] + "]");
-            } else {
-                logger.info("DQN: No move");
             }
-        }
-        
-        if (isMCTSEnabled()) {
-            if (mctsMove != null) {
+            
+            if (isMCTSEnabled() && mctsMove != null) {
                 String piece = board[mctsMove[0]][mctsMove[1]];
                 logger.info("MCTS: " + piece + " [" + mctsMove[0] + "," + mctsMove[1] + "] → [" + mctsMove[2] + "," + mctsMove[3] + "]");
-            } else {
-                logger.info("MCTS: No move");
             }
-        }
-        
-        if (isAlphaZeroEnabled()) {
-            if (alphaZeroMove != null) {
+            
+            if (isAlphaZeroEnabled() && alphaZeroMove != null) {
                 String piece = board[alphaZeroMove[0]][alphaZeroMove[1]];
                 logger.info("AlphaZero: " + piece + " [" + alphaZeroMove[0] + "," + alphaZeroMove[1] + "] → [" + alphaZeroMove[2] + "," + alphaZeroMove[3] + "]");
-            } else {
-                logger.info("AlphaZero: No move");
             }
-        }
-        
-        if (isNegamaxEnabled()) {
-            if (negamaxMove != null) {
+            
+            if (isNegamaxEnabled() && negamaxMove != null) {
                 String piece = board[negamaxMove[0]][negamaxMove[1]];
                 logger.info("Negamax: " + piece + " [" + negamaxMove[0] + "," + negamaxMove[1] + "] → [" + negamaxMove[2] + "," + negamaxMove[3] + "]");
-            } else {
-                logger.info("Negamax: No move");
             }
-        }
-        
-        if (isOpenAiEnabled()) {
-            if (openAiMove != null) {
+            
+            if (isOpenAiEnabled() && openAiMove != null) {
                 String piece = board[openAiMove[0]][openAiMove[1]];
                 logger.info("OpenAI: " + piece + " [" + openAiMove[0] + "," + openAiMove[1] + "] → [" + openAiMove[2] + "," + openAiMove[3] + "]");
-            } else {
-                logger.info("OpenAI: No move");
             }
-        }
-        
-        if (isLeelaZeroEnabled()) {
-            if (leelaZeroMove != null) {
+            
+            if (isLeelaZeroEnabled() && leelaZeroMove != null) {
                 String piece = board[leelaZeroMove[0]][leelaZeroMove[1]];
                 logger.info("LeelaZero: " + piece + " [" + leelaZeroMove[0] + "," + leelaZeroMove[1] + "] → [" + leelaZeroMove[2] + "," + leelaZeroMove[3] + "]");
-            } else {
-                logger.info("LeelaZero: No move");
             }
-        }
-        
-        if (isGeneticEnabled()) {
-            if (geneticMove != null) {
+            
+            if (isGeneticEnabled() && geneticMove != null) {
                 String piece = board[geneticMove[0]][geneticMove[1]];
                 logger.info("Genetic: " + piece + " [" + geneticMove[0] + "," + geneticMove[1] + "] → [" + geneticMove[2] + "," + geneticMove[3] + "]");
-            } else {
-                logger.info("Genetic: No move");
             }
-        }
-        
-        if (isAlphaFold3Enabled()) {
-            if (alphaFold3Move != null) {
+            
+            if (isAlphaFold3Enabled() && alphaFold3Move != null) {
                 String piece = board[alphaFold3Move[0]][alphaFold3Move[1]];
                 logger.info("AlphaFold3: " + piece + " [" + alphaFold3Move[0] + "," + alphaFold3Move[1] + "] → [" + alphaFold3Move[2] + "," + alphaFold3Move[3] + "]");
-            } else {
-                logger.info("AlphaFold3: No move");
             }
         }
         
@@ -1424,11 +1652,16 @@ public class ChessGame {
             filteredMoves = movesToEvaluate;
         }
         
-        // Use only the selected AI for this game
+        // Use only the selected AI for this game (but override with critical defense if needed)
         int[] bestMove = null;
         String selectedAIName = "None";
         
-        if (selectedAIForGame != null && !"None".equals(selectedAIForGame)) {
+        // CRITICAL: If we have a critical defense move, use it regardless of AI selection
+        if (criticalDefenseMove != null) {
+            bestMove = criticalDefenseMove;
+            selectedAIName = "Critical Defense Override";
+            logger.info("*** CRITICAL DEFENSE OVERRIDE: Using emergency move regardless of selected AI ***");
+        } else if (selectedAIForGame != null && !"None".equals(selectedAIForGame)) {
             switch (selectedAIForGame) {
                 case "QLearning":
                     if (qLearningMove != null) {
@@ -2590,41 +2823,79 @@ public class ChessGame {
      * - Preserves AI learning progress
      */
     public void resetGame() {
-        // Add completed game to AlphaZero's learning
-        if (isAlphaZeroEnabled() && moveHistory.size() > 0) {
-            // FIXED: Correct game outcome detection
-            // If game is over and it's Black's turn, then White won (Black couldn't move)
-            // If game is over and it's White's turn, then Black won (White couldn't move)
-            boolean blackWon = gameOver && whiteTurn;
-            alphaZeroAI.addHumanGameData(board, moveHistory, blackWon);
-        }
-        
-        // Add game data to Deep Learning AI for learning
-        if (isDeepLearningEnabled() && moveHistory.size() > 0) {
-            boolean blackWon = gameOver && !whiteTurn;
-            deepLearningAI.addHumanGameData(board, moveHistory, blackWon);
-            logger.info("Deep Learning AI: Game data added for learning");
-        }
-        
-        // Add game data to CNN AI for learning
-        if (isDeepLearningCNNEnabled() && moveHistory.size() > 0) {
-            boolean blackWon = gameOver && !whiteTurn;
-            deepLearningCNNAI.addHumanGameData(board, moveHistory, blackWon);
-            logger.info("CNN AI: Game data added for learning");
-        }
-        
-        // Add game data to DQN AI for learning
-        if (isDQNEnabled() && moveHistory.size() > 0) {
-            boolean blackWon = gameOver && !whiteTurn;
-            dqnAI.addHumanGameData(board, moveHistory, blackWon);
-            logger.info("DQN AI: Game data added for learning");
-        }
-        
-        // Add game data to AlphaFold3 AI for learning
-        if (isAlphaFold3Enabled() && moveHistory.size() > 0) {
-            boolean blackWon = gameOver && !whiteTurn;
-            alphaFold3AI.addHumanGameData(board, moveHistory, blackWon);
-            logger.info("AlphaFold3 AI: Game data added for learning");
+        // PARALLEL AI GAME DATA PROCESSING - Convert sequential to parallel execution
+        if (moveHistory.size() > 0) {
+            logger.info("*** PARALLEL AI GAME DATA PROCESSING: Starting all enabled AIs simultaneously ***");
+            
+            // Create parallel tasks for all AI game data processing
+            var alphaZeroTask = isAlphaZeroEnabled() ? 
+                java.util.concurrent.CompletableFuture.runAsync(() -> {
+                    try {
+                        boolean blackWon = gameOver && whiteTurn;
+                        alphaZeroAI.addHumanGameData(board, moveHistory, blackWon);
+                        logger.info("AlphaZero AI: Game data processed");
+                    } catch (Exception e) {
+                        logger.error("AlphaZero game data error: {}", e.getMessage());
+                    }
+                }) : java.util.concurrent.CompletableFuture.completedFuture(null);
+            
+            var deepLearningTask = isDeepLearningEnabled() ? 
+                java.util.concurrent.CompletableFuture.runAsync(() -> {
+                    try {
+                        boolean blackWon = gameOver && !whiteTurn;
+                        deepLearningAI.addHumanGameData(board, moveHistory, blackWon);
+                        logger.info("Deep Learning AI: Game data processed");
+                    } catch (Exception e) {
+                        logger.error("Deep Learning game data error: {}", e.getMessage());
+                    }
+                }) : java.util.concurrent.CompletableFuture.completedFuture(null);
+            
+            var deepLearningCNNTask = isDeepLearningCNNEnabled() ? 
+                java.util.concurrent.CompletableFuture.runAsync(() -> {
+                    try {
+                        boolean blackWon = gameOver && !whiteTurn;
+                        deepLearningCNNAI.addHumanGameData(board, moveHistory, blackWon);
+                        logger.info("CNN AI: Game data processed");
+                    } catch (Exception e) {
+                        logger.error("CNN game data error: {}", e.getMessage());
+                    }
+                }) : java.util.concurrent.CompletableFuture.completedFuture(null);
+            
+            var dqnTask = isDQNEnabled() ? 
+                java.util.concurrent.CompletableFuture.runAsync(() -> {
+                    try {
+                        boolean blackWon = gameOver && !whiteTurn;
+                        dqnAI.addHumanGameData(board, moveHistory, blackWon);
+                        logger.info("DQN AI: Game data processed");
+                    } catch (Exception e) {
+                        logger.error("DQN game data error: {}", e.getMessage());
+                    }
+                }) : java.util.concurrent.CompletableFuture.completedFuture(null);
+            
+            var alphaFold3Task = isAlphaFold3Enabled() ? 
+                java.util.concurrent.CompletableFuture.runAsync(() -> {
+                    try {
+                        boolean blackWon = gameOver && !whiteTurn;
+                        alphaFold3AI.addHumanGameData(board, moveHistory, blackWon);
+                        logger.info("AlphaFold3 AI: Game data processed");
+                    } catch (Exception e) {
+                        logger.error("AlphaFold3 game data error: {}", e.getMessage());
+                    }
+                }) : java.util.concurrent.CompletableFuture.completedFuture(null);
+            
+            // Wait for ALL AI game data processing to complete in parallel
+            try {
+                java.util.concurrent.CompletableFuture.allOf(
+                    alphaZeroTask, deepLearningTask, deepLearningCNNTask, dqnTask, alphaFold3Task
+                ).get(30, java.util.concurrent.TimeUnit.SECONDS);
+                
+                logger.info("*** PARALLEL AI GAME DATA PROCESSING: All AIs completed simultaneously ***");
+                
+            } catch (java.util.concurrent.TimeoutException e) {
+                logger.error("AI game data processing timeout after 30 seconds: {}", e.getMessage());
+            } catch (Exception e) {
+                logger.error("AI game data processing error: {}", e.getMessage());
+            }
         }
         
         // Add game to LeelaZero opening book learning and save AI state
