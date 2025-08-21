@@ -335,6 +335,9 @@ public class LeelaChessZeroNetwork {
             policyNetwork.fit(policyDataSet);
             valueNetwork.fit(valueDataSet);
             
+            // Increment training games counter
+            moveNumber += inputs.size();
+            
             confidenceScore = Math.min(1.0, confidenceScore + 0.01);
             
             logger.info("*** LeelaZero Network: Trained dual heads on {} positions ***", inputs.size());
@@ -356,6 +359,11 @@ public class LeelaChessZeroNetwork {
     
     public int getTrainingGames() {
         return moveNumber; // Use move number as proxy for training games
+    }
+    
+    public void setTrainingGames(int games) {
+        this.moveNumber = games;
+        logger.debug("*** LeelaZero Network: Training games set to {} ***", games);
     }
     
     public void saveModel() {
@@ -387,6 +395,22 @@ public class LeelaChessZeroNetwork {
                 valueNetwork = loadedValue;
                 confidenceScore = 0.8;
                 moveNumber = 1000; // Indicate trained state
+                
+                // Try to load actual training games count
+                try {
+                    java.io.File gamesFile = new java.io.File("leela_training_games.dat");
+                    if (gamesFile.exists()) {
+                        try (java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.FileReader(gamesFile))) {
+                            String line = reader.readLine();
+                            if (line != null) {
+                                moveNumber = Integer.parseInt(line.trim());
+                                logger.debug("*** LeelaZero Network: Loaded training games count: {} ***", moveNumber);
+                            }
+                        }
+                    }
+                } catch (Exception e) {
+                    logger.debug("*** LeelaZero Network: Could not load training games count - {} ***", e.getMessage());
+                }
                 
                 logger.info("*** LeelaZero Network: Loaded existing dual-head models (Policy: {}KB, Value: {}KB) ***", 
                     policyFile.length()/1024, valueFile.length()/1024);

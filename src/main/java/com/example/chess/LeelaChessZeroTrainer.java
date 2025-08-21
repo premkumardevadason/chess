@@ -112,7 +112,11 @@ public class LeelaChessZeroTrainer {
             trainOnBatch();
         }
         
+        // Update neural network with total games completed
+        neuralNetwork.setTrainingGames(neuralNetwork.getTrainingGames() + gamesCompleted);
+        
         neuralNetwork.saveModel();
+        saveTrainingGames(neuralNetwork.getTrainingGames());
         
         logger.info("*** LeelaZero Trainer: Training completed - " + gamesCompleted + " games played ***");
         System.out.println("*** LeelaZero Trainer: TRAINING COMPLETED - " + gamesCompleted + " games played ***");
@@ -458,6 +462,18 @@ public class LeelaChessZeroTrainer {
             this.selectedMove = selectedMove;
             this.validMoves = validMoves;
             this.isWhiteTurn = isWhiteTurn;
+        }
+    }
+    
+    private void saveTrainingGames(int totalGames) {
+        try {
+            java.io.File gamesFile = new java.io.File("leela_training_games.dat");
+            try (java.io.FileWriter writer = new java.io.FileWriter(gamesFile)) {
+                writer.write(String.valueOf(totalGames));
+            }
+            logger.info("*** LeelaZero Trainer: Saved training games count: {} ***", totalGames);
+        } catch (Exception e) {
+            logger.error("*** LeelaZero Trainer: Failed to save training games - {} ***", e.getMessage());
         }
     }
     

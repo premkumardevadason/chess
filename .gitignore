@@ -13,6 +13,10 @@ target/**
 *.model
 *.bin
 
+# AI training directories
+ga_models/
+leela_models/
+
 # IDE files
 .vscode/
 .idea/

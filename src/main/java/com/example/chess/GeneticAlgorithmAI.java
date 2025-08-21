@@ -529,13 +529,11 @@ public class GeneticAlgorithmAI {
     public void savePopulation() {
         // Phase 3: Dual-path implementation
         if (ioWrapper.isAsyncEnabled()) {
-            ioWrapper.saveAIData("GeneticAlgorithm", population, "ga_models/population.dat");
+            ioWrapper.saveAIData("GeneticAlgorithm", population, "ga_population.dat");
         } else {
             // SYNCHRONIZED: Prevent concurrent saves that corrupt data
             synchronized (savePopulationLock) {
                 try {
-                    File dir = new File("ga_models");
-                    if (!dir.exists()) dir.mkdirs();
                     
                     // Create snapshot to prevent race conditions during serialization
                     List<Chromosome> populationSnapshot = new ArrayList<>();
@@ -546,7 +544,7 @@ public class GeneticAlgorithmAI {
                     double bestFitnessSnapshot = bestFitness;
                     
                     // Save to temporary file first for atomic operation
-                    File tempFile = new File(dir, "population.dat.tmp");
+                    File tempFile = new File("ga_population.dat.tmp");
                     try (ObjectOutputStream oos = new ObjectOutputStream(
                             new FileOutputStream(tempFile))) {
                         oos.writeObject(populationSnapshot);
@@ -558,7 +556,7 @@ public class GeneticAlgorithmAI {
                     saveGenerationData();
                     
                     // Atomic rename
-                    File finalFile = new File(dir, "population.dat");
+                    File finalFile = new File("ga_population.dat");
                     if (finalFile.exists()) finalFile.delete();
                     if (tempFile.renameTo(finalFile)) {
                         logger.info("*** GA AI: Population saved - Generation {} ***", generationSnapshot);
@@ -579,7 +577,7 @@ public class GeneticAlgorithmAI {
         if (ioWrapper.isAsyncEnabled()) {
             try {
                 logger.info("*** ASYNC I/O: GeneticAlgorithm loading population using NIO.2 async LOAD path ***");
-                Object data = ioWrapper.loadAIData("GeneticAlgorithm", "ga_models/population.dat");
+                Object data = ioWrapper.loadAIData("GeneticAlgorithm", "ga_population.dat");
                 if (data != null) {
                     logger.info("*** GA AI: Loaded population using async I/O ***");
                     return;
@@ -591,7 +589,7 @@ public class GeneticAlgorithmAI {
         
         // Existing synchronous code - unchanged
         try {
-            File populationFile = new File("ga_models/population.dat");
+            File populationFile = new File("ga_population.dat");
             if (!populationFile.exists()) {
                 initializePopulation();
                 return;
@@ -618,6 +616,7 @@ public class GeneticAlgorithmAI {
         stopTrainingFlag = true;
         isTraining = false;
         savePopulation();
+        saveGenerationData(); // Ensure generation counter is saved
         
         logger.info("*** GA AI: STOP FLAGS SET - Training will stop on next check ***");
     }
@@ -634,15 +633,13 @@ public class GeneticAlgorithmAI {
     public void deleteTrainingData() {
         stopTraining();
         
-        File dir = new File("ga_models");
-        if (dir.exists()) {
-            File[] files = dir.listFiles();
-            if (files != null) {
-                for (File file : files) {
-                    file.delete();
-                }
-            }
-            dir.delete();
+        File populationFile = new File("ga_population.dat");
+        if (populationFile.exists()) {
+            populationFile.delete();
+        }
+        File generationFile = new File("ga_generation.dat");
+        if (generationFile.exists()) {
+            generationFile.delete();
         }
         
         resetTraining();

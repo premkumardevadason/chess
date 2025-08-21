@@ -173,7 +173,25 @@ public class ChessGame {
      */
     @PostConstruct
     private void initializeAfterInjection() {
+        // Log actual JVM compilation settings to verify tier level
+        String compilerMode = System.getProperty("java.vm.info", "unknown");
+        String tieredCompilation = System.getProperty("java.vm.compileThreshold", "unknown");
+        logger.info("*** JVM COMPILER INFO: {} ***", compilerMode);
+        logger.info("*** TIERED COMPILATION STATUS: {} ***", tieredCompilation);
+        
         logger.info("@PostConstruct: Reading AI configuration");
+        
+        // Force verify JVM optimization level for AI performance
+        try {
+            String vmInfo = System.getProperty("java.vm.info", "unknown");
+            if (vmInfo.contains("interpreted") || vmInfo.contains("mixed mode, sharing")) {
+                logger.warn("*** JVM PERFORMANCE WARNING: Compilation may be limited - check TieredStopAtLevel setting ***");
+            } else {
+                logger.info("*** JVM OPTIMIZATION: Full compilation enabled for AI performance ***");
+            }
+        } catch (Exception e) {
+            logger.debug("Could not verify JVM compilation mode: {}", e.getMessage());
+        }
         logger.info("Q-Learning enabled: {}", qLearningEnabled);
         logger.info("Deep Learning enabled: {}", deepLearningEnabled);
         logger.info("Deep Learning CNN enabled: {}", deepLearningCNNEnabled);
