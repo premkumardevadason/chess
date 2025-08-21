@@ -41,6 +41,11 @@ public class AlphaZeroTrainingService {
                 trainingData.addAll(gameData);
                 completedGames++;
                 
+                // CRITICAL FIX: Increment episode counter for each completed game
+                if (neuralNetwork instanceof AlphaZeroNeuralNetwork) {
+                    ((AlphaZeroNeuralNetwork) neuralNetwork).incrementEpisodes(1);
+                }
+                
                 // Train neural network every 10 games or at the end
                 if (completedGames % 10 == 0 || game == games - 1) {
                     neuralNetwork.train(trainingData);
@@ -59,7 +64,11 @@ public class AlphaZeroTrainingService {
             neuralNetwork.train(trainingData);
         }
         
-        logger.info("*** AlphaZero Training: Completed {} games ***", completedGames);
+        // CRITICAL FIX: Save neural network after training to persist episode count
+        neuralNetwork.saveModel();
+        
+        logger.info("*** AlphaZero Training: Completed {} games, Total episodes: {} ***", 
+            completedGames, neuralNetwork.getTrainingEpisodes());
     }
     
     public void requestStop() {
