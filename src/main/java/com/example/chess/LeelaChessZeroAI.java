@@ -114,7 +114,7 @@ public class LeelaChessZeroAI {
         int[] move = mcts.selectBestMove(board, validMoves);
         
         long totalTime = System.currentTimeMillis() - startTime;
-        logger.debug("*** LeelaZero: Completed in {}ms ({:.1f}s) ***", totalTime, totalTime/1000.0);
+        logger.debug("*** LeelaZero: Completed in {}ms ({}s) ***", totalTime, String.format("%.1f", totalTime/1000.0));
         
         return move;
     }

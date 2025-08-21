@@ -3703,7 +3703,7 @@ public class ChessGame {
             
             String piece = board[move[0]][move[1]];
             String aiName = (i < aiNames.size()) ? aiNames.get(i) : "AI-" + i;
-            logger.debug("  {}: {} [{},{}] to [{},{}] - Score: {:.1f}", aiName, piece, move[0], move[1], move[2], move[3], score);
+            logger.debug("  {}: {} [{},{}] to [{},{}] - Score: {}", aiName, piece, move[0], move[1], move[2], move[3], String.format("%.1f", score));
             
             if (score > bestScore || (score == bestScore && random.nextBoolean())) {
                 bestScore = score;

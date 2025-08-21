@@ -7,6 +7,7 @@ import java.nio.channels.CompletionHandler;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -25,6 +26,7 @@ public class AsyncTrainingDataManager {
     private final AICompletionTracker aiTracker;
     private final Map<String, AsynchronousFileChannel> channels = new ConcurrentHashMap<>();
     private final Map<String, AtomicBoolean> dirtyFlags = new ConcurrentHashMap<>();
+    private final Map<String, Object> dataCache = new ConcurrentHashMap<>();
     private final Map<String, Long> lastSaveTime = new ConcurrentHashMap<>();
     private final Map<String, Integer> lastSaveHash = new ConcurrentHashMap<>();
     // CRITICAL FIX: File-level locks to prevent race conditions
@@ -73,6 +75,10 @@ public class AsyncTrainingDataManager {
     }
     
     public CompletableFuture<Void> saveAIData(String aiName, Object data, String filename) {
+        // Cache the data for potential flush during shutdown
+        dataCache.put(filename, data);
+        markDirty(filename);
+        
         return coordinator.executeAsyncIO(aiName, () -> {
             aiTracker.markAIActive(aiName);
             try {
@@ -356,11 +362,42 @@ public class AsyncTrainingDataManager {
     
     private CompletableFuture<Void> saveAllDirtyData() {
         return CompletableFuture.runAsync(() -> {
+            int dirtyCount = (int) dirtyFlags.entrySet().stream().mapToLong(e -> e.getValue().get() ? 1 : 0).sum();
+            logger.info("*** ASYNC I/O: Saving all dirty data - {} files marked dirty ***", dirtyCount);
+            
+            if (dirtyCount == 0) {
+                logger.info("*** ASYNC I/O: No dirty data to save ***");
+                return;
+            }
+            
+            java.util.List<CompletableFuture<Void>> saveTasks = new java.util.ArrayList<>();
+            
             dirtyFlags.entrySet().parallelStream()
                 .filter(entry -> entry.getValue().get())
                 .forEach(entry -> {
-                    // Save dirty files
+                    String filename = entry.getKey();
+                    Object cachedData = dataCache.get(filename);
+                    
+                    if (cachedData != null) {
+                        logger.info("*** ASYNC I/O: Flushing dirty file: {} ***", filename);
+                        CompletableFuture<Void> task = writeDataAsync(filename, cachedData)
+                            .thenRun(() -> {
+                                entry.getValue().set(false);
+                                // Clear cache after successful save to prevent memory leaks
+                                dataCache.remove(filename);
+                            });
+                        synchronized(saveTasks) {
+                            saveTasks.add(task);
+                        }
+                    } else {
+                        logger.warn("*** ASYNC I/O: No cached data for dirty file: {} - marking clean ***", filename);
+                        entry.getValue().set(false);
+                    }
                 });
+            
+            // Wait for all saves to complete
+            CompletableFuture.allOf(saveTasks.toArray(new CompletableFuture[0])).join();
+            logger.info("*** ASYNC I/O: All dirty data flushed successfully ***");
         }, ioExecutor);
     }
     
