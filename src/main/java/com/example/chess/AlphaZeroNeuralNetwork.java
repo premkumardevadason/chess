@@ -23,6 +23,7 @@ public class AlphaZeroNeuralNetwork implements AlphaZeroInterfaces.NeuralNetwork
     private Map<String, AlphaZeroInterfaces.PolicyValue> positionCache = new ConcurrentHashMap<>();
     private Map<String, Double> residualCache = new ConcurrentHashMap<>(); // ResNet residual connections
     private int trainingIterations = 0;
+    private int trainingEpisodes = 0; // CRITICAL FIX: Track actual episodes (self-play games)
     private boolean isTraining = false;
     private final int resNetBlocks = 8; // Simulate 8 ResNet blocks
     
@@ -547,7 +548,7 @@ public class AlphaZeroNeuralNetwork implements AlphaZeroInterfaces.NeuralNetwork
     }
     
     public String getStatus() {
-        return "Iterations: " + trainingIterations + ", Cache size: " + positionCache.size() + 
+        return "Iterations: " + trainingIterations + ", Episodes: " + trainingEpisodes + ", Cache size: " + positionCache.size() + 
             ", Residual cache: " + residualCache.size() + ", ResNet blocks: " + resNetBlocks +
             ", Training: " + (isTraining ? "Yes" : "No");
     }
@@ -557,7 +558,12 @@ public class AlphaZeroNeuralNetwork implements AlphaZeroInterfaces.NeuralNetwork
     }
     
     public int getTrainingEpisodes() {
-        return trainingIterations;
+        return trainingEpisodes; // CRITICAL FIX: Return actual episodes, not iterations
+    }
+    
+    public void incrementEpisodes(int episodes) {
+        trainingEpisodes += episodes;
+        logger.debug("*** AlphaZero NN: Episodes incremented by {} to total {} ***", episodes, trainingEpisodes);
     }
     
     public void saveModel() {
@@ -590,11 +596,22 @@ public class AlphaZeroNeuralNetwork implements AlphaZeroInterfaces.NeuralNetwork
                     }
                     
                     trainingIterations = ois.readInt();
-                    logger.info("*** AlphaZero NN: Loaded {} positions, {} residuals, {} iterations ***", 
-                        positionCache.size(), residualCache.size(), trainingIterations);
                     
-                    if (trainingIterations > 0) {
-                        logger.info("*** AlphaZero: Successfully loaded existing training state - {} episodes ***", trainingIterations);
+                    // CRITICAL FIX: Load episode count (with backward compatibility)
+                    try {
+                        trainingEpisodes = ois.readInt();
+                    } catch (Exception e) {
+                        // Backward compatibility - estimate episodes from iterations
+                        trainingEpisodes = trainingIterations * 10; // Rough estimate
+                        logger.info("*** AlphaZero NN: Estimated {} episodes from {} iterations (backward compatibility) ***", 
+                            trainingEpisodes, trainingIterations);
+                    }
+                    
+                    logger.info("*** AlphaZero NN: Loaded {} positions, {} residuals, {} iterations, {} episodes ***", 
+                        positionCache.size(), residualCache.size(), trainingIterations, trainingEpisodes);
+                    
+                    if (trainingEpisodes > 0) {
+                        logger.info("*** AlphaZero: Successfully loaded existing training state - {} episodes ***", trainingEpisodes);
                     }
                 }
             }
@@ -610,8 +627,9 @@ public class AlphaZeroNeuralNetwork implements AlphaZeroInterfaces.NeuralNetwork
                 oos.writeObject(positionCache);
                 oos.writeObject(residualCache);
                 oos.writeInt(trainingIterations);
-                logger.info("AlphaZero: Enhanced neural network saved ({} positions, {} residuals)", 
-                    positionCache.size(), residualCache.size());
+                oos.writeInt(trainingEpisodes); // CRITICAL FIX: Save episode count
+                logger.info("AlphaZero: Enhanced neural network saved ({} positions, {} residuals, {} episodes)", 
+                    positionCache.size(), residualCache.size(), trainingEpisodes);
             }
         } catch (Exception e) {
             logger.error("*** AlphaZero NN: Failed to save model data: {} ***", e.getMessage());
