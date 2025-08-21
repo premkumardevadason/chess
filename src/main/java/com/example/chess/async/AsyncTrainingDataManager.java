@@ -218,9 +218,6 @@ public class AsyncTrainingDataManager {
         }, ioExecutor);
     }
     
-    // CRITICAL FIX: File-level synchronization to prevent race conditions
-    private final Map<String, Object> fileLocks = new ConcurrentHashMap<>();
-    
     private void saveSerializableObject(String filename, Object data) {
         // CRITICAL FIX: Synchronized per-file to prevent concurrent saves to same file
         Object fileLock = fileLocks.computeIfAbsent(filename, k -> new Object());
