@@ -33,6 +33,14 @@ public class AlphaZeroMCTS implements AlphaZeroInterfaces.MCTSEngine {
         if (validMoves.isEmpty()) return null;
         if (validMoves.size() == 1) return validMoves.get(0);
         
+        // CRITICAL DEBUG: Log the pieces that validMoves contains
+        logger.info("*** AlphaZero DEBUG: Received {} validMoves from ChessGame ***", validMoves.size());
+        for (int i = 0; i < Math.min(5, validMoves.size()); i++) {
+            int[] move = validMoves.get(i);
+            String piece = board[move[0]][move[1]];
+            logger.info("*** AlphaZero DEBUG: Move {}: {} [{},{}] → [{},{}] ***", i, piece, move[0], move[1], move[2], move[3]);
+        }
+        
         // CRITICAL FIX: ChessGame already filters to BLACK pieces, don't filter again
         // The validMoves list already contains only BLACK piece moves
         List<int[]> blackMoves = validMoves; // Use the pre-filtered list directly
@@ -85,13 +93,19 @@ public class AlphaZeroMCTS implements AlphaZeroInterfaces.MCTSEngine {
             totalCompletedSimulations, simulations, totalTime);
         
         if (bestChild != null) {
-            logger.debug("*** AlphaZero: Selected move [{},{}]→[{},{}] with {} visits, value: {}, prior: {} ***", 
-                bestChild.move[0], bestChild.move[1], bestChild.move[2], bestChild.move[3],
+            String piece = board[bestChild.move[0]][bestChild.move[1]];
+            logger.info("*** AlphaZero FINAL: Selected {} [{},{}]→[{},{}] with {} visits, value: {}, prior: {} ***", 
+                piece, bestChild.move[0], bestChild.move[1], bestChild.move[2], bestChild.move[3],
                 bestChild.visits, bestChild.visits > 0 ? bestChild.totalValue / bestChild.visits : 0.0, 
                 bestChild.priorProbability);
         }
         
-        return bestChild != null ? bestChild.move : blackMoves.get(0);
+        int[] finalMove = bestChild != null ? bestChild.move : blackMoves.get(0);
+        if (finalMove != null) {
+            String finalPiece = board[finalMove[0]][finalMove[1]];
+            logger.info("*** AlphaZero RETURNING: {} [{},{}]→[{},{}] ***", finalPiece, finalMove[0], finalMove[1], finalMove[2], finalMove[3]);
+        }
+        return finalMove;
     }
     
     private int runSimulationBatch(AlphaZeroNode root, int batchSimulations, int batchId) {
@@ -357,6 +371,7 @@ public class AlphaZeroMCTS implements AlphaZeroInterfaces.MCTSEngine {
         }
         return copy;
     }
+
     
     // Enhanced AlphaZero MCTS Node with thread safety
     private static class AlphaZeroNode {

@@ -727,6 +727,11 @@ public class ChessTacticalDefense {
     public static boolean isCriticalDefensiveMove(String[][] board, int[] move, String aiName) {
         if (move == null) return false;
         
+        // IMPORTANT: Don't block translated moves - they preserve strategic value
+        // Only check if the actual piece on the board is defending against checkmate
+        String piece = board[move[0]][move[1]];
+        if (piece.isEmpty()) return false; // Translated move might reference empty square
+        
         // Check if moving this piece would remove critical defense against checkmate
         return isPieceDefendingAgainstCheckmate(board, move[0], move[1]);
     }

@@ -1835,10 +1835,19 @@ public class ChessGame {
             return null;
         }
         
-        // VALIDATION 3: Must be Black piece (AI plays Black)
+        // VALIDATION 3: Must be Black piece OR translate WHITE move to BLACK
         if (!"♚♛♜♝♞♟".contains(piece)) {
-            logger.info(aiName + " move REJECTED: Not a Black piece");
-            return null;
+            logger.info("{} suggested WHITE piece {} - translating to BLACK perspective", aiName, piece);
+            int[] translatedMove = AIMoveTranslator.translateWhiteMoveToBlack(move, board, getAllValidMoves(false));
+            if (translatedMove != null) {
+                String translatedPiece = board[translatedMove[0]][translatedMove[1]];
+                logger.info("{} TRANSLATED: {} [{},{}] → [{},{}]", aiName, translatedPiece, 
+                    translatedMove[0], translatedMove[1], translatedMove[2], translatedMove[3]);
+                return validateAIMove(translatedMove, aiName); // Recursively validate translated move
+            } else {
+                logger.info(aiName + " move REJECTED: Translation failed");
+                return null;
+            }
         }
         
         // VALIDATION 4: MANDATORY - Legal chess move (doesn't expose King to check)

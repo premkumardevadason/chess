@@ -10,25 +10,42 @@ public class CheckTrainingScenarios {
     
     /**
      * Generate training positions where pieces can capture attacking pieces
+     * Creates scenarios for both WHITE and BLACK perspectives
      */
     public static List<TrainingScenario> generateCaptureAttackerScenarios() {
         List<TrainingScenario> scenarios = new ArrayList<>();
         
-        // Scenario 1: Queen can capture attacking pawn
+        // BLACK perspective: Queen captures attacking pawn
         String[][] board1 = createEmptyBoard();
         board1[0][4] = "♚"; // Black King
         board1[1][3] = "♙"; // White Pawn giving check
         board1[0][3] = "♛"; // Black Queen can capture
-        scenarios.add(new TrainingScenario(board1, "Queen captures checking pawn", 
-            new int[]{0, 3, 1, 3}, 500.0));
+        scenarios.add(new TrainingScenario(board1, "BLACK: Queen captures checking pawn", 
+            new int[]{0, 3, 1, 3}, 500.0, false));
         
-        // Scenario 2: Bishop can capture attacking piece
+        // WHITE perspective: Queen captures attacking pawn (flipped)
+        String[][] board1w = createEmptyBoard();
+        board1w[7][4] = "♔"; // White King
+        board1w[6][3] = "♟"; // Black Pawn giving check
+        board1w[7][3] = "♕"; // White Queen can capture
+        scenarios.add(new TrainingScenario(board1w, "WHITE: Queen captures checking pawn", 
+            new int[]{7, 3, 6, 3}, 500.0, true));
+        
+        // BLACK perspective: Bishop captures attacking rook
         String[][] board2 = createEmptyBoard();
         board2[0][4] = "♚"; // Black King
         board2[2][2] = "♖"; // White Rook giving check
         board2[1][1] = "♝"; // Black Bishop can capture
-        scenarios.add(new TrainingScenario(board2, "Bishop captures checking rook", 
-            new int[]{1, 1, 2, 2}, 300.0));
+        scenarios.add(new TrainingScenario(board2, "BLACK: Bishop captures checking rook", 
+            new int[]{1, 1, 2, 2}, 300.0, false));
+        
+        // WHITE perspective: Bishop captures attacking rook (flipped)
+        String[][] board2w = createEmptyBoard();
+        board2w[7][4] = "♔"; // White King
+        board2w[5][2] = "♜"; // Black Rook giving check
+        board2w[6][1] = "♗"; // White Bishop can capture
+        scenarios.add(new TrainingScenario(board2w, "WHITE: Bishop captures checking rook", 
+            new int[]{6, 1, 5, 2}, 300.0, true));
         
         return scenarios;
     }
@@ -81,12 +98,19 @@ public class CheckTrainingScenarios {
         public String description;
         public int[] correctMove;
         public double reward;
+        public boolean isWhitePerspective;
         
-        public TrainingScenario(String[][] board, String description, int[] correctMove, double reward) {
+        public TrainingScenario(String[][] board, String description, int[] correctMove, double reward, boolean isWhitePerspective) {
             this.board = board;
             this.description = description;
             this.correctMove = correctMove;
             this.reward = reward;
+            this.isWhitePerspective = isWhitePerspective;
+        }
+        
+        // Backward compatibility constructor
+        public TrainingScenario(String[][] board, String description, int[] correctMove, double reward) {
+            this(board, description, correctMove, reward, false); // Default to BLACK perspective
         }
     }
 }
