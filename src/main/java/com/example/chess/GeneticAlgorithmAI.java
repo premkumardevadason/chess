@@ -1100,8 +1100,8 @@ public class GeneticAlgorithmAI {
     private void initializeCoevolutionPopulations() {
         // Initialize phase-specific populations with copies from main population
         if (population.isEmpty()) {
-            logger.warn("*** GA AI: Main population is empty - cannot initialize coevolution populations ***");
-            return;
+            logger.warn("*** GA AI: Main population is empty - initializing fresh population for coevolution ***");
+            initializePopulation(); // Create fresh population instead of failing
         }
         
         for (Chromosome c : population) {
@@ -1109,6 +1109,9 @@ public class GeneticAlgorithmAI {
             middlegamePopulation.add(c.copy());
             endgamePopulation.add(c.copy());
         }
+        
+        logger.info("*** GA AI: Coevolution populations initialized - Opening: {}, Middlegame: {}, Endgame: {} ***", 
+            openingPopulation.size(), middlegamePopulation.size(), endgamePopulation.size());
     }
     
     // Species class for niching/speciation
