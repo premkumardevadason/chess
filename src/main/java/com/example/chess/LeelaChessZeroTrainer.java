@@ -98,6 +98,13 @@ public class LeelaChessZeroTrainer {
             if (gamesCompleted % 20 == 0 && !stopRequested) {
                 neuralNetwork.saveModel();
                 logger.info("*** LeelaZero Trainer: Model saved at {} games ***", gamesCompleted);
+                
+                // Add 1 second pause after every 20 games
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
             }
             
             // Check stop flag after periodic save

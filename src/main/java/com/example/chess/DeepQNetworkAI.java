@@ -598,7 +598,15 @@ public class DeepQNetworkAI {
                         break;
                     }
                     
-                    // Removed sleep for optimal training speed
+                    // Add 1 second pause after every 10 training steps
+                    if (continuousTrainingSteps % 10 == 0) {
+                        try {
+                            Thread.sleep(1000);
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        }
+                    }
+                    
                 } catch (Exception e) {
                     System.err.println("Rainbow DQN Training error: " + e.getMessage());
                     break;

@@ -104,7 +104,9 @@ public class AlphaZeroTrainer {
             
             if (!batchData.isEmpty()) {
                 neuralNetwork.train(batchData);
-                neuralNetwork.saveModel(); // Save after training
+                synchronized (neuralNetwork) {
+                    neuralNetwork.saveModel(); // Save after training with synchronization
+                }
                 logger.debug("*** AlphaZero: Enhanced training completed with {} examples and saved model ***", batchData.size());
             }
         }
@@ -137,10 +139,19 @@ public class AlphaZeroTrainer {
                     performIncrementalTraining();
                 }
                 
-                // Save neural network every 25 games
+                // Save neural network every 25 games with synchronization
                 if (completed % 25 == 0) {
-                    neuralNetwork.saveModel();
-                    logger.debug("*** AlphaZero: Neural network saved at game {} ***", completed);
+                    synchronized (neuralNetwork) {
+                        neuralNetwork.saveModel();
+                        logger.debug("*** AlphaZero: Neural network saved at game {} ***", completed);
+                    }
+                    
+                    // Add 1 second pause after every 25 games
+                    try {
+                        Thread.sleep(1000);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
                 }
                 
             } catch (Exception e) {

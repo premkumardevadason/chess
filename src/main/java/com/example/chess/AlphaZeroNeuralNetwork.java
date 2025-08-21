@@ -11,6 +11,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import com.example.chess.async.TrainingDataIOWrapper;
+
 
 /**
  * Enhanced AlphaZero neural network with ResNet blocks and position augmentation.
@@ -27,7 +29,11 @@ public class AlphaZeroNeuralNetwork implements AlphaZeroInterfaces.NeuralNetwork
     private boolean isTraining = false;
     private final int resNetBlocks = 8; // Simulate 8 ResNet blocks
     
+    // Phase 3: Async I/O capability (same pattern as LeelaZero)
+    private TrainingDataIOWrapper ioWrapper;
+    
     public AlphaZeroNeuralNetwork(boolean debugEnabled) {
+        this.ioWrapper = new TrainingDataIOWrapper();
         loadModelData();
         logger.debug("*** AlphaZero NN: Initialized with {} cached positions ***", positionCache.size());
     }
@@ -578,12 +584,60 @@ public class AlphaZeroNeuralNetwork implements AlphaZeroInterfaces.NeuralNetwork
     
     private void loadModelData() {
         try {
-            java.io.File file = new java.io.File("alphazero_cache.dat");
-            if (file.exists()) {
-                try (java.io.ObjectInputStream ois = new java.io.ObjectInputStream(
-                        new java.io.FileInputStream(file))) {
+            // Phase 3: Dual-path implementation (same pattern as LeelaZero)
+            if (ioWrapper.isAsyncEnabled()) {
+                logger.info("*** ASYNC I/O: AlphaZero loading cache using NIO.2 async LOAD path ***");
+                Object loadedData = ioWrapper.loadAIData("AlphaZero", "alphazero_cache.dat");
+                
+                if (loadedData instanceof AlphaZeroSaveData) {
+                    // New format - AlphaZeroSaveData wrapper
+                    AlphaZeroSaveData saveData = (AlphaZeroSaveData) loadedData;
+                    positionCache.putAll(saveData.positionCache);
+                    residualCache.putAll(saveData.residualCache);
+                    trainingIterations = saveData.trainingIterations;
+                    trainingEpisodes = saveData.trainingEpisodes;
+                    
+                    logger.info("*** AlphaZero NN: Loaded via async I/O (new format) - {} positions, {} residuals, {} iterations, {} episodes ***", 
+                        positionCache.size(), residualCache.size(), trainingIterations, trainingEpisodes);
+                    return;
+                } else if (loadedData instanceof String) {
+                    // Old format - direct serialization, async loaded as string
+                    logger.info("*** AlphaZero: Detected old format file, falling back to sync for compatibility ***");
+                } else {
+                    logger.warn("*** AlphaZero: Async load failed (unknown format), falling back to sync ***");
+                }
+            }
+            
+            // Fallback to direct I/O for backward compatibility
+            java.io.File datFile = new java.io.File("alphazero_cache.dat");
+            if (datFile.exists()) {
+                loadFromDatFile(datFile);
+            }
+        } catch (Exception e) {
+            logger.error("*** AlphaZero NN: Failed to load model data: {} ***", e.getMessage());
+        }
+    }
+    
+
+    private void loadFromDatFile(java.io.File datFile) {
+        try {
+            try (java.io.ObjectInputStream ois = new java.io.ObjectInputStream(
+                    new java.io.FileInputStream(datFile))) {
+                Object firstObject = ois.readObject();
+                
+                if (firstObject instanceof AlphaZeroSaveData) {
+                    // New format - AlphaZeroSaveData wrapper
+                    AlphaZeroSaveData saveData = (AlphaZeroSaveData) firstObject;
+                    positionCache.putAll(saveData.positionCache);
+                    residualCache.putAll(saveData.residualCache);
+                    trainingIterations = saveData.trainingIterations;
+                    trainingEpisodes = saveData.trainingEpisodes;
+                    logger.info("*** AlphaZero NN: Loaded from DAT (new format) - {} positions, {} residuals, {} iterations, {} episodes ***", 
+                        positionCache.size(), residualCache.size(), trainingIterations, trainingEpisodes);
+                } else if (firstObject instanceof Map) {
+                    // Old format - direct Map serialization
                     @SuppressWarnings("unchecked")
-                    Map<String, AlphaZeroInterfaces.PolicyValue> loaded = (Map<String, AlphaZeroInterfaces.PolicyValue>) ois.readObject();
+                    Map<String, AlphaZeroInterfaces.PolicyValue> loaded = (Map<String, AlphaZeroInterfaces.PolicyValue>) firstObject;
                     positionCache.putAll(loaded);
                     
                     try {
@@ -591,48 +645,78 @@ public class AlphaZeroNeuralNetwork implements AlphaZeroInterfaces.NeuralNetwork
                         Map<String, Double> loadedResiduals = (Map<String, Double>) ois.readObject();
                         residualCache.putAll(loadedResiduals);
                     } catch (Exception e) {
-                        // Backward compatibility - residual cache might not exist in old saves
-                        logger.debug("No residual cache found in save file (backward compatibility)");
+                        logger.debug("No residual cache found in DAT file (backward compatibility)");
                     }
                     
                     trainingIterations = ois.readInt();
                     
-                    // CRITICAL FIX: Load episode count (with backward compatibility)
                     try {
                         trainingEpisodes = ois.readInt();
                     } catch (Exception e) {
-                        // Backward compatibility - estimate episodes from iterations
-                        trainingEpisodes = trainingIterations * 10; // Rough estimate
+                        trainingEpisodes = trainingIterations * 10;
                         logger.info("*** AlphaZero NN: Estimated {} episodes from {} iterations (backward compatibility) ***", 
                             trainingEpisodes, trainingIterations);
                     }
-                    
-                    logger.info("*** AlphaZero NN: Loaded {} positions, {} residuals, {} iterations, {} episodes ***", 
+                    logger.info("*** AlphaZero NN: Loaded from DAT (old format) - {} positions, {} residuals, {} iterations, {} episodes ***", 
                         positionCache.size(), residualCache.size(), trainingIterations, trainingEpisodes);
-                    
-                    if (trainingEpisodes > 0) {
-                        logger.info("*** AlphaZero: Successfully loaded existing training state - {} episodes ***", trainingEpisodes);
-                    }
+                } else {
+                    logger.error("*** AlphaZero NN: Unknown DAT file format: {} ***", firstObject.getClass().getSimpleName());
                 }
             }
         } catch (Exception e) {
-            logger.error("*** AlphaZero NN: Failed to load model data: {} ***", e.getMessage());
+            logger.error("*** AlphaZero NN: Failed to load DAT file: {} ***", e.getMessage());
         }
     }
     
     private void saveModelData() {
         try {
-            try (java.io.ObjectOutputStream oos = new java.io.ObjectOutputStream(
-                    new java.io.FileOutputStream("alphazero_cache.dat"))) {
-                oos.writeObject(positionCache);
-                oos.writeObject(residualCache);
-                oos.writeInt(trainingIterations);
-                oos.writeInt(trainingEpisodes); // CRITICAL FIX: Save episode count
-                logger.info("AlphaZero: Enhanced neural network saved ({} positions, {} residuals, {} episodes)", 
+            // Phase 3: Dual-path implementation (same pattern as LeelaZero)
+            if (ioWrapper.isAsyncEnabled()) {
+                // Create serializable data structure for async I/O
+                AlphaZeroSaveData saveData = new AlphaZeroSaveData(
+                    new ConcurrentHashMap<>(positionCache),
+                    new ConcurrentHashMap<>(residualCache),
+                    trainingIterations,
+                    trainingEpisodes
+                );
+                
+                ioWrapper.saveAIData("AlphaZero", saveData, "alphazero_cache.dat");
+                logger.info("AlphaZero: Enhanced neural network saved via async I/O ({} positions, {} residuals, {} episodes)", 
                     positionCache.size(), residualCache.size(), trainingEpisodes);
+            } else {
+                // Fallback to direct I/O
+                try (java.io.ObjectOutputStream oos = new java.io.ObjectOutputStream(
+                        new java.io.FileOutputStream("alphazero_cache.dat"))) {
+                    AlphaZeroSaveData saveData = new AlphaZeroSaveData(
+                        new ConcurrentHashMap<>(positionCache),
+                        new ConcurrentHashMap<>(residualCache),
+                        trainingIterations,
+                        trainingEpisodes
+                    );
+                    oos.writeObject(saveData);
+                    logger.info("AlphaZero: Enhanced neural network saved via fallback I/O ({} positions, {} residuals, {} episodes)", 
+                        positionCache.size(), residualCache.size(), trainingEpisodes);
+                }
             }
         } catch (Exception e) {
             logger.error("*** AlphaZero NN: Failed to save model data: {} ***", e.getMessage());
+        }
+    }
+    
+    // Serializable data structure for async I/O (same pattern as other AIs)
+    private static class AlphaZeroSaveData implements java.io.Serializable {
+        private static final long serialVersionUID = 1L;
+        public final Map<String, AlphaZeroInterfaces.PolicyValue> positionCache;
+        public final Map<String, Double> residualCache;
+        public final int trainingIterations;
+        public final int trainingEpisodes;
+        
+        public AlphaZeroSaveData(Map<String, AlphaZeroInterfaces.PolicyValue> positions,
+                                Map<String, Double> residuals, int iterations, int episodes) {
+            this.positionCache = positions;
+            this.residualCache = residuals;
+            this.trainingIterations = iterations;
+            this.trainingEpisodes = episodes;
         }
     }
     
