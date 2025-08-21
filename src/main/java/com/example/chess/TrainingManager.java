@@ -142,7 +142,7 @@ public class TrainingManager {
                     // FIXED: Single training session instead of infinite loop
                     if (!stopTrainingRequested && isTrainingActive) {
                         logger.info("*** Q-Learning: Starting single training session ***");
-                        game.getQLearningAI().trainAgainstSelfWithProgress(100);
+                        game.getQLearningAI().trainAgainstSelfWithProgress(1000000);
                         logger.info("*** Q-Learning: Training session completed ***");
                     }
                     logger.info("*** Q-Learning: Training thread stopped - stopRequested={}, isActive={} ***", stopTrainingRequested, isTrainingActive);

@@ -1016,12 +1016,19 @@ public class QLearningAI {
             
             // Q-table should be populated by updateQValue() calls during game
             
-            if (gamesCompleted % 10 == 0) {
+            if (gamesCompleted % 100 == 0) {
                 trainingStatus = "Completed " + gamesCompleted + " games - Q-table: " + qTable.size() + " entries";
                 System.out.println(trainingStatus);
                 // Only save/broadcast if still training
                 if (isTraining) {
-                    CompletableFuture.runAsync(this::saveQTable);
+                    // Fire-and-forget async save with timeout protection
+                    CompletableFuture.runAsync(this::saveQTable)
+                        .orTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
+                        .exceptionally(ex -> {
+                            logger.warn("Q-Learning: Periodic save timeout - continuing training");
+                            return null;
+                        });
+                    
                     if (controller != null) {
                         CompletableFuture.runAsync(() -> {
                             try {
@@ -1030,6 +1037,13 @@ public class QLearningAI {
                                 // Ignore WebSocket errors
                             }
                         });
+                    }
+                    
+                    // Add 1 second pause after every 10 games
+                    try {
+                        Thread.sleep(1000);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
                     }
                 }
             } else {
@@ -1066,7 +1080,14 @@ public class QLearningAI {
             logger.info("Q-Learning training completed with {} Q-table entries", qTable.size());
         }
         
-        saveQTable();
+        // Final save with timeout protection
+        CompletableFuture.runAsync(this::saveQTable)
+            .orTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+            .exceptionally(ex -> {
+                logger.warn("Q-Learning: Final save timeout - training complete anyway");
+                return null;
+            });
+        
         isTraining = false;
         gameplayMode = true; // Re-enable verbose output for gameplay
         trainingStatus = "Training completed - Final Q-table size: " + qTable.size();

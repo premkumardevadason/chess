@@ -362,6 +362,13 @@ public class AlphaFold3AI {
                 saveState();
                 logger.info("*** AlphaFold3: Saved state at episode {} (total: {}) - {} positions, {} trajectories ***", 
                     episode, trainingEpisodes, positionEvaluations.size(), learnedTrajectories.size());
+                
+                // Add 1 second pause after every 10 episodes
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
             }
             
             if (episode % 10 == 0) {

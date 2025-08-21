@@ -266,6 +266,13 @@ public class GeneticAlgorithmAI {
                 // Save progress periodically (check stop flag first)
                 if (gen % 10 == 0 && !stopTrainingFlag && isTraining) {
                     savePopulation();
+                    
+                    // Add 1 second pause after every 10 generations
+                    try {
+                        Thread.sleep(1000);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
                 }
                 
                 // Final stop flag check before next generation

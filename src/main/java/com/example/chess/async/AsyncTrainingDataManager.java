@@ -257,7 +257,7 @@ public class AsyncTrainingDataManager {
                 AsynchronousFileChannel channel = AsynchronousFileChannel.open(filePath, 
                     StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING);
                 
-                // Serialize snapshot to byte array
+                // Serialize snapshot to byte array (compression disabled due to corruption issues)
                 java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
                 try (java.io.ObjectOutputStream oos = new java.io.ObjectOutputStream(baos)) {
                     oos.writeObject(dataSnapshot);
@@ -588,7 +588,7 @@ public class AsyncTrainingDataManager {
             buffer.flip();
             channel.close();
             
-            // Deserialize object
+            // Deserialize object (compression disabled)
             byte[] data = new byte[buffer.remaining()];
             buffer.get(data);
             

@@ -406,6 +406,15 @@ public class DeepLearningAI {
                             saveModel();
                             lastSaveTime = currentTime;
                         });
+                        
+                        // Add 1 second pause after every 10000 iterations
+                        if (trainingIterations % 10000 == 0) {
+                            try {
+                                Thread.sleep(1000);
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                            }
+                        }
                     }
                     
                     // No Thread.sleep - removed for speed

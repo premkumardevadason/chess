@@ -578,6 +578,15 @@ public class DeepLearningCNNAI {
                                 });
                             }
                         }
+                        
+                        // Add 1 second pause after every 5000 iterations
+                        if (trainingIterations % 5000 == 0) {
+                            try {
+                                Thread.sleep(1000);
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                            }
+                        }
                     }
                     
                     // Check stop flag after each batch
