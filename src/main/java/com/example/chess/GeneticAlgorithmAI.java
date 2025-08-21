@@ -523,24 +523,34 @@ public class GeneticAlgorithmAI {
         logger.info("*** GA AI: Initialized random population ***");
     }
     
+    private final Object savePopulationLock = new Object();
+    
     public void savePopulation() {
         // Phase 3: Dual-path implementation
         if (ioWrapper.isAsyncEnabled()) {
             ioWrapper.saveAIData("GeneticAlgorithm", population, "ga_models/population.dat");
         } else {
-            // Existing synchronous code - unchanged
-            Thread.ofVirtual().name("GA-Save").start(() -> {
+            // SYNCHRONIZED: Prevent concurrent saves that corrupt data
+            synchronized (savePopulationLock) {
                 try {
                     File dir = new File("ga_models");
                     if (!dir.exists()) dir.mkdirs();
+                    
+                    // Create snapshot to prevent race conditions during serialization
+                    List<Chromosome> populationSnapshot = new ArrayList<>();
+                    for (Chromosome c : population) {
+                        populationSnapshot.add(c.copy());
+                    }
+                    int generationSnapshot = generation;
+                    double bestFitnessSnapshot = bestFitness;
                     
                     // Save to temporary file first for atomic operation
                     File tempFile = new File(dir, "population.dat.tmp");
                     try (ObjectOutputStream oos = new ObjectOutputStream(
                             new FileOutputStream(tempFile))) {
-                        oos.writeObject(population);
-                        oos.writeInt(generation);
-                        oos.writeDouble(bestFitness);
+                        oos.writeObject(populationSnapshot);
+                        oos.writeInt(generationSnapshot);
+                        oos.writeDouble(bestFitnessSnapshot);
                     }
                     
                     // Save additional generation data
@@ -549,14 +559,16 @@ public class GeneticAlgorithmAI {
                     // Atomic rename
                     File finalFile = new File(dir, "population.dat");
                     if (finalFile.exists()) finalFile.delete();
-                    tempFile.renameTo(finalFile);
-                    
-                    logger.info("*** GA AI: Population saved - Generation {} ***", generation);
+                    if (tempFile.renameTo(finalFile)) {
+                        logger.info("*** GA AI: Population saved - Generation {} ***", generationSnapshot);
+                    } else {
+                        logger.error("*** GA AI: Failed to rename temp file to final file ***");
+                    }
                     
                 } catch (Exception e) {
                     logger.error("*** GA AI: Error saving population - {} ***", e.getMessage());
                 }
-            });
+            }
         }
     }
     
