@@ -20,10 +20,11 @@ public class LeelaChessZeroMCTS {
     private boolean debugEnabled;
     
     // MCTS parameters optimized for chess
-    private static final int SIMULATIONS = 200; // Reduced for faster response
+    private static final int SIMULATIONS = 800; // Increased for better play quality
     private static final double C_PUCT = 1.5; // Exploration constant
     private static final double TACTICAL_BONUS = 0.2; // Bonus for tactical moves
     private static final double ENDGAME_FACTOR = 1.3; // Endgame evaluation multiplier
+    private static final double PIECE_SAFETY_PENALTY = -5.0; // Strong penalty for hanging pieces
     
     private Map<String, MCTSNode> nodeCache = new ConcurrentHashMap<>();
     private volatile boolean simulationsStopped = false;
@@ -170,7 +171,8 @@ public class LeelaChessZeroMCTS {
                 double capturedValue = Math.abs(getPieceValue(captured));
                 double pieceValue = Math.abs(getPieceValue(piece));
                 if (capturedValue < pieceValue * 0.8) {
-                    bonus -= 0.8; // Heavy penalty for hanging valuable pieces
+                    bonus += PIECE_SAFETY_PENALTY; // Strong penalty for hanging valuable pieces
+                    logger.debug("*** LeelaZero MCTS: PIECE SAFETY PENALTY applied - {} hanging {} ***", piece, pieceValue);
                 }
             }
         }
