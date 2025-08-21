@@ -27,6 +27,8 @@ public class AsyncTrainingDataManager {
     private final Map<String, AtomicBoolean> dirtyFlags = new ConcurrentHashMap<>();
     private final Map<String, Long> lastSaveTime = new ConcurrentHashMap<>();
     private final Map<String, Integer> lastSaveHash = new ConcurrentHashMap<>();
+    // CRITICAL FIX: File-level locks to prevent race conditions
+    private final Map<String, Object> fileLocks = new ConcurrentHashMap<>();
     private final ExecutorService ioExecutor = Executors.newFixedThreadPool(11);
     private final AsyncIOMetrics metrics = new AsyncIOMetrics();
     private static final long SAVE_DEBOUNCE_MS = 1000; // 1 second debounce
@@ -112,200 +114,235 @@ public class AsyncTrainingDataManager {
     
     private CompletableFuture<Void> writeDataAsync(String filename, Object data) {
         return CompletableFuture.runAsync(() -> {
+            // CRITICAL FIX: File-level synchronization for all save operations
+            Object fileLock = fileLocks.computeIfAbsent(filename, k -> new Object());
+            
+            synchronized (fileLock) {
+                try {
+                    // Check if training stopped before expensive I/O
+                    if (shouldStopIO()) {
+                        logger.info("*** ASYNC I/O: Operation cancelled - training stopped ***");
+                        return;
+                    }
+                    
+                    // Enhanced deduplication check
+                    long currentTime = System.currentTimeMillis();
+                    int dataHash = data.hashCode();
+                    
+                    Long lastTime = lastSaveTime.get(filename);
+                    Integer lastHash = lastSaveHash.get(filename);
+                    
+                    if (lastTime != null && lastHash != null && 
+                        (currentTime - lastTime) < SAVE_DEBOUNCE_MS && 
+                        dataHash == lastHash) {
+                        // Skip duplicate save
+                        logger.debug("*** ASYNC I/O: Skipping duplicate save for {} (debounced) ***", filename);
+                        return;
+                    }
+                    
+                    // Extra check for DeepLearning4J models - 30 minute debounce
+                    if (filename.endsWith(".zip") && lastTime != null && 
+                        (currentTime - lastTime) < (30 * 60 * 1000)) { // 30 minutes
+                        logger.debug("*** ASYNC I/O: Skipping frequent DeepLearning4J save for {} ({}min ago) ***", 
+                            filename, (currentTime - lastTime) / (60 * 1000));
+                        return;
+                    }
+                    
+                    // Update tracking
+                    lastSaveTime.put(filename, currentTime);
+                    lastSaveHash.put(filename, dataHash);
+                    
+                    // Handle DeepLearning4J models with stream bridge
+                    if (data.getClass().getSimpleName().equals("MultiLayerNetwork") || filename.endsWith(".zip")) {
+                        // Check stop flag before expensive model save
+                        if (shouldStopIO()) {
+                            logger.info("*** ASYNC I/O: DeepLearning4J save cancelled - training stopped ***");
+                            return;
+                        }
+                        saveDeepLearning4JModel(filename, data);
+                        return;
+                    }
+                    
+                    // Handle Java serializable objects (like GeneticAlgorithm population)
+                    if (data instanceof java.io.Serializable && !data.getClass().equals(String.class)) {
+                        // Check stop flag before expensive serialization
+                        if (shouldStopIO()) {
+                            logger.info("*** ASYNC I/O: Serialization save cancelled - training stopped ***");
+                            return;
+                        }
+                        saveSerializableObject(filename, data);
+                        return;
+                    }
+                    
+                    // Create parent directories if needed
+                    Path filePath = Paths.get(filename);
+                    if (filePath.getParent() != null) {
+                        java.nio.file.Files.createDirectories(filePath.getParent());
+                    }
+                    
+                    AsynchronousFileChannel channel = getOrCreateChannel(filename, 
+                        StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING);
+                    
+                    ByteBuffer buffer = ByteBuffer.wrap(data.toString().getBytes());
+                    
+                    CompletableFuture<Integer> writeFuture = new CompletableFuture<>();
+                    channel.write(buffer, 0, null, new CompletionHandler<Integer, Void>() {
+                        @Override
+                        public void completed(Integer result, Void attachment) {
+                            dirtyFlags.computeIfAbsent(filename, k -> new AtomicBoolean()).set(false);
+                            String aiName = filename.replace(".dat", "");
+                            logger.info("*** ASYNC I/O: {} saved using NIO.2 AsynchronousFileChannel ({} bytes) - RACE CONDITION PROTECTED ***", aiName, result);
+                            writeFuture.complete(result);
+                        }
+                        
+                        @Override
+                        public void failed(Throwable exc, Void attachment) {
+                            String aiName = filename.replace(".dat", "");
+                            logger.error("*** ASYNC I/O: {} save FAILED using NIO.2 - {} ***", aiName, exc.getMessage());
+                            writeFuture.completeExceptionally(exc);
+                        }
+                    });
+                    
+                    long startTime = System.currentTimeMillis();
+                    writeFuture.join();
+                    long duration = System.currentTimeMillis() - startTime;
+                    
+                    String aiName = filename.replace(".dat", "");
+                    metrics.recordSaveTime(aiName, duration);
+                } catch (Exception e) {
+                    String aiName = filename.replace(".dat", "");
+                    metrics.recordError(aiName);
+                    throw new RuntimeException(e);
+                }
+            }
+        }, ioExecutor);
+    }
+    
+    // CRITICAL FIX: File-level synchronization to prevent race conditions
+    private final Map<String, Object> fileLocks = new ConcurrentHashMap<>();
+    
+    private void saveSerializableObject(String filename, Object data) {
+        // CRITICAL FIX: Synchronized per-file to prevent concurrent saves to same file
+        Object fileLock = fileLocks.computeIfAbsent(filename, k -> new Object());
+        
+        synchronized (fileLock) {
             try {
-                // Check if training stopped before expensive I/O
-                if (shouldStopIO()) {
-                    logger.info("*** ASYNC I/O: Operation cancelled - training stopped ***");
-                    return;
-                }
-                
-                // Enhanced deduplication check
-                long currentTime = System.currentTimeMillis();
-                int dataHash = data.hashCode();
-                
-                Long lastTime = lastSaveTime.get(filename);
-                Integer lastHash = lastSaveHash.get(filename);
-                
-                if (lastTime != null && lastHash != null && 
-                    (currentTime - lastTime) < SAVE_DEBOUNCE_MS && 
-                    dataHash == lastHash) {
-                    // Skip duplicate save
-                    logger.debug("*** ASYNC I/O: Skipping duplicate save for {} (debounced) ***", filename);
-                    return;
-                }
-                
-                // Extra check for DeepLearning4J models - 30 minute debounce
-                if (filename.endsWith(".zip") && lastTime != null && 
-                    (currentTime - lastTime) < (30 * 60 * 1000)) { // 30 minutes
-                    logger.debug("*** ASYNC I/O: Skipping frequent DeepLearning4J save for {} ({}min ago) ***", 
-                        filename, (currentTime - lastTime) / (60 * 1000));
-                    return;
-                }
-                
-                // Update tracking
-                lastSaveTime.put(filename, currentTime);
-                lastSaveHash.put(filename, dataHash);
-                
-                // Handle DeepLearning4J models with stream bridge
-                if (data.getClass().getSimpleName().equals("MultiLayerNetwork") || filename.endsWith(".zip")) {
-                    // Check stop flag before expensive model save
-                    if (shouldStopIO()) {
-                        logger.info("*** ASYNC I/O: DeepLearning4J save cancelled - training stopped ***");
-                        return;
-                    }
-                    saveDeepLearning4JModel(filename, data);
-                    return;
-                }
-                
-                // Handle Java serializable objects (like GeneticAlgorithm population)
-                if (data instanceof java.io.Serializable && !data.getClass().equals(String.class)) {
-                    // Check stop flag before expensive serialization
-                    if (shouldStopIO()) {
-                        logger.info("*** ASYNC I/O: Serialization save cancelled - training stopped ***");
-                        return;
-                    }
-                    saveSerializableObject(filename, data);
-                    return;
-                }
-                
-                // Create parent directories if needed
                 Path filePath = Paths.get(filename);
+                
+                // Create parent directories
                 if (filePath.getParent() != null) {
                     java.nio.file.Files.createDirectories(filePath.getParent());
                 }
                 
-                AsynchronousFileChannel channel = getOrCreateChannel(filename, 
+                // CRITICAL FIX: Create snapshot of data before serialization to prevent corruption
+                Object dataSnapshot;
+                if (data instanceof java.util.Map) {
+                    // For maps (like Q-Learning tables), create defensive copy
+                    @SuppressWarnings("unchecked")
+                    java.util.Map<String, Object> originalMap = (java.util.Map<String, Object>) data;
+                    dataSnapshot = new java.util.concurrent.ConcurrentHashMap<>(originalMap);
+                } else if (data instanceof java.util.List) {
+                    // For lists (like GA populations), create defensive copy
+                    @SuppressWarnings("unchecked")
+                    java.util.List<Object> originalList = (java.util.List<Object>) data;
+                    dataSnapshot = new java.util.ArrayList<>(originalList);
+                } else {
+                    // For other objects, use as-is (assuming immutable or thread-safe)
+                    dataSnapshot = data;
+                }
+                
+                AsynchronousFileChannel channel = AsynchronousFileChannel.open(filePath, 
                     StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING);
                 
-                ByteBuffer buffer = ByteBuffer.wrap(data.toString().getBytes());
+                // Serialize snapshot to byte array
+                java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+                try (java.io.ObjectOutputStream oos = new java.io.ObjectOutputStream(baos)) {
+                    oos.writeObject(dataSnapshot);
+                }
+                byte[] serializedData = baos.toByteArray();
                 
+                // Write to channel
+                ByteBuffer buffer = ByteBuffer.wrap(serializedData);
                 CompletableFuture<Integer> writeFuture = new CompletableFuture<>();
+                
                 channel.write(buffer, 0, null, new CompletionHandler<Integer, Void>() {
                     @Override
                     public void completed(Integer result, Void attachment) {
-                        dirtyFlags.computeIfAbsent(filename, k -> new AtomicBoolean()).set(false);
-                        String aiName = filename.replace(".dat", "");
-                        logger.info("*** ASYNC I/O: {} saved using NIO.2 AsynchronousFileChannel ({} bytes) ***", aiName, result);
-                        writeFuture.complete(result);
+                        try {
+                            channel.close();
+                            String aiName = filename.replace(".dat", "").replace("ga_models/", "");
+                            logger.info("*** ASYNC I/O: {} saved using NIO.2 AsynchronousFileChannel ({} bytes) - RACE CONDITION PROTECTED ***", aiName, result);
+                            writeFuture.complete(result);
+                        } catch (Exception e) {
+                            writeFuture.completeExceptionally(e);
+                        }
                     }
                     
                     @Override
                     public void failed(Throwable exc, Void attachment) {
-                        String aiName = filename.replace(".dat", "");
+                        try {
+                            channel.close();
+                        } catch (Exception e) {}
+                        String aiName = filename.replace(".dat", "").replace("ga_models/", "");
                         logger.error("*** ASYNC I/O: {} save FAILED using NIO.2 - {} ***", aiName, exc.getMessage());
                         writeFuture.completeExceptionally(exc);
                     }
                 });
                 
-                long startTime = System.currentTimeMillis();
                 writeFuture.join();
-                long duration = System.currentTimeMillis() - startTime;
                 
-                String aiName = filename.replace(".dat", "");
-                metrics.recordSaveTime(aiName, duration);
             } catch (Exception e) {
-                String aiName = filename.replace(".dat", "");
-                metrics.recordError(aiName);
-                throw new RuntimeException(e);
+                String aiName = filename.replace(".dat", "").replace("ga_models/", "");
+                logger.error("*** ASYNC I/O: {} save FAILED - {} ***", aiName, e.getMessage());
+                throw new RuntimeException("Serializable object save failed", e);
             }
-        }, ioExecutor);
-    }
-    
-    private void saveSerializableObject(String filename, Object data) {
-        try {
-            Path filePath = Paths.get(filename);
-            
-            // Create parent directories
-            if (filePath.getParent() != null) {
-                java.nio.file.Files.createDirectories(filePath.getParent());
-            }
-            
-            AsynchronousFileChannel channel = AsynchronousFileChannel.open(filePath, 
-                StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING);
-            
-            // Serialize object to byte array
-            java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
-            try (java.io.ObjectOutputStream oos = new java.io.ObjectOutputStream(baos)) {
-                oos.writeObject(data);
-            }
-            byte[] serializedData = baos.toByteArray();
-            
-            // Write to channel
-            ByteBuffer buffer = ByteBuffer.wrap(serializedData);
-            CompletableFuture<Integer> writeFuture = new CompletableFuture<>();
-            
-            channel.write(buffer, 0, null, new CompletionHandler<Integer, Void>() {
-                @Override
-                public void completed(Integer result, Void attachment) {
-                    try {
-                        channel.close();
-                        String aiName = filename.replace(".dat", "").replace("ga_models/", "");
-                        logger.info("*** ASYNC I/O: {} saved using NIO.2 AsynchronousFileChannel ({} bytes) ***", aiName, result);
-                        writeFuture.complete(result);
-                    } catch (Exception e) {
-                        writeFuture.completeExceptionally(e);
-                    }
-                }
-                
-                @Override
-                public void failed(Throwable exc, Void attachment) {
-                    try {
-                        channel.close();
-                    } catch (Exception e) {}
-                    String aiName = filename.replace(".dat", "").replace("ga_models/", "");
-                    logger.error("*** ASYNC I/O: {} save FAILED using NIO.2 - {} ***", aiName, exc.getMessage());
-                    writeFuture.completeExceptionally(exc);
-                }
-            });
-            
-            writeFuture.join();
-            
-        } catch (Exception e) {
-            String aiName = filename.replace(".dat", "").replace("ga_models/", "");
-            logger.error("*** ASYNC I/O: {} save FAILED - {} ***", aiName, e.getMessage());
-            throw new RuntimeException("Serializable object save failed", e);
         }
     }
     
     private void saveDeepLearning4JModel(String filename, Object model) {
-        try {
-            Path filePath = Paths.get(filename);
-            AsynchronousFileChannel channel = AsynchronousFileChannel.open(filePath, 
-                StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING);
-            
-            // Create OutputStream bridge from AsynchronousFileChannel
-            java.io.OutputStream channelStream = new java.io.OutputStream() {
-                private long position = 0;
+        // CRITICAL FIX: File-level synchronization for DeepLearning4J models
+        Object fileLock = fileLocks.computeIfAbsent(filename, k -> new Object());
+        
+        synchronized (fileLock) {
+            try {
+                Path filePath = Paths.get(filename);
+                AsynchronousFileChannel channel = AsynchronousFileChannel.open(filePath, 
+                    StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING);
                 
-                @Override
-                public void write(int b) throws java.io.IOException {
-                    write(new byte[]{(byte) b});
-                }
-                
-                @Override
-                public void write(byte[] b, int off, int len) throws java.io.IOException {
-                    ByteBuffer buffer = ByteBuffer.wrap(b, off, len);
-                    try {
-                        channel.write(buffer, position).get();
-                        position += len;
-                    } catch (Exception e) {
-                        throw new java.io.IOException("NIO.2 write failed", e);
+                // Create OutputStream bridge from AsynchronousFileChannel
+                java.io.OutputStream channelStream = new java.io.OutputStream() {
+                    private long position = 0;
+                    
+                    @Override
+                    public void write(int b) throws java.io.IOException {
+                        write(new byte[]{(byte) b});
                     }
-                }
-            };
-            
-            // Use DeepLearning4J ModelSerializer with OutputStream
-            Class<?> modelSerializerClass = Class.forName("org.deeplearning4j.util.ModelSerializer");
-            java.lang.reflect.Method writeMethod = modelSerializerClass.getMethod(
-                "writeModel", Class.forName("org.deeplearning4j.nn.api.Model"), java.io.OutputStream.class, boolean.class);
-            writeMethod.invoke(null, model, channelStream, true);
-            
-            channel.close();
-            logger.info("*** ASYNC I/O: DeepLearning4J model saved using NIO.2 stream bridge ***");
-            
-        } catch (Exception e) {
-            logger.error("*** ASYNC I/O: DeepLearning4J model save FAILED - {} ***", e.getMessage());
-            throw new RuntimeException("DeepLearning4J stream bridge save failed", e);
+                    
+                    @Override
+                    public void write(byte[] b, int off, int len) throws java.io.IOException {
+                        ByteBuffer buffer = ByteBuffer.wrap(b, off, len);
+                        try {
+                            channel.write(buffer, position).get();
+                            position += len;
+                        } catch (Exception e) {
+                            throw new java.io.IOException("NIO.2 write failed", e);
+                        }
+                    }
+                };
+                
+                // Use DeepLearning4J ModelSerializer with OutputStream
+                Class<?> modelSerializerClass = Class.forName("org.deeplearning4j.util.ModelSerializer");
+                java.lang.reflect.Method writeMethod = modelSerializerClass.getMethod(
+                    "writeModel", Class.forName("org.deeplearning4j.nn.api.Model"), java.io.OutputStream.class, boolean.class);
+                writeMethod.invoke(null, model, channelStream, true);
+                
+                channel.close();
+                logger.info("*** ASYNC I/O: DeepLearning4J model saved using NIO.2 stream bridge - RACE CONDITION PROTECTED ***");
+                
+            } catch (Exception e) {
+                logger.error("*** ASYNC I/O: DeepLearning4J model save FAILED - {} ***", e.getMessage());
+                throw new RuntimeException("DeepLearning4J stream bridge save failed", e);
+            }
         }
     }
     
