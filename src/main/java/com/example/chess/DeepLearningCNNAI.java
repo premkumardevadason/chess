@@ -222,8 +222,8 @@ public class DeepLearningCNNAI {
                 // Verify recent data quality
                 TrainingData lastEntry = trainingData.stream().reduce((first, second) -> second).orElse(null);
                 if (lastEntry != null) {
-                    logger.debug("CNN AI: Last training entry - Result: {:.3f}, Timestamp: {}", 
-                        lastEntry.result(), new java.util.Date(lastEntry.timestamp()));
+                    logger.debug("CNN AI: Last training entry - Result: {}, Timestamp: {}", 
+                        String.format("%.3f", lastEntry.result()), new java.util.Date(lastEntry.timestamp()));
                 }
             }
             

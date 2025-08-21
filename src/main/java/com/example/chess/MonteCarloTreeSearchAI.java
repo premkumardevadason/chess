@@ -112,6 +112,7 @@ public class MonteCarloTreeSearchAI {
     private boolean debugEnabled;
     private int simulationsPerMove = 50; // Further reduced for faster response
     private double explorationConstant = Math.sqrt(2);
+    private final ChessLegalMoveAdapter moveAdapter;
     
     // RAVE parameters
     private double raveConstant = 300.0; // RAVE bias parameter
@@ -145,6 +146,7 @@ public class MonteCarloTreeSearchAI {
     public MonteCarloTreeSearchAI(boolean debugEnabled) {
         this.debugEnabled = debugEnabled;
         this.openingBook = new LeelaChessZeroOpeningBook(debugEnabled);
+        this.moveAdapter = new ChessLegalMoveAdapter();
         logger.info("MCTS: Initialized with {} simulations per move and Lc0 opening book", simulationsPerMove);
     }
     
@@ -316,11 +318,11 @@ public class MonteCarloTreeSearchAI {
         }
         
         long totalTime = System.currentTimeMillis() - startTime;
-        logger.debug("*** MCTS: Completed in {}ms ({:.1f}s) ***", totalTime, totalTime/1000.0);
+        logger.debug("*** MCTS: Completed in {}ms ({}s) ***", totalTime, String.format("%.1f", totalTime/1000.0));
         
         if (bestChild != null) {
-            logger.debug("*** MCTS: SELECTED MOVE - {} visits, win rate: {:.1f}% ***", 
-                bestChild.visits, (bestChild.wins / bestChild.visits) * 100);
+            logger.debug("*** MCTS: SELECTED MOVE - {} visits, win rate: {}% ***", 
+                bestChild.visits, String.format("%.1f", (bestChild.wins / bestChild.visits) * 100));
             
             // Store tree for next move reuse (only if tree reuse is enabled)
             if (enableTreeReuse) {
@@ -430,7 +432,7 @@ public class MonteCarloTreeSearchAI {
         
         // Initialize unexplored moves on first expansion
         if (node.unexploredMoves.isEmpty()) {
-            List<int[]> possibleMoves = getAllValidMoves(node.board, node.isWhiteTurn);
+            List<int[]> possibleMoves = moveAdapter.getAllLegalMoves(node.board, node.isWhiteTurn);
             if (possibleMoves.isEmpty()) return node;
             
             // Sort moves by chess domain knowledge
@@ -502,7 +504,7 @@ public class MonteCarloTreeSearchAI {
         int maxMoves = 50; // Reduced from 100 to prevent long simulations
         
         while (!isTerminal(simulationBoard) && moveCount < maxMoves) {
-            List<int[]> moves = getAllValidMoves(simulationBoard, currentTurn);
+            List<int[]> moves = moveAdapter.getAllLegalMoves(simulationBoard, currentTurn);
             if (moves.isEmpty()) {
                 break; // No moves available
             }
@@ -617,12 +619,7 @@ public class MonteCarloTreeSearchAI {
         return false;
     }
     
-    private List<int[]> getAllValidMoves(String[][] board, boolean isWhite) {
-        // AI vs User: Use ChessGame's ChessRuleValidator
-        // AI vs AI Training: Use VirtualChessBoard's ChessRuleValidator
-        VirtualChessBoard virtualBoard = new VirtualChessBoard(board, isWhite);
-        return virtualBoard.getAllValidMoves(isWhite);
-    }
+
     
     private String[][] makeMove(String[][] board, int[] move) {
         return copyBoard(board);

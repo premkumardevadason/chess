@@ -20,6 +20,7 @@ public class LeelaChessZeroTrainer {
     private LeelaChessZeroOpeningBook openingBook;
     private boolean debugEnabled;
     private volatile boolean stopRequested = false;
+    private final ChessLegalMoveAdapter moveAdapter;
     
     // Training parameters
     private static final int GAMES_PER_BATCH = 10;
@@ -39,6 +40,7 @@ public class LeelaChessZeroTrainer {
         this.mcts = mcts;
         this.openingBook = openingBook != null ? openingBook : new LeelaChessZeroOpeningBook(debugEnabled);
         this.debugEnabled = debugEnabled;
+        this.moveAdapter = new ChessLegalMoveAdapter();
         
         logger.info("*** LeelaZero Trainer: Initialized with human-guided training ***");
     }
@@ -135,13 +137,13 @@ public class LeelaChessZeroTrainer {
             logger.info("*** LeelaZero Trainer: Playing training game " + gameNumber + " ***");
         }
         
-        while (moveCount < MAX_GAME_LENGTH && !isGameOver(board) && !stopRequested) {
+        while (moveCount < MAX_GAME_LENGTH && !moveAdapter.isGameOver(board) && !stopRequested) {
             if (stopRequested) {
                 System.out.println("*** LeelaZero Trainer: STOP REQUESTED DURING GAME ***");
                 return;
             }
             
-            List<int[]> validMoves = generateValidMoves(board, isWhiteTurn);
+            List<int[]> validMoves = moveAdapter.getAllLegalMoves(board, isWhiteTurn);
             if (validMoves.isEmpty()) break;
             
             int[] selectedMove;
@@ -283,7 +285,7 @@ public class LeelaChessZeroTrainer {
                 int[] move = algebraicToMove(moveStr);
                 
                 if (move != null) {
-                    List<int[]> validMoves = generateValidMoves(board, isWhiteTurn);
+                    List<int[]> validMoves = moveAdapter.getAllLegalMoves(board, isWhiteTurn);
                     
                     // Create training data from human move
                     float[] input = boardToInput(board, move);
@@ -346,18 +348,7 @@ public class LeelaChessZeroTrainer {
         }
     }
     
-    private boolean isGameOver(String[][] board) {
-        boolean hasWhiteKing = false, hasBlackKing = false;
-        
-        for (int i = 0; i < 8; i++) {
-            for (int j = 0; j < 8; j++) {
-                if (board[i][j].equals("♔")) hasWhiteKing = true;
-                if (board[i][j].equals("♚")) hasBlackKing = true;
-            }
-        }
-        
-        return !hasWhiteKing || !hasBlackKing;
-    }
+
     
     private GameResult evaluateGameResult(String[][] board, boolean isWhiteTurn) {
         boolean hasWhiteKing = false, hasBlackKing = false;
@@ -374,25 +365,7 @@ public class LeelaChessZeroTrainer {
         return GameResult.DRAW;
     }
     
-    private List<int[]> generateValidMoves(String[][] board, boolean isWhiteTurn) {
-        // Simplified - return some basic moves
-        List<int[]> moves = new ArrayList<>();
-        
-        for (int i = 0; i < 8; i++) {
-            for (int j = 0; j < 8; j++) {
-                String piece = board[i][j];
-                if (!piece.isEmpty() && isCorrectColor(piece, isWhiteTurn)) {
-                    // Add some basic moves (simplified)
-                    if (i > 0) moves.add(new int[]{i, j, i-1, j});
-                    if (i < 7) moves.add(new int[]{i, j, i+1, j});
-                    if (j > 0) moves.add(new int[]{i, j, i, j-1});
-                    if (j < 7) moves.add(new int[]{i, j, i, j+1});
-                }
-            }
-        }
-        
-        return moves.subList(0, Math.min(moves.size(), 20)); // Limit for performance
-    }
+
     
     private boolean isCorrectColor(String piece, boolean isWhiteTurn) {
         boolean isWhitePiece = "♔♕♖♗♘♙".contains(piece);

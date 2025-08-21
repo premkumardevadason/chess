@@ -118,6 +118,12 @@ public class AlphaZeroAI {
         if (executorService != null) {
             logger.info("*** AlphaZero: Stopping thread ***");
             executorService.shutdownNow();
+            // Reinitialize executor for next use
+            this.executorService = Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "AlphaZero-Thread");
+                t.setDaemon(true);
+                return t;
+            });
         }
     }
     
@@ -204,8 +210,8 @@ public class AlphaZeroAI {
                 int finalEpisodes = getTrainingEpisodes();
                 
                 logger.info("*** AlphaZero: Training completed successfully ***");
-                logger.info("Training statistics: {} episodes, {:.1f} minutes, {:.1f} episodes/min", 
-                    finalEpisodes, trainingTimeMinutes, finalGames / Math.max(trainingTimeMinutes, 0.1));
+                logger.info("Training statistics: {} episodes, {} minutes, {} episodes/min", 
+                    finalEpisodes, String.format("%.1f", trainingTimeMinutes), String.format("%.1f", finalGames / Math.max(trainingTimeMinutes, 0.1)));
                 
                 // Save neural network after training
                 saveNeuralNetwork();
