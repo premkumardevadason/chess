@@ -45,6 +45,67 @@ public class AsyncTrainingDataManager {
         return coordinator.isShuttingDown();
     }
     
+    private CompletableFuture<Void> writeDataAsyncForShutdown(String filename, Object data) {
+        // Special version for shutdown that never cancels operations
+        return CompletableFuture.runAsync(() -> {
+            Object fileLock = fileLocks.computeIfAbsent(filename, k -> new Object());
+            
+            synchronized (fileLock) {
+                try {
+                    // No stop checks during shutdown - these operations must complete
+                    
+                    // Handle DeepLearning4J models with stream bridge
+                    if (data.getClass().getSimpleName().equals("MultiLayerNetwork") || filename.endsWith(".zip")) {
+                        saveDeepLearning4JModel(filename, data);
+                        return;
+                    }
+                    
+                    // Handle Java serializable objects
+                    if (data instanceof java.io.Serializable && !data.getClass().equals(String.class)) {
+                        saveSerializableObject(filename, data);
+                        return;
+                    }
+                    
+                    // Handle regular data
+                    Path filePath = Paths.get(filename);
+                    if (filePath.getParent() != null) {
+                        java.nio.file.Files.createDirectories(filePath.getParent());
+                    }
+                    
+                    AsynchronousFileChannel channel = getOrCreateChannel(filename, 
+                        StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING);
+                    
+                    ByteBuffer buffer = ByteBuffer.wrap(data.toString().getBytes());
+                    
+                    CompletableFuture<Integer> writeFuture = new CompletableFuture<>();
+                    channel.write(buffer, 0, null, new CompletionHandler<Integer, Void>() {
+                        @Override
+                        public void completed(Integer result, Void attachment) {
+                            dirtyFlags.computeIfAbsent(filename, k -> new AtomicBoolean()).set(false);
+                            String aiName = filename.replace(".dat", "");
+                            logger.info("*** ASYNC I/O: {} saved during shutdown ({} bytes) - CRITICAL SAVE COMPLETED ***", aiName, result);
+                            writeFuture.complete(result);
+                        }
+                        
+                        @Override
+                        public void failed(Throwable exc, Void attachment) {
+                            String aiName = filename.replace(".dat", "");
+                            logger.error("*** ASYNC I/O: {} shutdown save FAILED - {} ***", aiName, exc.getMessage());
+                            writeFuture.completeExceptionally(exc);
+                        }
+                    });
+                    
+                    writeFuture.join();
+                    
+                } catch (Exception e) {
+                    String aiName = filename.replace(".dat", "");
+                    logger.error("*** ASYNC I/O: {} shutdown save FAILED - {} ***", aiName, e.getMessage());
+                    throw new RuntimeException(e);
+                }
+            }
+        }, ioExecutor);
+    }
+    
     public CompletableFuture<Void> startup() {
         return coordinator.executeAtomicFeature(AtomicFeatureCoordinator.AtomicFeature.STARTUP, () -> {
             logger.info("*** ASYNC I/O: NIO.2 AsynchronousFileChannel system STARTUP ***");
@@ -127,7 +188,7 @@ public class AsyncTrainingDataManager {
                 try {
                     // Check if training stopped before expensive I/O
                     if (shouldStopIO()) {
-                        logger.info("*** ASYNC I/O: Operation cancelled - training stopped ***");
+                        logger.info("*** ASYNC I/O: Training operation cancelled - shutdown in progress ***");
                         return;
                     }
                     
@@ -162,7 +223,7 @@ public class AsyncTrainingDataManager {
                     if (data.getClass().getSimpleName().equals("MultiLayerNetwork") || filename.endsWith(".zip")) {
                         // Check stop flag before expensive model save
                         if (shouldStopIO()) {
-                            logger.info("*** ASYNC I/O: DeepLearning4J save cancelled - training stopped ***");
+                            logger.info("*** ASYNC I/O: DeepLearning4J training save cancelled - shutdown in progress ***");
                             return;
                         }
                         saveDeepLearning4JModel(filename, data);
@@ -173,7 +234,7 @@ public class AsyncTrainingDataManager {
                     if (data instanceof java.io.Serializable && !data.getClass().equals(String.class)) {
                         // Check stop flag before expensive serialization
                         if (shouldStopIO()) {
-                            logger.info("*** ASYNC I/O: Serialization save cancelled - training stopped ***");
+                            logger.info("*** ASYNC I/O: Training serialization cancelled - shutdown in progress ***");
                             return;
                         }
                         saveSerializableObject(filename, data);
@@ -380,7 +441,7 @@ public class AsyncTrainingDataManager {
                     
                     if (cachedData != null) {
                         logger.info("*** ASYNC I/O: Flushing dirty file: {} ***", filename);
-                        CompletableFuture<Void> task = writeDataAsync(filename, cachedData)
+                        CompletableFuture<Void> task = writeDataAsyncForShutdown(filename, cachedData)
                             .thenRun(() -> {
                                 entry.getValue().set(false);
                                 // Clear cache after successful save to prevent memory leaks
