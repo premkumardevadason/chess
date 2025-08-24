@@ -722,6 +722,11 @@ public class DeepLearningAI {
         saveModel();
     }
     
+    public void stopThinking() {
+        // Deep Learning doesn't have async thinking threads like MCTS/AlphaZero
+        // This is a no-op for compatibility
+    }
+    
     public void shutdown() {
         logger.debug("Deep Learning: Initiating graceful shutdown...");
         

@@ -806,6 +806,11 @@ public class DeepLearningCNNAI {
         }
     }
     
+    public void stopThinking() {
+        // CNN doesn't have async thinking threads like MCTS/AlphaZero
+        // This is a no-op for compatibility
+    }
+    
     public void shutdown() {
         logger.info("CNN AI: Initiating graceful shutdown...");
         

@@ -218,6 +218,11 @@ public class OpenAiChessAI {
         return rights.length() > 0 ? rights.toString() : "-";
     }
     
+    public void stopThinking() {
+        // OpenAI doesn't have async thinking threads like MCTS/AlphaZero
+        // This is a no-op for compatibility
+    }
+    
     /**
      * Evaluate position quality for AI competition
      * Returns confidence score (0-100) for the selected move

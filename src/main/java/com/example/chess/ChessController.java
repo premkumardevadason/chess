@@ -145,7 +145,11 @@ public class ChessController {
             }
         }
         
-        WebSocketController.GameStateMessage gameState = new WebSocketController.GameStateMessage(board, whiteTurn, gameOver, kingInCheck, threatenedPieces, true, aiLastMove, checkmate, winner);
+        // Get AI mode information
+        String aiMode = game.isAllAIEnabled() ? "All AIs" : game.getSelectedAIForGame();
+        String lastMoveAI = game.getLastMoveByAI();
+        
+        WebSocketController.GameStateMessage gameState = new WebSocketController.GameStateMessage(board, whiteTurn, gameOver, kingInCheck, threatenedPieces, true, aiLastMove, checkmate, winner, aiMode, lastMoveAI);
         messageQueue.offer(new WebSocketMessage("/topic/gameState", gameState));
     }
     

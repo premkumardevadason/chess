@@ -34,6 +34,7 @@ public class AsyncTrainingDataManager {
     private final ExecutorService ioExecutor = Executors.newFixedThreadPool(11);
     private final AsyncIOMetrics metrics = new AsyncIOMetrics();
     private static final long SAVE_DEBOUNCE_MS = 1000; // 1 second debounce
+    private final java.util.concurrent.atomic.AtomicInteger activeIOOperations = new java.util.concurrent.atomic.AtomicInteger(0);
     
     public AsyncTrainingDataManager() {
         this.aiTracker = new AICompletionTracker();
@@ -176,10 +177,46 @@ public class AsyncTrainingDataManager {
     }
     
     public void markDirty(String filename) {
-        dirtyFlags.computeIfAbsent(filename, k -> new AtomicBoolean()).set(true);
+        // Only mark dirty if actual state changes occurred
+        if (shouldMarkDirty()) {
+            dirtyFlags.computeIfAbsent(filename, k -> new AtomicBoolean()).set(true);
+        }
+    }
+    
+    private boolean shouldMarkDirty() {
+        // Check if training was started or user played a game
+        try {
+            // Get ChessGame instance to check state
+            Object chessGame = getChessGameInstance();
+            if (chessGame != null) {
+                java.lang.reflect.Method hasStateChanged = chessGame.getClass().getMethod("hasAIStateChanged");
+                return (Boolean) hasStateChanged.invoke(chessGame);
+            }
+        } catch (Exception e) {
+            logger.debug("Could not check state change status: {}", e.getMessage());
+        }
+        // Default to true for safety if we can't determine state
+        return true;
+    }
+    
+    private Object getChessGameInstance() {
+        try {
+            // Try to get ChessGame from Spring context
+            Class<?> chessAppClass = Class.forName("com.example.chess.ChessApplication");
+            java.lang.reflect.Method getContextMethod = chessAppClass.getMethod("getApplicationContext");
+            Object context = getContextMethod.invoke(null);
+            if (context != null) {
+                java.lang.reflect.Method getBeanMethod = context.getClass().getMethod("getBean", Class.class);
+                return getBeanMethod.invoke(context, Class.forName("com.example.chess.ChessGame"));
+            }
+        } catch (Exception e) {
+            logger.debug("Could not get ChessGame instance: {}", e.getMessage());
+        }
+        return null;
     }
     
     private CompletableFuture<Void> writeDataAsync(String filename, Object data) {
+        activeIOOperations.incrementAndGet();
         return CompletableFuture.runAsync(() -> {
             // CRITICAL FIX: File-level synchronization for all save operations
             Object fileLock = fileLocks.computeIfAbsent(filename, k -> new Object());
@@ -280,6 +317,8 @@ public class AsyncTrainingDataManager {
                     String aiName = filename.replace(".dat", "");
                     metrics.recordError(aiName);
                     throw new RuntimeException(e);
+                } finally {
+                    activeIOOperations.decrementAndGet();
                 }
             }
         }, ioExecutor);
@@ -359,6 +398,8 @@ public class AsyncTrainingDataManager {
                 String aiName = filename.replace(".dat", "").replace("ga_models/", "");
                 logger.error("*** ASYNC I/O: {} save FAILED - {} ***", aiName, e.getMessage());
                 throw new RuntimeException("Serializable object save failed", e);
+            } finally {
+                activeIOOperations.decrementAndGet();
             }
         }
     }
@@ -406,6 +447,8 @@ public class AsyncTrainingDataManager {
             } catch (Exception e) {
                 logger.error("*** ASYNC I/O: DeepLearning4J model save FAILED - {} ***", e.getMessage());
                 throw new RuntimeException("DeepLearning4J stream bridge save failed", e);
+            } finally {
+                activeIOOperations.decrementAndGet();
             }
         }
     }
@@ -423,6 +466,12 @@ public class AsyncTrainingDataManager {
     
     private CompletableFuture<Void> saveAllDirtyData() {
         return CompletableFuture.runAsync(() -> {
+            // Check if any actual state changes occurred before saving
+            if (!shouldMarkDirty()) {
+                logger.info("*** ASYNC I/O: No AI state changes detected - skipping redundant save ***");
+                return;
+            }
+            
             int dirtyCount = (int) dirtyFlags.entrySet().stream().mapToLong(e -> e.getValue().get() ? 1 : 0).sum();
             logger.info("*** ASYNC I/O: Saving all dirty data - {} files marked dirty ***", dirtyCount);
             
@@ -479,6 +528,13 @@ public class AsyncTrainingDataManager {
     
     public void logMetrics() {
         metrics.logMetrics();
+    }
+    
+    /**
+     * Check if any async I/O operations are currently in progress
+     */
+    public boolean isIOInProgress() {
+        return activeIOOperations.get() > 0;
     }
     
     private CompletableFuture<Object> readDataAsync(String filename) {
