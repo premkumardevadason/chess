@@ -66,15 +66,13 @@ public class ChessApplication {
                 shutdownInProgress = true;
                 System.out.println("*** JVM SHUTDOWN HOOK TRIGGERED ***");
                 System.out.flush();
-                if (chessGame.hasStateChanged()) {
-                    try {
-                        chessGame.saveTrainingData();
-                        System.out.println("*** TRAINING DATA SAVED ON SHUTDOWN ***");
-                    } catch (Exception e) {
-                        System.err.println("Shutdown save error: " + e.getMessage());
-                    }
-                } else {
-                    System.out.println("*** NO STATE CHANGES, SKIPPING SAVE ***");
+                try {
+                    // CRITICAL FIX: Always call chessGame.shutdown() to process user game data
+                    chessGame.shutdown();
+                    System.out.println("*** CHESS GAME SHUTDOWN COMPLETE (JVM HOOK) ***");
+                } catch (Exception e) {
+                    System.err.println("JVM shutdown hook error: " + e.getMessage());
+                    e.printStackTrace();
                 }
             }
         });
@@ -126,23 +124,26 @@ public class ChessApplication {
     public void onContextClosed() {
         if (!shutdownInProgress && chessGame != null) {
             shutdownInProgress = true;
-            if (useAsyncIO()) {
-                System.out.println("*** SPRING CONTEXT CLOSING - ASYNC SHUTDOWN ***");
-                asyncDataManager.shutdown().join();
-            } else if (chessGame.hasStateChanged()) {
-                System.out.println("*** SPRING CONTEXT CLOSING - SAVING TRAINING DATA ***");
+            System.out.println("*** SPRING CONTEXT CLOSING - CALLING CHESS GAME SHUTDOWN ***");
+            System.out.flush();
+            
+            try {
+                // CRITICAL FIX: Always call chessGame.shutdown() to process user game data
+                chessGame.shutdown();
+                System.out.println("*** CHESS GAME SHUTDOWN COMPLETE ***");
                 System.out.flush();
-                try {
-                    chessGame.shutdown();
-                    System.out.println("*** SPRING SHUTDOWN COMPLETE ***");
-                    System.out.flush();
-                } catch (Exception e) {
-                    System.err.println("Spring shutdown error: " + e.getMessage());
-                    e.printStackTrace();
-                }
-            } else {
-                System.out.println("*** SPRING CONTEXT CLOSING - NO STATE CHANGES, SKIPPING SAVE ***");
+            } catch (Exception e) {
+                System.err.println("Chess game shutdown error: " + e.getMessage());
+                e.printStackTrace();
             }
+            
+            if (useAsyncIO()) {
+                System.out.println("*** ASYNC I/O SHUTDOWN ***");
+                asyncDataManager.shutdown().join();
+            }
+            
+            System.out.println("*** SPRING SHUTDOWN COMPLETE ***");
+            System.out.flush();
         }
     }
     

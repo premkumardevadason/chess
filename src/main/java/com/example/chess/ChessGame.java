@@ -594,9 +594,13 @@ public class ChessGame {
             if ("♔".equals(capturedPiece)) {
                 logger.info("WHITE KING CAPTURED - BLACK WINS!");
                 gameOver = true;
+                // CRITICAL FIX: Process game data when game ends
+                processGameDataForAILearning();
             } else if ("♚".equals(capturedPiece)) {
                 logger.info("BLACK KING CAPTURED - WHITE WINS!");
                 gameOver = true;
+                // CRITICAL FIX: Process game data when game ends
+                processGameDataForAILearning();
             }
         }
         
@@ -639,9 +643,32 @@ public class ChessGame {
         board[fromRow][fromCol] = "";
         
         moveHistory.add(fromRow + "," + fromCol + "," + toRow + "," + toCol);
+        logger.info("*** USER MOVE ADDED TO HISTORY: moveHistory.size() = {} ***", moveHistory.size());
         updateCastlingRights(piece, fromRow, fromCol);
         markUserGameStarted(); // Mark user game started for dirty state tracking
         notifyStateChanged(); // CRITICAL FIX: Ensure dirty flag system is triggered
+        
+        // CRITICAL FIX: Immediately mark all AI data as dirty when user makes a move
+        try {
+            Object asyncManager = ChessApplication.getAsyncManager();
+            if (asyncManager != null) {
+                // Mark all AI data files as dirty to ensure they get saved
+                java.lang.reflect.Method markDirtyMethod = asyncManager.getClass().getMethod("markDirty", String.class);
+                markDirtyMethod.invoke(asyncManager, "chess_qtable.dat");
+                markDirtyMethod.invoke(asyncManager, "chess_deeplearning_model.zip");
+                markDirtyMethod.invoke(asyncManager, "chess_cnn_model.zip");
+                markDirtyMethod.invoke(asyncManager, "chess_dqn_model.zip");
+                markDirtyMethod.invoke(asyncManager, "chess_dqn_target_model.zip");
+                markDirtyMethod.invoke(asyncManager, "chess_dqn_experiences.dat");
+                markDirtyMethod.invoke(asyncManager, "alphazero_cache.dat");
+                markDirtyMethod.invoke(asyncManager, "ga_models/ga_population.dat");
+                markDirtyMethod.invoke(asyncManager, "alphafold3_state.dat");
+                markDirtyMethod.invoke(asyncManager, "a3c_state.dat");
+                logger.debug("*** USER MOVE: All AI data marked as dirty for save ***");
+            }
+        } catch (Exception e) {
+            logger.debug("Could not mark AI data as dirty: {}", e.getMessage());
+        }
         
         // Track move in opening book for continuity
         if (leelaOpeningBook != null) {
@@ -798,9 +825,13 @@ public class ChessGame {
                 if ("♔".equals(capturedPiece)) {
                     logger.info("*** WHITE KING CAPTURED - BLACK WINS! ***");
                     gameOver = true;
+                    // CRITICAL FIX: Process game data when game ends
+                    processGameDataForAILearning();
                 } else if ("♚".equals(capturedPiece)) {
                     logger.info("*** BLACK KING CAPTURED - WHITE WINS! ***");
                     gameOver = true;
+                    // CRITICAL FIX: Process game data when game ends
+                    processGameDataForAILearning();
                 }
             }
             
@@ -815,6 +846,7 @@ public class ChessGame {
             
             // Update game state
             moveHistory.add(bestMove[0] + "," + bestMove[1] + "," + bestMove[2] + "," + bestMove[3]);
+            logger.info("*** AI MOVE ADDED TO HISTORY: moveHistory.size() = {} ***", moveHistory.size());
             updateCastlingRights(piece, bestMove[0], bestMove[1]);
             
             // Track AI move in opening book
@@ -831,6 +863,28 @@ public class ChessGame {
             // CRITICAL FIX: Mark state as changed for dirty flag system
             markUserGameStarted(); // AI move in user game
             notifyStateChanged();
+            
+            // CRITICAL FIX: Immediately mark all AI data as dirty when AI makes a move
+            try {
+                Object asyncManager = ChessApplication.getAsyncManager();
+                if (asyncManager != null) {
+                    // Mark all AI data files as dirty to ensure they get saved
+                    java.lang.reflect.Method markDirtyMethod = asyncManager.getClass().getMethod("markDirty", String.class);
+                    markDirtyMethod.invoke(asyncManager, "chess_qtable.dat");
+                    markDirtyMethod.invoke(asyncManager, "chess_deeplearning_model.zip");
+                    markDirtyMethod.invoke(asyncManager, "chess_cnn_model.zip");
+                    markDirtyMethod.invoke(asyncManager, "chess_dqn_model.zip");
+                    markDirtyMethod.invoke(asyncManager, "chess_dqn_target_model.zip");
+                    markDirtyMethod.invoke(asyncManager, "chess_dqn_experiences.dat");
+                    markDirtyMethod.invoke(asyncManager, "alphazero_cache.dat");
+                    markDirtyMethod.invoke(asyncManager, "ga_models/ga_population.dat");
+                    markDirtyMethod.invoke(asyncManager, "alphafold3_state.dat");
+                    markDirtyMethod.invoke(asyncManager, "a3c_state.dat");
+                    logger.debug("*** AI MOVE: All AI data marked as dirty for save ***");
+                }
+            } catch (Exception e) {
+                logger.debug("Could not mark AI data as dirty: {}", e.getMessage());
+            }
             
             // Broadcast AI move via WebSocket
             broadcastGameState();
@@ -3218,6 +3272,17 @@ public class ChessGame {
         logger.info("*** CHESS APPLICATION SHUTDOWN INITIATED - SAVING ALL TRAINING DATA ***");
         
         try {
+            // CRITICAL FIX: Process current game data for AI learning before shutdown
+            logger.info("*** SHUTDOWN: Checking moveHistory.size() = {} ***", moveHistory.size());
+            if (moveHistory.size() > 0) {
+                logger.info("*** PROCESSING CURRENT GAME DATA FOR AI LEARNING BEFORE SHUTDOWN ***");
+                logger.info("*** ADDING USER GAME HISTORY TO ALL ENABLED AI SYSTEMS ***");
+                processGameDataForAILearning();
+                logger.info("*** USER GAME HISTORY PROCESSING COMPLETE - NOW SAVING AI STATES ***");
+            } else {
+                logger.info("*** NO MOVES IN CURRENT GAME - SKIPPING USER GAME HISTORY PROCESSING ***");
+            }
+            
             // Stop training first with timeout
             stopTraining();
             
@@ -3686,35 +3751,58 @@ public class ChessGame {
      * This ensures user vs AI games contribute to training datasets
      */
     private void processGameDataForAILearning() {
-        if (moveHistory.isEmpty()) return;
+        logger.info("*** processGameDataForAILearning() CALLED: moveHistory.size() = {} ***", moveHistory.size());
+        if (moveHistory.isEmpty()) {
+            logger.info("*** GAME DATA PROCESSING: No moves to process - moveHistory is empty ***");
+            return;
+        }
+        
+        logger.info("*** PROCESSING GAME DATA FOR AI LEARNING: {} moves, gameOver={} ***", moveHistory.size(), gameOver);
+        logger.info("*** MOVE HISTORY CONTENTS: {} ***", moveHistory);
         
         // Determine game outcome (ongoing games are treated as draws for incremental learning)
         boolean blackWon = gameOver && !whiteTurn;
         
         // Process game data for all enabled AI systems
+        int aiSystemsProcessed = 0;
+        
         if (isAlphaZeroEnabled() && alphaZeroAI != null) {
             alphaZeroAI.addHumanGameData(board, moveHistory, blackWon);
+            aiSystemsProcessed++;
+            logger.info("*** USER GAME HISTORY ADDED TO AlphaZero AI ({} moves, blackWon={}) ***", moveHistory.size(), blackWon);
         }
         
         if (isDeepLearningEnabled() && deepLearningAI != null) {
             deepLearningAI.addHumanGameData(board, moveHistory, blackWon);
+            aiSystemsProcessed++;
+            logger.info("*** USER GAME HISTORY ADDED TO DeepLearning AI ({} moves, blackWon={}) ***", moveHistory.size(), blackWon);
         }
         
         if (isDeepLearningCNNEnabled() && deepLearningCNNAI != null) {
             deepLearningCNNAI.addHumanGameData(board, moveHistory, blackWon);
+            aiSystemsProcessed++;
+            logger.info("*** USER GAME HISTORY ADDED TO DeepLearningCNN AI ({} moves, blackWon={}) ***", moveHistory.size(), blackWon);
         }
         
         if (isDQNEnabled() && dqnAI != null) {
             dqnAI.addHumanGameData(board, moveHistory, blackWon);
+            aiSystemsProcessed++;
+            logger.info("*** USER GAME HISTORY ADDED TO DQN AI ({} moves, blackWon={}) ***", moveHistory.size(), blackWon);
         }
         
         if (isAlphaFold3Enabled() && alphaFold3AI != null) {
             alphaFold3AI.addHumanGameData(board, moveHistory, blackWon);
+            aiSystemsProcessed++;
+            logger.info("*** USER GAME HISTORY ADDED TO AlphaFold3 AI ({} moves, blackWon={}) ***", moveHistory.size(), blackWon);
         }
         
         if (isA3CEnabled() && a3cAI != null) {
             a3cAI.addHumanGameData(board, moveHistory, blackWon);
+            aiSystemsProcessed++;
+            logger.info("*** USER GAME HISTORY ADDED TO A3C AI ({} moves, blackWon={}) ***", moveHistory.size(), blackWon);
         }
+        
+        logger.info("*** GAME DATA PROCESSING COMPLETE: {} AI systems updated with {} moves ***", aiSystemsProcessed, moveHistory.size());
         
         // Mark state as changed to trigger dirty flag system
         markUserGameStarted(); // Game data processing for user game
