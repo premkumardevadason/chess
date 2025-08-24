@@ -190,12 +190,15 @@ public class AsyncTrainingDataManager {
             Object chessGame = getChessGameInstance();
             if (chessGame != null) {
                 java.lang.reflect.Method hasStateChanged = chessGame.getClass().getMethod("hasAIStateChanged");
-                return (Boolean) hasStateChanged.invoke(chessGame);
+                boolean stateChanged = (Boolean) hasStateChanged.invoke(chessGame);
+                logger.debug("State change check: hasAIStateChanged={}", stateChanged);
+                return stateChanged;
             }
         } catch (Exception e) {
             logger.debug("Could not check state change status: {}", e.getMessage());
         }
         // Default to true during shutdown to ensure all active AI state is saved
+        logger.debug("State change check: defaulting to true (fallback)");
         return true;
     }
     
