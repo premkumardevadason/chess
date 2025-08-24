@@ -73,6 +73,8 @@ public class ChessGame {
     private GeneticAlgorithmAI geneticAI;
     /** AlphaFold3 AI system */
     private AlphaFold3AI alphaFold3AI;
+    /** Asynchronous Advantage Actor-Critic AI system */
+    private AsynchronousAdvantageActorCriticAI a3cAI;
 
     private String previousBoardState = null;
     private int[] previousMove = null;
@@ -102,6 +104,8 @@ public class ChessGame {
     private boolean geneticEnabled;
     @Value("${chess.ai.alphafold3.enabled:true}")
     private boolean alphaFold3Enabled;
+    @Value("${chess.ai.a3c.enabled:true}")
+    private boolean a3cEnabled;
     @Value("${chess.ai.all.enabled:true}")
     private boolean allAIEnabled;
     private boolean whiteKingMoved = false;
@@ -210,6 +214,7 @@ public class ChessGame {
         logger.info("LeelaZero enabled: {}", leelaZeroEnabled);
         logger.info("Genetic enabled: {}", geneticEnabled);
         logger.info("AlphaFold3 enabled: {}", alphaFold3Enabled);
+        logger.info("A3C enabled: {}", a3cEnabled);
         
         // Initialize OpenCL detection early for all AI systems
         logger.info("Detecting AMD GPU and OpenCL support...");
@@ -244,6 +249,7 @@ public class ChessGame {
         if (leelaZeroEnabled && leelaZeroAI != null) availableAIs.add("LeelaZero");
         if (geneticEnabled && geneticAI != null) availableAIs.add("Genetic");
         if (alphaFold3Enabled && alphaFold3AI != null) availableAIs.add("AlphaFold3");
+        if (a3cEnabled && a3cAI != null) availableAIs.add("A3C");
         
         if (!availableAIs.isEmpty()) {
             selectedAIForGame = availableAIs.get(aiSelector.nextInt(availableAIs.size()));
@@ -412,6 +418,21 @@ public class ChessGame {
             }
         });
         
+        var a3cTask = Thread.ofVirtual().start(() -> {
+            if (a3cEnabled) {
+                try {
+                    a3cAI = new AsynchronousAdvantageActorCriticAI();
+                    logger.info("A3C AI: ENABLED");
+                } catch (Exception e) {
+                    logger.error("A3C AI: INITIALIZATION FAILED - {}", e.getMessage());
+                    a3cAI = null;
+                }
+            } else {
+                a3cAI = null;
+                logger.info("A3C AI: DISABLED");
+            }
+        });
+        
         // Wait for all virtual threads to complete in parallel (not sequential)
         try {
             // Create all tasks
@@ -425,7 +446,8 @@ public class ChessGame {
                 java.util.concurrent.CompletableFuture.runAsync(() -> { try { openAiTask.join(); } catch (InterruptedException e) { Thread.currentThread().interrupt(); } }),
                 java.util.concurrent.CompletableFuture.runAsync(() -> { try { leelaZeroTask.join(); } catch (InterruptedException e) { Thread.currentThread().interrupt(); } }),
                 java.util.concurrent.CompletableFuture.runAsync(() -> { try { geneticTask.join(); } catch (InterruptedException e) { Thread.currentThread().interrupt(); } }),
-                java.util.concurrent.CompletableFuture.runAsync(() -> { try { alphaFold3Task.join(); } catch (InterruptedException e) { Thread.currentThread().interrupt(); } })
+                java.util.concurrent.CompletableFuture.runAsync(() -> { try { alphaFold3Task.join(); } catch (InterruptedException e) { Thread.currentThread().interrupt(); } }),
+                java.util.concurrent.CompletableFuture.runAsync(() -> { try { a3cTask.join(); } catch (InterruptedException e) { Thread.currentThread().interrupt(); } })
             );
             
             // Wait for ALL to complete in parallel (not sequential)
@@ -477,6 +499,7 @@ public class ChessGame {
         if (leelaZeroAI != null) enabledCount++;
         if (geneticAI != null) enabledCount++;
         if (alphaFold3AI != null) enabledCount++;
+        if (a3cAI != null) enabledCount++;
         
         // FALLBACK: If no AI systems are enabled, force enable LeelaChessZero as default
         if (enabledCount == 0) {
@@ -492,7 +515,7 @@ public class ChessGame {
             }
         }
         
-        logger.info("CHESS GAME: {}/11 AI systems enabled", enabledCount);
+        logger.info("CHESS GAME: {}/12 AI systems enabled", enabledCount);
         logger.info("*** PARALLEL AI INITIALIZATION COMPLETE ***");
         
         synchronized (aiInitLock) {
@@ -1410,9 +1433,38 @@ public class ChessGame {
                 }) : java.util.concurrent.CompletableFuture.completedFuture(null);
         }
         
+        // A3C AI task declaration
+        java.util.concurrent.CompletableFuture<int[]> a3cTask = java.util.concurrent.CompletableFuture.completedFuture(null);
+        
+        // Only evaluate the selected AI (unless critical defense override needed or all AIs enabled)
+        if (criticalDefenseMove == null && selectedAIForGame != null && !"None".equals(selectedAIForGame) && !allAIEnabled) {
+            // Add A3C case to the switch statement
+            if ("A3C".equals(selectedAIForGame) && isA3CEnabled()) {
+                a3cTask = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                    try {
+                        return a3cAI.selectMove(board, movesToEvaluate, false);
+                    } catch (Exception e) {
+                        System.err.println("A3C error: " + e.getMessage());
+                        return null;
+                    }
+                });
+            }
+        } else {
+            // Add A3C to the all AIs evaluation
+            a3cTask = isA3CEnabled() ? 
+                java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                    try {
+                        return a3cAI.selectMove(board, movesToEvaluate, false);
+                    } catch (Exception e) {
+                        System.err.println("A3C error: " + e.getMessage());
+                        return null;
+                    }
+                }) : java.util.concurrent.CompletableFuture.completedFuture(null);
+        }
+        
         // Wait for all AIs to complete with timeout
         java.util.concurrent.CompletableFuture<Void> allTasks = java.util.concurrent.CompletableFuture.allOf(
-            qLearningTask, deepLearningTask, deepLearningCNNTask, dqnTask, mctsTask, alphaZeroTask, negamaxTask, openAiTask, leelaZeroTask, geneticTask, alphaFold3Task);
+            qLearningTask, deepLearningTask, deepLearningCNNTask, dqnTask, mctsTask, alphaZeroTask, negamaxTask, openAiTask, leelaZeroTask, geneticTask, alphaFold3Task, a3cTask);
         
         int[] qLearningMove = null;
         int[] deepLearningMove = null;
@@ -1425,6 +1477,7 @@ public class ChessGame {
         int[] leelaZeroMove = null;
         int[] geneticMove = null;
         int[] alphaFold3Move = null;
+        int[] a3cMove = null;
         
         // Wait for each AI individually with optimized timeouts
         try {
@@ -1504,6 +1557,13 @@ public class ChessGame {
         } catch (Exception e) {
             System.err.println("AlphaFold3 timeout/error: " + e.getMessage());
             alphaFold3Task.cancel(true);
+        }
+        
+        try {
+            a3cMove = a3cTask.get(3, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (Exception e) {
+            System.err.println("A3C timeout/error: " + e.getMessage());
+            a3cTask.cancel(true);
         }
         
         long parallelTime = System.currentTimeMillis() - parallelStartTime;
@@ -1603,6 +1663,14 @@ public class ChessGame {
                         logger.info("AlphaFold3: No move");
                     }
                     break;
+                case "A3C":
+                    if (a3cMove != null) {
+                        String piece = board[a3cMove[0]][a3cMove[1]];
+                        logger.info("A3C: " + piece + " [" + a3cMove[0] + "," + a3cMove[1] + "] → [" + a3cMove[2] + "," + a3cMove[3] + "]");
+                    } else {
+                        logger.info("A3C: No move");
+                    }
+                    break;
             }
         } else {
             // Fallback mode: log all AI results
@@ -1662,6 +1730,11 @@ public class ChessGame {
                 String piece = board[alphaFold3Move[0]][alphaFold3Move[1]];
                 logger.info("AlphaFold3: " + piece + " [" + alphaFold3Move[0] + "," + alphaFold3Move[1] + "] → [" + alphaFold3Move[2] + "," + alphaFold3Move[3] + "]");
             }
+            
+            if (isA3CEnabled() && a3cMove != null) {
+                String piece = board[a3cMove[0]][a3cMove[1]];
+                logger.info("A3C: " + piece + " [" + a3cMove[0] + "," + a3cMove[1] + "] → [" + a3cMove[2] + "," + a3cMove[3] + "]");
+            }
         }
         
         // COMPREHENSIVE MOVE VALIDATION - Based on 3 days of discoveries
@@ -1676,6 +1749,7 @@ public class ChessGame {
         leelaZeroMove = isLeelaZeroEnabled() ? validateAIMove(leelaZeroMove, "LeelaZero") : null;
         geneticMove = isGeneticEnabled() ? validateAIMove(geneticMove, "Genetic") : null;
         alphaFold3Move = isAlphaFold3Enabled() ? validateAIMove(alphaFold3Move, "AlphaFold3") : null;
+        a3cMove = isA3CEnabled() ? validateAIMove(a3cMove, "A3C") : null;
         
         // FLIP-FLOP PREVENTION: Filter out repetitive moves (but preserve critical defense moves)
         List<int[]> filteredMoves = new ArrayList<>();
@@ -1716,6 +1790,7 @@ public class ChessGame {
             if (leelaZeroMove != null) { validMoves.add(leelaZeroMove); aiNames.add("LeelaZero"); }
             if (geneticMove != null) { validMoves.add(geneticMove); aiNames.add("Genetic"); }
             if (alphaFold3Move != null) { validMoves.add(alphaFold3Move); aiNames.add("AlphaFold3"); }
+            if (a3cMove != null) { validMoves.add(a3cMove); aiNames.add("A3C"); }
             
             if (!validMoves.isEmpty()) {
                 bestMove = compareMoves(validMoves, aiNames);
@@ -1807,6 +1882,13 @@ public class ChessGame {
                         lastMoveByAI = "AlphaFold3";
                     }
                     break;
+                case "A3C":
+                    if (a3cMove != null) {
+                        bestMove = a3cMove;
+                        selectedAIName = "A3C";
+                        lastMoveByAI = "A3C";
+                    }
+                    break;
             }
         }
         
@@ -1841,7 +1923,7 @@ public class ChessGame {
         }
         
         // If we have moves but they're all being rejected, find any safe move
-        if (qLearningMove == null && deepLearningMove == null && deepLearningCNNMove == null && dqnMove == null && mctsMove == null && alphaZeroMove == null && negamaxMove == null && leelaZeroMove == null && geneticMove == null && alphaFold3Move == null) {
+        if (qLearningMove == null && deepLearningMove == null && deepLearningCNNMove == null && dqnMove == null && mctsMove == null && alphaZeroMove == null && negamaxMove == null && leelaZeroMove == null && geneticMove == null && alphaFold3Move == null && a3cMove == null) {
             logger.info("*** ALL AI MOVES REJECTED - FINDING SAFE FALLBACK MOVE ***");
             
             // Find any move that doesn't sacrifice pieces unnecessarily
@@ -2860,6 +2942,8 @@ public class ChessGame {
     public boolean isGeneticEnabled() { ensureAISystemsInitialized(); return geneticEnabled && geneticAI != null; }
     public boolean isAlphaFold3Enabled() { ensureAISystemsInitialized(); return alphaFold3Enabled && alphaFold3AI != null; }
     public AlphaFold3AI getAlphaFold3AI() { return alphaFold3AI; }
+    public boolean isA3CEnabled() { ensureAISystemsInitialized(); return a3cEnabled && a3cAI != null; }
+    public AsynchronousAdvantageActorCriticAI getA3CAI() { return a3cAI; }
     public DeepQNetworkAI getDQNAI() { return dqnAI; }
     public LeelaChessZeroAI getLeelaZeroAI() { return leelaZeroAI; }
     public GeneticAlgorithmAI getGeneticAI() { return geneticAI; }
@@ -3010,10 +3094,21 @@ public class ChessGame {
                     }
                 }) : java.util.concurrent.CompletableFuture.completedFuture(null);
             
+            var a3cTask = isA3CEnabled() ? 
+                java.util.concurrent.CompletableFuture.runAsync(() -> {
+                    try {
+                        boolean blackWon = gameOver && !whiteTurn;
+                        a3cAI.addHumanGameData(board, moveHistory, blackWon);
+                        logger.info("A3C AI: Game data processed");
+                    } catch (Exception e) {
+                        logger.error("A3C game data error: {}", e.getMessage());
+                    }
+                }) : java.util.concurrent.CompletableFuture.completedFuture(null);
+            
             // CRITICAL FIX: Wait for ALL AI game data processing to complete BEFORE resetting game state
             try {
                 java.util.concurrent.CompletableFuture.allOf(
-                    alphaZeroTask, deepLearningTask, deepLearningCNNTask, dqnTask, alphaFold3Task
+                    alphaZeroTask, deepLearningTask, deepLearningCNNTask, dqnTask, alphaFold3Task, a3cTask
                 ).get(30, java.util.concurrent.TimeUnit.SECONDS);
                 
                 logger.info("*** PARALLEL AI GAME DATA PROCESSING: All AIs completed simultaneously ***");
@@ -3026,6 +3121,7 @@ public class ChessGame {
                 deepLearningCNNTask.cancel(true);
                 dqnTask.cancel(true);
                 alphaFold3Task.cancel(true);
+                a3cTask.cancel(true);
             } catch (Exception e) {
                 logger.error("AI game data processing error: {}", e.getMessage());
             }
@@ -3215,6 +3311,16 @@ public class ChessGame {
                 }
             }
             
+            // Save A3C state
+            if (isA3CEnabled()) {
+                try {
+                    a3cAI.shutdown(); // A3C handles its own saving in shutdown
+                    logger.info("A3C: State saved successfully");
+                } catch (Exception e) {
+                    logger.error("A3C: Failed to save state - {}", e.getMessage());
+                }
+            }
+            
             logger.info("*** ALL TRAINING DATA SAVED SUCCESSFULLY ***");
             
             // Give additional time for file I/O to complete
@@ -3263,6 +3369,11 @@ public class ChessGame {
             if (isAlphaFold3Enabled()) {
                 logger.info("*** AlphaFold3: Shutting down ***");
                 alphaFold3AI.shutdown();
+            }
+            
+            if (isA3CEnabled()) {
+                logger.info("*** A3C: Shutting down ***");
+                a3cAI.shutdown();
             }
             
         } catch (Exception e) {
@@ -3365,13 +3476,38 @@ public class ChessGame {
             }
         }
         
-        if (qLearningDeleted && deepLearningDeleted && deepLearningCNNDeleted && dqnDeleted && alphaZeroDeleted && leelaZeroDeleted && geneticDeleted && alphaFold3Deleted) {
-            logger.debug("*** ALL TRAINING DATA DELETED SUCCESSFULLY (11 AI SYSTEMS) ***");
+        // Delete A3C training data
+        boolean a3cDeleted = true;
+        if (isA3CEnabled()) {
+            try {
+                java.io.File a3cActorModel = new java.io.File("a3c_actor_model.zip");
+                java.io.File a3cCriticModel = new java.io.File("a3c_critic_model.zip");
+                java.io.File a3cState = new java.io.File("a3c_state.dat");
+                
+                boolean actor = !a3cActorModel.exists() || a3cActorModel.delete();
+                boolean critic = !a3cCriticModel.exists() || a3cCriticModel.delete();
+                boolean state = !a3cState.exists() || a3cState.delete();
+                
+                a3cDeleted = actor && critic && state;
+                
+                if (a3cDeleted) {
+                    logger.info("A3C: All training files deleted (actor model, critic model, state)");
+                } else {
+                    System.err.println("A3C: Failed to delete some training files");
+                }
+            } catch (Exception e) {
+                a3cDeleted = false;
+                System.err.println("A3C: Failed to delete training data - " + e.getMessage());
+            }
+        }
+        
+        if (qLearningDeleted && deepLearningDeleted && deepLearningCNNDeleted && dqnDeleted && alphaZeroDeleted && leelaZeroDeleted && geneticDeleted && alphaFold3Deleted && a3cDeleted) {
+            logger.debug("*** ALL TRAINING DATA DELETED SUCCESSFULLY (12 AI SYSTEMS) ***");
             return true;
         } else {
             logger.debug("*** FAILED TO DELETE SOME TRAINING DATA ***");
-            logger.debug("Q-Learning: {}, Deep Learning: {}, CNN: {}, DQN: {}, AlphaZero: {}, LeelaZero: {}, Genetic: {}, AlphaFold3: {}, OpenAI: N/A (stateless), Negamax: N/A (stateless)", 
-                qLearningDeleted, deepLearningDeleted, deepLearningCNNDeleted, dqnDeleted, alphaZeroDeleted, leelaZeroDeleted, geneticDeleted, alphaFold3Deleted);
+            logger.debug("Q-Learning: {}, Deep Learning: {}, CNN: {}, DQN: {}, AlphaZero: {}, LeelaZero: {}, Genetic: {}, AlphaFold3: {}, A3C: {}, OpenAI: N/A (stateless), Negamax: N/A (stateless)", 
+                qLearningDeleted, deepLearningDeleted, deepLearningCNNDeleted, dqnDeleted, alphaZeroDeleted, leelaZeroDeleted, geneticDeleted, alphaFold3Deleted, a3cDeleted);
             return false;
         }
     }
@@ -3576,6 +3712,10 @@ public class ChessGame {
             alphaFold3AI.addHumanGameData(board, moveHistory, blackWon);
         }
         
+        if (isA3CEnabled() && a3cAI != null) {
+            a3cAI.addHumanGameData(board, moveHistory, blackWon);
+        }
+        
         // Mark state as changed to trigger dirty flag system
         markUserGameStarted(); // Game data processing for user game
     }
@@ -3681,11 +3821,22 @@ public class ChessGame {
             }
         });
         
+        var a3cTask = java.util.concurrent.CompletableFuture.runAsync(() -> {
+            if (isA3CEnabled()) {
+                try {
+                    a3cAI.saveModels(); // Explicitly save A3C models
+                    logger.debug("A3C: State saved");
+                } catch (Exception e) {
+                    logger.error("A3C: Save failed - {}", e.getMessage());
+                }
+            }
+        });
+        
         // Wait for ALL tasks to complete in TRUE parallel execution
         try {
             java.util.concurrent.CompletableFuture.allOf(
                 qLearningTask, deepLearningTask, deepLearningCNNTask, dqnTask, 
-                alphaZeroTask, leelaZeroTask, geneticTask, alphaFold3Task
+                alphaZeroTask, leelaZeroTask, geneticTask, alphaFold3Task, a3cTask
             ).get(60, java.util.concurrent.TimeUnit.SECONDS);
             
         } catch (java.util.concurrent.TimeoutException e) {
@@ -3782,6 +3933,15 @@ public class ChessGame {
                 logger.debug("AlphaFold3: State saved synchronously");
             } catch (Exception e) {
                 logger.error("AlphaFold3: Synchronous save failed - {}", e.getMessage());
+            }
+        }
+        
+        if (isA3CEnabled()) {
+            try {
+                a3cAI.shutdown(); // A3C saves models in shutdown method
+                logger.debug("A3C: State saved synchronously");
+            } catch (Exception e) {
+                logger.error("A3C: Synchronous save failed - {}", e.getMessage());
             }
         }
         

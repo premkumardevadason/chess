@@ -56,6 +56,7 @@ public class TrainingManager {
         startLeelaZeroTraining(game);
         startGeneticTraining(game);
         startAlphaFold3Training(game);
+        startA3CTraining(game);
         startMCTSTraining(game);
         
         logger.info("*** ALL AI TRAINING STARTED ***");
@@ -114,6 +115,13 @@ public class TrainingManager {
             if (game.isAlphaFold3Enabled()) {
                 logger.info("*** TrainingManager: Stopping AlphaFold3 training ***");
                 game.getAlphaFold3AI().stopTraining();
+            }
+        });
+        
+        stopAIWithTimeout("A3C", () -> {
+            if (game.isA3CEnabled()) {
+                logger.info("*** TrainingManager: Stopping A3C training ***");
+                game.getA3CAI().stopTraining();
             }
         });
         
@@ -219,6 +227,23 @@ public class TrainingManager {
         logger.info("*** TrainingManager: AlphaFold3 continuous training thread started ***");
     }
     
+    private void startA3CTraining(ChessGame game) {
+        if (!game.isA3CEnabled()) {
+            logger.info("*** TrainingManager: A3C not enabled - skipping start ***");
+            return;
+        }
+        
+        logger.info("*** TrainingManager: Starting A3C training ***");
+        Thread.ofVirtual().name("A3C-Training").start(() -> {
+            try {
+                game.getA3CAI().startTraining(10000); // 10,000 episodes
+            } catch (Exception e) {
+                logger.error("A3C training error: {}", e.getMessage());
+            }
+        });
+        logger.info("*** TrainingManager: A3C training thread started ***");
+    }
+    
     private void startMCTSTraining(ChessGame game) {
         if (game.isMCTSEnabled()) {
             Thread.ofVirtual().name("MCTS-Training").start(() -> {
@@ -316,6 +341,7 @@ public class TrainingManager {
         if (game.isLeelaZeroEnabled()) reports.put("Leela Chess Zero", evaluateLeelaZeroQuality(game));
         if (game.isGeneticEnabled()) reports.put("Genetic Algorithm", evaluateGeneticQuality(game));
         if (game.isAlphaFold3Enabled()) reports.put("AlphaFold3", evaluateAlphaFold3Quality(game));
+        if (game.isA3CEnabled()) reports.put("A3C", evaluateA3CQuality(game));
         if (game.isMCTSEnabled()) reports.put("MCTS", evaluateMCTSQuality(game));
         if (game.isNegamaxEnabled()) reports.put("Negamax", evaluateNegamaxQuality(game));
         if (game.isOpenAiEnabled()) reports.put("OpenAI", evaluateOpenAIQuality(game));
@@ -675,6 +701,55 @@ public class TrainingManager {
             
         } catch (Exception e) {
             report.addError("AlphaFold3 evaluation failed: " + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
+        }
+        
+        return report;
+    }
+    
+    private QualityReport evaluateA3CQuality(ChessGame game) {
+        QualityReport report = new QualityReport("A3C");
+        
+        try {
+            // A3C uses DeepLearning4J models
+            java.io.File actorModel = new java.io.File("a3c_actor_model.zip");
+            java.io.File criticModel = new java.io.File("a3c_critic_model.zip");
+            java.io.File stateFile = new java.io.File("a3c_state.dat");
+            
+            boolean hasActorModel = actorModel.exists();
+            boolean hasCriticModel = criticModel.exists();
+            boolean hasState = stateFile.exists();
+            
+            report.addMetric("Actor Model Exists", hasActorModel);
+            report.addMetric("Critic Model Exists", hasCriticModel);
+            report.addMetric("State File Exists", hasState);
+            
+            // Get training data from AI instance if available
+            int episodes = 0;
+            int steps = 0;
+            double avgReward = 0.0;
+            String status = "Not Available";
+            
+            if (game.isA3CEnabled() && game.getA3CAI() != null) {
+                episodes = game.getA3CAI().getEpisodesCompleted();
+                steps = game.getA3CAI().getGlobalSteps();
+                avgReward = game.getA3CAI().getAverageReward();
+                status = game.getA3CAI().getTrainingStatus();
+            }
+            
+            report.addMetric("Training Episodes", episodes);
+            report.addMetric("Global Steps", steps);
+            report.addMetric("Average Reward", avgReward);
+            report.addMetric("Training Status", status);
+            
+            // A3C specific scoring
+            report.addScore("Actor-Critic Architecture", (hasActorModel && hasCriticModel) ? 100.0 : 0.0);
+            report.addScore("Asynchronous Workers", episodes > 0 ? Math.min(100.0, episodes / 10.0) : 0.0);
+            report.addScore("Experience Quality", Math.min(100.0, Math.max(0.0, (avgReward + 50.0) * 2.0)));
+            report.addScore("Training Progress", Math.min(100.0, steps / 100.0));
+            report.addScore("Model Persistence", hasState ? 100.0 : 0.0);
+            
+        } catch (Exception e) {
+            report.addError("A3C evaluation failed: " + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
         }
         
         return report;
