@@ -437,11 +437,18 @@ public class AsyncTrainingDataManager {
                     }
                 };
                 
-                // Use DeepLearning4J ModelSerializer with OutputStream
-                Class<?> modelSerializerClass = Class.forName("org.deeplearning4j.util.ModelSerializer");
-                java.lang.reflect.Method writeMethod = modelSerializerClass.getMethod(
-                    "writeModel", Class.forName("org.deeplearning4j.nn.api.Model"), java.io.OutputStream.class, boolean.class);
-                writeMethod.invoke(null, model, channelStream, true);
+                // Use direct DL4J API calls
+                if (model instanceof org.deeplearning4j.nn.multilayer.MultiLayerNetwork) {
+                    org.deeplearning4j.util.ModelSerializer.writeModel(
+                        (org.deeplearning4j.nn.multilayer.MultiLayerNetwork) model, channelStream, true);
+                } else if (model instanceof org.deeplearning4j.nn.graph.ComputationGraph) {
+                    org.deeplearning4j.util.ModelSerializer.writeModel(
+                        (org.deeplearning4j.nn.graph.ComputationGraph) model, channelStream, true);
+                } else {
+                    // Generic model interface
+                    org.deeplearning4j.util.ModelSerializer.writeModel(
+                        (org.deeplearning4j.nn.api.Model) model, channelStream, true);
+                }
                 
                 channel.close();
                 logger.info("*** ASYNC I/O: DeepLearning4J model saved using NIO.2 stream bridge - RACE CONDITION PROTECTED ***");
@@ -552,8 +559,8 @@ public class AsyncTrainingDataManager {
                     return model;
                 }
                 
-                // Handle serializable objects (like GeneticAlgorithm population and Q-Learning table)
-                if (filename.contains("/") || filename.contains("population") || filename.contains("qtable")) {
+                // Handle serializable objects (like GeneticAlgorithm population, Q-Learning table, and AlphaZero cache)
+                if (filename.contains("/") || filename.contains("population") || filename.contains("qtable") || filename.contains("alphazero_cache")) {
                     return loadSerializableObject(filename);
                 }
                 
@@ -637,27 +644,53 @@ public class AsyncTrainingDataManager {
             // Create InputStream from buffer
             byte[] data = new byte[buffer.remaining()];
             buffer.get(data);
-            java.io.ByteArrayInputStream inputStream = new java.io.ByteArrayInputStream(data);
+            
+            // Check if this is a ZIP file (DL4J models are saved as ZIP)
+            java.io.InputStream modelStream;
+            if (data.length >= 4 && data[0] == 0x50 && data[1] == 0x4B && data[2] == 0x03 && data[3] == 0x04) {
+                // This is a ZIP file - extract the model data
+                try (java.util.zip.ZipInputStream zis = new java.util.zip.ZipInputStream(new java.io.ByteArrayInputStream(data))) {
+                    java.util.zip.ZipEntry entry;
+                    while ((entry = zis.getNextEntry()) != null) {
+                        if (entry.getName().equals("coefficients.bin") || entry.getName().equals("configuration.json") || !entry.isDirectory()) {
+                            // Found model data - read it
+                            java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+                            byte[] buffer2 = new byte[8192];
+                            int len;
+                            while ((len = zis.read(buffer2)) > 0) {
+                                baos.write(buffer2, 0, len);
+                            }
+                            // Use the entire ZIP as input stream for DL4J
+                            modelStream = new java.io.ByteArrayInputStream(data);
+                            break;
+                        }
+                    }
+                    modelStream = new java.io.ByteArrayInputStream(data);
+                }
+            } else {
+                // Raw model data
+                modelStream = new java.io.ByteArrayInputStream(data);
+            }
             
             // Use DeepLearning4J ModelSerializer with InputStream - try different model types
             Class<?> modelSerializerClass = Class.forName("org.deeplearning4j.util.ModelSerializer");
             Object result = null;
             
             try {
-                // Try MultiLayerNetwork first
-                java.lang.reflect.Method restoreMLNMethod = modelSerializerClass.getMethod(
-                    "restoreMultiLayerNetwork", java.io.InputStream.class);
-                result = restoreMLNMethod.invoke(null, inputStream);
+                // Try direct DL4J API call
+                result = org.deeplearning4j.util.ModelSerializer.restoreMultiLayerNetwork(modelStream, true);
+                logger.info("*** ASYNC I/O: Successfully loaded as MultiLayerNetwork ***");
             } catch (Exception e1) {
+                logger.warn("*** ASYNC I/O: MultiLayerNetwork load failed: {} ***", e1.getMessage());
                 try {
-                    // Reset stream and try ComputationGraph
-                    inputStream = new java.io.ByteArrayInputStream(data);
-                    java.lang.reflect.Method restoreCGMethod = modelSerializerClass.getMethod(
-                        "restoreComputationGraph", java.io.InputStream.class);
-                    result = restoreCGMethod.invoke(null, inputStream);
+                    modelStream = new java.io.ByteArrayInputStream(data);
+                    result = org.deeplearning4j.util.ModelSerializer.restoreComputationGraph(modelStream, true);
+                    logger.info("*** ASYNC I/O: Successfully loaded as ComputationGraph ***");
                 } catch (Exception e2) {
-                    logger.error("*** ASYNC I/O: Failed to load as MultiLayerNetwork or ComputationGraph - {} ***", e2.getMessage());
-                    return null;
+                    logger.error("*** ASYNC I/O: ComputationGraph load failed: {} ***", e2.getMessage());
+                    logger.error("*** ASYNC I/O: File size: {} bytes, ZIP signature: {} ***", 
+                        data.length, (data.length >= 4 && data[0] == 0x50 && data[1] == 0x4B));
+                    throw new RuntimeException("DeepLearning4J model deserialization failed", e2);
                 }
             }
             

@@ -27,6 +27,7 @@ import org.deeplearning4j.optimize.listeners.ScoreIterationListener;
 import org.nd4j.linalg.activations.Activation;
 import org.nd4j.linalg.api.ndarray.INDArray;
 import org.nd4j.linalg.factory.Nd4j;
+import org.nd4j.linalg.indexing.NDArrayIndex;
 import org.nd4j.linalg.learning.config.Adam;
 import org.nd4j.linalg.lossfunctions.LossFunctions;
 import org.nd4j.linalg.ops.transforms.Transforms;
@@ -83,6 +84,10 @@ public class AsynchronousAdvantageActorCriticAI {
         this.openingBook = new LeelaChessZeroOpeningBook(false);
         initializeNetworks();
         loadModels();
+        
+        // Register with Spring for proper shutdown order
+        // Shutdown hook removed to prevent conflicts with Spring context shutdown
+        
         logger.info("*** A3C AI: Initialized with {} workers ***", numWorkers);
     }
     
@@ -532,9 +537,12 @@ public class AsynchronousAdvantageActorCriticAI {
                 INDArray s = exp.state;
                 if (s.rank() == 4 && s.size(0) == 1) {
                     // s shape is (1,12,8,8) — remove leading batch dim
-                    s = s.getRow(0); // now shape (12,8,8)
+                    s = s.get(NDArrayIndex.point(0), NDArrayIndex.all(), NDArrayIndex.all(), NDArrayIndex.all());
                 } else if (s.rank() == 1 && s.length() == 12*8*8) {
                     // rare: flattened, reshape if necessary
+                    s = s.reshape(12, 8, 8);
+                } else if (s.rank() != 3) {
+                    // Fallback: reshape to expected dimensions
                     s = s.reshape(12, 8, 8);
                 }
                 statesBatch.putRow(i, s);
@@ -817,15 +825,6 @@ public class AsynchronousAdvantageActorCriticAI {
     }
     
     private void loadModels() {
-        boolean freshStart = true; // TODO: Add configuration flag
-        
-        if (freshStart) {
-            logger.info("*** A3C AI: Fresh start mode - ignoring saved models ***");
-            episodesCompleted.set(0);
-            globalSteps.set(0);
-            return;
-        }
-        
         try {
             // Try loading compatible models
             Object actorModel = ioWrapper.loadAIData("A3C-Actor", ACTOR_MODEL_FILE);
@@ -852,10 +851,12 @@ public class AsynchronousAdvantageActorCriticAI {
                 Map<String, Object> state = (Map<String, Object>) stateData;
                 episodesCompleted.set((Integer) state.getOrDefault("episodes", 0));
                 globalSteps.set((Integer) state.getOrDefault("steps", 0));
+                logger.info("*** A3C AI: State loaded - Episodes: {}, Steps: {} ***", 
+                    episodesCompleted.get(), globalSteps.get());
             }
             
         } catch (Exception e) {
-            logger.info("*** A3C AI: No compatible models found, starting fresh ***");
+            logger.info("*** A3C AI: No saved models found, starting fresh ***");
             episodesCompleted.set(0);
             globalSteps.set(0);
         }
