@@ -60,7 +60,7 @@ public class WebSocketController {
             null, // No AI move for user moves
             checkmate,
             winner,
-            game.getSelectedAIForGame()
+            game.isAllAIEnabled() ? "All AIs" : game.getSelectedAIForGame()
         );
     }
     
@@ -78,7 +78,7 @@ public class WebSocketController {
             null, // No AI move for new game
             false, // No checkmate for new game
             null, // No winner for new game
-            game.getSelectedAIForGame()
+            game.isAllAIEnabled() ? "All AIs" : game.getSelectedAIForGame()
         );
     }
     
@@ -113,7 +113,7 @@ public class WebSocketController {
             null, // No AI move for undo
             checkmate,
             winner,
-            game.getSelectedAIForGame()
+            game.isAllAIEnabled() ? "All AIs" : game.getSelectedAIForGame()
         );
     }
     
@@ -133,7 +133,7 @@ public class WebSocketController {
             null, // No AI move for redo
             checkmate,
             winner,
-            game.getSelectedAIForGame()
+            game.isAllAIEnabled() ? "All AIs" : game.getSelectedAIForGame()
         );
     }
     
@@ -178,7 +178,7 @@ public class WebSocketController {
                 null, // No AI move for board request
                 checkmate,
                 winner,
-                game.getSelectedAIForGame()
+                game.isAllAIEnabled() ? "All AIs" : game.getSelectedAIForGame()
             );
             return message;
         } catch (Exception e) {
@@ -430,6 +430,7 @@ public class WebSocketController {
         public boolean checkmate; // New field for checkmate detection
         public String winner; // New field for winner information
         public String selectedAI; // AI currently being used for this game
+        public String lastMoveAI; // AI that made the last move
         
         public GameStateMessage(String[][] board, boolean whiteTurn, boolean gameOver, 
                                int[] kingInCheck, int[][] threatenedPieces, boolean success) {
@@ -487,6 +488,23 @@ public class WebSocketController {
             this.checkmate = checkmate;
             this.winner = winner;
             this.selectedAI = selectedAI;
+            this.lastMoveAI = null;
+        }
+        
+        public GameStateMessage(String[][] board, boolean whiteTurn, boolean gameOver, 
+                               int[] kingInCheck, int[][] threatenedPieces, boolean success, int[] aiLastMove, 
+                               boolean checkmate, String winner, String selectedAI, String lastMoveAI) {
+            this.board = board;
+            this.whiteTurn = whiteTurn;
+            this.gameOver = gameOver;
+            this.kingInCheck = kingInCheck;
+            this.threatenedPieces = threatenedPieces;
+            this.success = success;
+            this.aiLastMove = aiLastMove;
+            this.checkmate = checkmate;
+            this.winner = winner;
+            this.selectedAI = selectedAI;
+            this.lastMoveAI = lastMoveAI;
         }
     }
     

@@ -630,6 +630,11 @@ public class DeepQNetworkAI {
         });
     }
     
+    public void stopThinking() {
+        // DQN doesn't have async thinking threads like MCTS/AlphaZero
+        // This is a no-op for compatibility
+    }
+    
     public void shutdown() {
         System.out.println("Rainbow DQN: Initiating graceful shutdown...");
         

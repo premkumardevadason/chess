@@ -102,6 +102,8 @@ public class ChessGame {
     private boolean geneticEnabled;
     @Value("${chess.ai.alphafold3.enabled:true}")
     private boolean alphaFold3Enabled;
+    @Value("${chess.ai.all.enabled:true}")
+    private boolean allAIEnabled;
     private boolean whiteKingMoved = false;
     private boolean blackKingMoved = false;
     private boolean whiteRookKingSideMoved = false;
@@ -124,8 +126,13 @@ public class ChessGame {
     private TrainingManager trainingManager; // Extracted training coordination
     private volatile long lastSaveTime = 0; // Track last save time to prevent redundant saves
     
+    // State change tracking for dirty file management
+    private volatile boolean trainingStarted = false;
+    private volatile boolean userGameStarted = false;
+    
     // AI selection for current game
     private String selectedAIForGame = null;
+    private String lastMoveByAI = null; // Track which AI made the last move
     private Random aiSelector = new Random();
     
     private static class GameState {
@@ -610,7 +617,8 @@ public class ChessGame {
         
         moveHistory.add(fromRow + "," + fromCol + "," + toRow + "," + toCol);
         updateCastlingRights(piece, fromRow, fromCol);
-        stateChanged = true; // Mark state as changed when move is made
+        markUserGameStarted(); // Mark user game started for dirty state tracking
+        notifyStateChanged(); // CRITICAL FIX: Ensure dirty flag system is triggered
         
         // Track move in opening book for continuity
         if (leelaOpeningBook != null) {
@@ -666,10 +674,18 @@ public class ChessGame {
 
 
 
+    private volatile boolean resetInProgress = false;
+    
     private synchronized void makeComputerMove() {
-        logger.debug("=== makeComputerMove() ENTRY - gameOver={}, whiteTurn={} ===", gameOver, whiteTurn);
+        logger.debug("=== makeComputerMove() ENTRY - gameOver={}, whiteTurn={}, resetInProgress={} ===", gameOver, whiteTurn, resetInProgress);
         if (gameOver) {
             logger.info("GAME IS OVER - AI CANNOT MOVE");
+            return;
+        }
+        
+        // CRITICAL FIX: Don't start AI move if reset is in progress
+        if (resetInProgress) {
+            logger.info("GAME RESET IN PROGRESS - AI MOVE CANCELLED");
             return;
         }
         
@@ -788,6 +804,10 @@ public class ChessGame {
             
             // Store AI's last move for frontend blinking
             aiLastMove = new int[]{bestMove[0], bestMove[1], bestMove[2], bestMove[3]};
+            
+            // CRITICAL FIX: Mark state as changed for dirty flag system
+            markUserGameStarted(); // AI move in user game
+            notifyStateChanged();
             
             // Broadcast AI move via WebSocket
             broadcastGameState();
@@ -1138,8 +1158,8 @@ public class ChessGame {
         java.util.concurrent.CompletableFuture<int[]> geneticTask = java.util.concurrent.CompletableFuture.completedFuture(null);
         java.util.concurrent.CompletableFuture<int[]> alphaFold3Task = java.util.concurrent.CompletableFuture.completedFuture(null);
         
-        // Only evaluate the selected AI (unless critical defense override needed)
-        if (criticalDefenseMove == null && selectedAIForGame != null && !"None".equals(selectedAIForGame)) {
+        // Only evaluate the selected AI (unless critical defense override needed or all AIs enabled)
+        if (criticalDefenseMove == null && selectedAIForGame != null && !"None".equals(selectedAIForGame) && !allAIEnabled) {
             switch (selectedAIForGame) {
                 case "QLearning":
                     if (isQLearningEnabled()) {
@@ -1275,8 +1295,9 @@ public class ChessGame {
                     break;
             }
         } else {
-            // Fallback: evaluate all AIs if no specific AI selected or critical defense needed
-            logger.debug("*** FALLBACK: Evaluating all AIs (no specific selection or critical defense) ***");
+            // Evaluate all AIs if allAIEnabled=true, no specific AI selected, or critical defense needed
+            String reason = allAIEnabled ? "All AIs enabled" : "Fallback mode";
+            logger.debug("*** {}: Evaluating all AIs ***", reason);
             
             qLearningTask = isQLearningEnabled() ? 
                 java.util.concurrent.CompletableFuture.supplyAsync(() -> {
@@ -1489,8 +1510,8 @@ public class ChessGame {
         logger.debug("*** PARALLEL AI EXECUTION: Completed in " + parallelTime + "ms (" + 
             String.format("%.1f", parallelTime/1000.0) + "s) ***");
         
-        // OPTIMIZED LOGGING: Only log the selected AI's result (unless fallback mode)
-        if (criticalDefenseMove == null && selectedAIForGame != null && !"None".equals(selectedAIForGame)) {
+        // OPTIMIZED LOGGING: Only log the selected AI's result (unless fallback mode or all AIs enabled)
+        if (criticalDefenseMove == null && selectedAIForGame != null && !"None".equals(selectedAIForGame) && !allAIEnabled) {
             logger.info("=== SELECTED AI RESULT ===");
             
             switch (selectedAIForGame) {
@@ -1670,7 +1691,7 @@ public class ChessGame {
             filteredMoves = movesToEvaluate;
         }
         
-        // Use only the selected AI for this game (but override with critical defense if needed)
+        // Use selected AI or all AIs based on configuration (but override with critical defense if needed)
         int[] bestMove = null;
         String selectedAIName = "None";
         
@@ -1679,72 +1700,111 @@ public class ChessGame {
             bestMove = criticalDefenseMove;
             selectedAIName = "Critical Defense Override";
             logger.info("*** CRITICAL DEFENSE OVERRIDE: Using emergency move regardless of selected AI ***");
+        } else if (allAIEnabled) {
+            // All AIs enabled - use consensus/comparison approach
+            List<int[]> validMoves = new ArrayList<>();
+            List<String> aiNames = new ArrayList<>();
+            
+            if (qLearningMove != null) { validMoves.add(qLearningMove); aiNames.add("Q-Learning"); }
+            if (deepLearningMove != null) { validMoves.add(deepLearningMove); aiNames.add("Deep Learning"); }
+            if (deepLearningCNNMove != null) { validMoves.add(deepLearningCNNMove); aiNames.add("CNN Deep Learning"); }
+            if (dqnMove != null) { validMoves.add(dqnMove); aiNames.add("DQN"); }
+            if (mctsMove != null) { validMoves.add(mctsMove); aiNames.add("MCTS"); }
+            if (alphaZeroMove != null) { validMoves.add(alphaZeroMove); aiNames.add("AlphaZero"); }
+            if (negamaxMove != null) { validMoves.add(negamaxMove); aiNames.add("Negamax"); }
+            if (openAiMove != null) { validMoves.add(openAiMove); aiNames.add("OpenAI"); }
+            if (leelaZeroMove != null) { validMoves.add(leelaZeroMove); aiNames.add("LeelaZero"); }
+            if (geneticMove != null) { validMoves.add(geneticMove); aiNames.add("Genetic"); }
+            if (alphaFold3Move != null) { validMoves.add(alphaFold3Move); aiNames.add("AlphaFold3"); }
+            
+            if (!validMoves.isEmpty()) {
+                bestMove = compareMoves(validMoves, aiNames);
+                selectedAIName = "All AIs Consensus";
+                // Find which AI's move was selected
+                for (int i = 0; i < validMoves.size(); i++) {
+                    if (java.util.Arrays.equals(bestMove, validMoves.get(i))) {
+                        lastMoveByAI = aiNames.get(i);
+                        break;
+                    }
+                }
+            }
         } else if (selectedAIForGame != null && !"None".equals(selectedAIForGame)) {
             switch (selectedAIForGame) {
                 case "QLearning":
                     if (qLearningMove != null) {
                         bestMove = qLearningMove;
                         selectedAIName = "Q-Learning";
+                        lastMoveByAI = "Q-Learning";
                     }
                     break;
                 case "DeepLearning":
                     if (deepLearningMove != null) {
                         bestMove = deepLearningMove;
                         selectedAIName = "Deep Learning";
+                        lastMoveByAI = "Deep Learning";
                     }
                     break;
                 case "DeepLearningCNN":
                     if (deepLearningCNNMove != null) {
                         bestMove = deepLearningCNNMove;
                         selectedAIName = "CNN Deep Learning";
+                        lastMoveByAI = "CNN Deep Learning";
                     }
                     break;
                 case "DQN":
                     if (dqnMove != null) {
                         bestMove = dqnMove;
                         selectedAIName = "Deep Q-Network";
+                        lastMoveByAI = "DQN";
                     }
                     break;
                 case "MCTS":
                     if (mctsMove != null) {
                         bestMove = mctsMove;
                         selectedAIName = "MCTS";
+                        lastMoveByAI = "MCTS";
                     }
                     break;
                 case "AlphaZero":
                     if (alphaZeroMove != null) {
                         bestMove = alphaZeroMove;
                         selectedAIName = "AlphaZero";
+                        lastMoveByAI = "AlphaZero";
                     }
                     break;
                 case "Negamax":
                     if (negamaxMove != null) {
                         bestMove = negamaxMove;
                         selectedAIName = "Negamax";
+                        lastMoveByAI = "Negamax";
                     }
                     break;
                 case "OpenAI":
                     if (openAiMove != null) {
                         bestMove = openAiMove;
                         selectedAIName = "OpenAI";
+                        lastMoveByAI = "OpenAI";
                     }
                     break;
                 case "LeelaZero":
                     if (leelaZeroMove != null) {
                         bestMove = leelaZeroMove;
                         selectedAIName = "LeelaZero";
+                        lastMoveByAI = "LeelaZero";
                     }
                     break;
                 case "Genetic":
                     if (geneticMove != null) {
                         bestMove = geneticMove;
                         selectedAIName = "Genetic";
+                        lastMoveByAI = "Genetic";
                     }
                     break;
                 case "AlphaFold3":
                     if (alphaFold3Move != null) {
                         bestMove = alphaFold3Move;
                         selectedAIName = "AlphaFold3";
+                        lastMoveByAI = "AlphaFold3";
                     }
                     break;
             }
@@ -1816,6 +1876,20 @@ public class ChessGame {
      */
     public String getSelectedAIForGame() {
         return selectedAIForGame;
+    }
+    
+    /**
+     * Check if all AIs are enabled for gameplay
+     */
+    public boolean isAllAIEnabled() {
+        return allAIEnabled;
+    }
+    
+    /**
+     * Get which AI made the last move
+     */
+    public String getLastMoveByAI() {
+        return lastMoveByAI;
     }
     
     /**
@@ -2849,7 +2923,33 @@ public class ChessGame {
      * - Clears move history and game state
      * - Preserves AI learning progress
      */
-    public void resetGame() {
+    public synchronized void resetGame() {
+        // CRITICAL FIX: Stop any ongoing AI thinking first
+        if (mctsAI != null) {
+            mctsAI.stopThinking();
+        }
+        if (alphaZeroAI != null) {
+            alphaZeroAI.stopThinking();
+        }
+        if (leelaZeroAI != null) {
+            leelaZeroAI.stopThinking();
+        }
+        if (dqnAI != null) {
+            dqnAI.stopThinking();
+        }
+        if (deepLearningAI != null) {
+            deepLearningAI.stopThinking();
+        }
+        if (deepLearningCNNAI != null) {
+            deepLearningCNNAI.stopThinking();
+        }
+        if (geneticAI != null) {
+            geneticAI.stopThinking();
+        }
+        if (alphaFold3AI != null) {
+            alphaFold3AI.stopThinking();
+        }
+        
         // Only process game data and save if there were actual moves made
         if (moveHistory.size() > 0) {
             logger.info("*** PARALLEL AI GAME DATA PROCESSING: Starting all enabled AIs simultaneously ***");
@@ -2910,7 +3010,7 @@ public class ChessGame {
                     }
                 }) : java.util.concurrent.CompletableFuture.completedFuture(null);
             
-            // Wait for ALL AI game data processing to complete in parallel
+            // CRITICAL FIX: Wait for ALL AI game data processing to complete BEFORE resetting game state
             try {
                 java.util.concurrent.CompletableFuture.allOf(
                     alphaZeroTask, deepLearningTask, deepLearningCNNTask, dqnTask, alphaFold3Task
@@ -2920,6 +3020,12 @@ public class ChessGame {
                 
             } catch (java.util.concurrent.TimeoutException e) {
                 logger.error("AI game data processing timeout after 30 seconds: {}", e.getMessage());
+                // Cancel remaining tasks
+                alphaZeroTask.cancel(true);
+                deepLearningTask.cancel(true);
+                deepLearningCNNTask.cancel(true);
+                dqnTask.cancel(true);
+                alphaFold3Task.cancel(true);
             } catch (Exception e) {
                 logger.error("AI game data processing error: {}", e.getMessage());
             }
@@ -2944,20 +3050,24 @@ public class ChessGame {
                 }
             }
             
-            // Save training data only when there were actual moves
-            saveTrainingData();
+            // CRITICAL FIX: Wait for training data save to complete BEFORE resetting
+            saveTrainingDataSynchronously();
         } else {
             logger.debug("*** No moves made - skipping game data processing and save ***");
         }
         
-        // Clear AI trees and reset states
-        if (mctsAI != null) {
-            mctsAI.clearTree();
-        }
-        // Negamax is stateless - no reset needed
+        // CRITICAL FIX: Set reset flag to prevent new AI moves during reset
+        resetInProgress = true;
         
-        // Reset board and game state but keep AI instances
-        initializeBoard();
+        try {
+            // Clear AI trees and reset states
+            if (mctsAI != null) {
+                mctsAI.clearTree();
+            }
+            // Negamax is stateless - no reset needed
+            
+            // Reset board and game state but keep AI instances
+            initializeBoard();
         whiteTurn = true;
         gameOver = false;
         aiLastMove = null; // Clear AI move tracking
@@ -2986,10 +3096,23 @@ public class ChessGame {
             aiSystemsReady = true; // Keep ready state during reset
         }
         
-        // Select a new random AI for this game
-        selectRandomAIForGame();
+        // Select AI mode for this game
+        if (allAIEnabled) {
+            selectedAIForGame = "All AIs";
+            logger.info("All AI systems enabled for this game");
+        } else {
+            selectRandomAIForGame();
+        }
+        
+        // Clear last move AI on reset
+        lastMoveByAI = null;
         
         logger.info("NEW GAME STARTED - AI KNOWLEDGE SAVED & PRESERVED (9 AI SYSTEMS + LEELA OPENINGS)");
+        
+        } finally {
+            // CRITICAL FIX: Clear reset flag to allow new AI moves
+            resetInProgress = false;
+        }
     }
     
     public void shutdown() {
@@ -3281,12 +3404,36 @@ public class ChessGame {
     
     public void trainAI() {
         ensureAISystemsInitialized();
-        stateChanged = true;
+        
+        // Check if async I/O operations are still in progress
+        if (isAsyncIOInProgress()) {
+            logger.error("*** TRAINING BLOCKED: Async I/O operations still in progress - please wait for save to complete ***");
+            return;
+        }
+        
+        markTrainingStarted(); // Mark training started for dirty state tracking
         
         if (trainingManager == null) {
             trainingManager = new TrainingManager();
         }
         trainingManager.startTraining(this);
+    }
+    
+    /**
+     * Check if any async I/O operations are currently in progress
+     */
+    private boolean isAsyncIOInProgress() {
+        try {
+            // Get the async manager from ChessApplication
+            Object asyncManager = ChessApplication.getAsyncManager();
+            if (asyncManager != null) {
+                java.lang.reflect.Method isIOInProgressMethod = asyncManager.getClass().getMethod("isIOInProgress");
+                return (Boolean) isIOInProgressMethod.invoke(asyncManager);
+            }
+        } catch (Exception e) {
+            logger.debug("Could not check async I/O status: {}", e.getMessage());
+        }
+        return false; // Default to false if we can't determine status
     }
     
     public int[] getKingInCheckPosition() {
@@ -3365,6 +3512,74 @@ public class ChessGame {
         stateChanged = true;
     }
     
+    /**
+     * Check if AI state has actually changed requiring save
+     * Only returns true if training was started or user played a game
+     */
+    public boolean hasAIStateChanged() {
+        return trainingStarted || userGameStarted;
+    }
+    
+    /**
+     * Mark that training has started - triggers dirty state
+     */
+    public void markTrainingStarted() {
+        trainingStarted = true;
+        stateChanged = true;
+    }
+    
+    /**
+     * Mark that user game has started - triggers dirty state
+     */
+    public void markUserGameStarted() {
+        userGameStarted = true;
+        stateChanged = true;
+    }
+    
+    /**
+     * Reset state change flags after save or on app start
+     */
+    public void resetStateChangeFlags() {
+        trainingStarted = false;
+        userGameStarted = false;
+        stateChanged = false;
+    }
+    
+    /**
+     * CRITICAL FIX: Process current game data for AI learning
+     * This ensures user vs AI games contribute to training datasets
+     */
+    private void processGameDataForAILearning() {
+        if (moveHistory.isEmpty()) return;
+        
+        // Determine game outcome (ongoing games are treated as draws for incremental learning)
+        boolean blackWon = gameOver && !whiteTurn;
+        
+        // Process game data for all enabled AI systems
+        if (isAlphaZeroEnabled() && alphaZeroAI != null) {
+            alphaZeroAI.addHumanGameData(board, moveHistory, blackWon);
+        }
+        
+        if (isDeepLearningEnabled() && deepLearningAI != null) {
+            deepLearningAI.addHumanGameData(board, moveHistory, blackWon);
+        }
+        
+        if (isDeepLearningCNNEnabled() && deepLearningCNNAI != null) {
+            deepLearningCNNAI.addHumanGameData(board, moveHistory, blackWon);
+        }
+        
+        if (isDQNEnabled() && dqnAI != null) {
+            dqnAI.addHumanGameData(board, moveHistory, blackWon);
+        }
+        
+        if (isAlphaFold3Enabled() && alphaFold3AI != null) {
+            alphaFold3AI.addHumanGameData(board, moveHistory, blackWon);
+        }
+        
+        // Mark state as changed to trigger dirty flag system
+        markUserGameStarted(); // Game data processing for user game
+    }
+    
     public void saveTrainingData() {
         long currentTime = System.currentTimeMillis();
         if (!stateChanged && (currentTime - lastSaveTime) < 30000) {
@@ -3374,7 +3589,7 @@ public class ChessGame {
         lastSaveTime = currentTime;
         
         logger.info("*** SAVING ALL AI TRAINING DATA WITH TRUE PARALLEL EXECUTION ***");
-        stateChanged = false; // Reset state change flag after saving
+        resetStateChangeFlags(); // Reset all state change flags after saving
         
         // Create CompletableFuture tasks for TRUE parallel execution
         var qLearningTask = java.util.concurrent.CompletableFuture.runAsync(() -> {
@@ -3480,6 +3695,97 @@ public class ChessGame {
         }
         
         logger.info("*** ALL AI TRAINING DATA SAVE COMPLETE ***");
+    }
+    
+    /**
+     * Synchronous version of saveTrainingData for use during reset to ensure completion
+     */
+    private void saveTrainingDataSynchronously() {
+        long currentTime = System.currentTimeMillis();
+        if (!stateChanged && (currentTime - lastSaveTime) < 30000) {
+            logger.debug("No state changes or recent save - skipping synchronous save");
+            return;
+        }
+        lastSaveTime = currentTime;
+        
+        logger.info("*** SYNCHRONOUS SAVE: Ensuring all AI training data is saved before reset ***");
+        resetStateChangeFlags(); // Reset all state change flags after save
+        
+        // Save each AI system synchronously to ensure completion
+        if (isQLearningEnabled()) {
+            try {
+                qLearningAI.saveQTable();
+                logger.debug("Q-Learning: Training data saved synchronously");
+            } catch (Exception e) {
+                logger.error("Q-Learning: Synchronous save failed - {}", e.getMessage());
+            }
+        }
+        
+        if (isDeepLearningEnabled()) {
+            try {
+                deepLearningAI.saveModelNow();
+                logger.debug("Deep Learning: Model saved synchronously");
+            } catch (Exception e) {
+                logger.error("Deep Learning: Synchronous save failed - {}", e.getMessage());
+            }
+        }
+        
+        if (isDeepLearningCNNEnabled()) {
+            try {
+                deepLearningCNNAI.saveModelNow();
+                logger.debug("CNN Deep Learning: Model saved synchronously");
+            } catch (Exception e) {
+                logger.error("CNN Deep Learning: Synchronous save failed - {}", e.getMessage());
+            }
+        }
+        
+        if (isDQNEnabled()) {
+            try {
+                dqnAI.saveModels();
+                dqnAI.saveExperiences();
+                logger.debug("DQN: Models and experiences saved synchronously");
+            } catch (Exception e) {
+                logger.error("DQN: Synchronous save failed - {}", e.getMessage());
+            }
+        }
+        
+        if (isAlphaZeroEnabled()) {
+            try {
+                alphaZeroAI.saveNeuralNetwork();
+                logger.debug("AlphaZero: Neural network saved synchronously");
+            } catch (Exception e) {
+                logger.error("AlphaZero: Synchronous save failed - {}", e.getMessage());
+            }
+        }
+        
+        if (isLeelaZeroEnabled()) {
+            try {
+                // LeelaZero state saving handled automatically
+                logger.debug("LeelaZero: State preserved synchronously");
+            } catch (Exception e) {
+                logger.error("LeelaZero: Synchronous save failed - {}", e.getMessage());
+            }
+        }
+        
+        if (isGeneticEnabled()) {
+            try {
+                geneticAI.savePopulation();
+                logger.debug("Genetic Algorithm: Population saved synchronously");
+            } catch (Exception e) {
+                logger.error("Genetic Algorithm: Synchronous save failed - {}", e.getMessage());
+            }
+        }
+        
+        if (isAlphaFold3Enabled()) {
+            try {
+                alphaFold3AI.saveState();
+                logger.debug("AlphaFold3: State saved synchronously");
+            } catch (Exception e) {
+                logger.error("AlphaFold3: Synchronous save failed - {}", e.getMessage());
+            }
+        }
+        
+        logger.info("*** SYNCHRONOUS SAVE COMPLETE - All AI training data secured ***");
     }
     
     private boolean isAnyTrainingActive() {

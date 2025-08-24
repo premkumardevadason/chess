@@ -637,6 +637,11 @@ public class GeneticAlgorithmAI {
         logger.info("*** GA AI: Training reset ***");
     }
     
+    public void stopThinking() {
+        // Genetic Algorithm doesn't have async thinking threads like MCTS/AlphaZero
+        // This is a no-op for compatibility
+    }
+    
     public void deleteTrainingData() {
         stopTraining();
         

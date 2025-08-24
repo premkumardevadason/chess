@@ -326,10 +326,15 @@ window.stopTraining = stopTraining;
 window.deleteTraining = deleteTraining;
 
 // Function to display which AI is being used
-function updateAIInfo(selectedAI) {
+function updateAIInfo(selectedAI, lastMoveAI) {
     const aiInfoElement = document.getElementById('ai-info');
+    
     if (aiInfoElement) {
-        aiInfoElement.textContent = `Current AI: ${selectedAI || 'None'}`;
+        let displayText = `Playing against: ${selectedAI || 'None'}`;
+        if (lastMoveAI && selectedAI === 'All AIs') {
+            displayText += ` (last move: ${lastMoveAI})`;
+        }
+        aiInfoElement.textContent = displayText;
     }
 }
 
@@ -367,7 +372,7 @@ function connect() {
             updateTurnInfo();
             
             // Update AI information
-            updateAIInfo(data.selectedAI);
+            updateAIInfo(data.selectedAI, data.lastMoveAI);
         });
         
         // Subscribe to training progress updates

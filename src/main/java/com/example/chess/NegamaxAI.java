@@ -624,6 +624,11 @@ public class NegamaxAI {
         return transpositionTable.size();
     }
     
+    public void stopThinking() {
+        // Negamax doesn't have async thinking threads like MCTS/AlphaZero
+        // This is a no-op for compatibility
+    }
+    
     /**
      * Get optimization statistics
      */

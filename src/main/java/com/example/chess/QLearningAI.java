@@ -1999,6 +1999,11 @@ public class QLearningAI {
         logger.info("*** Q-Learning AI: STOP FLAGS SET - Training will stop on next check ***");
     }
     
+    public void stopThinking() {
+        // Q-Learning doesn't have async thinking threads like MCTS/AlphaZero
+        // This is a no-op for compatibility
+    }
+    
     public void shutdown() {
         if (isShutdown) {
             return; // Already shutdown, prevent double execution
