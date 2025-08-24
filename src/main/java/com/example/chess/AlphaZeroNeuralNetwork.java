@@ -27,6 +27,7 @@ public class AlphaZeroNeuralNetwork implements AlphaZeroInterfaces.NeuralNetwork
     private int trainingIterations = 0;
     private int trainingEpisodes = 0; // CRITICAL FIX: Track actual episodes (self-play games)
     private boolean isTraining = false;
+    private boolean modelLoaded = false; // Prevent multiple loads
     private final int resNetBlocks = 8; // Simulate 8 ResNet blocks
     
     // Phase 3: Async I/O capability (same pattern as LeelaZero)
@@ -589,6 +590,11 @@ public class AlphaZeroNeuralNetwork implements AlphaZeroInterfaces.NeuralNetwork
     }
     
     private void loadModelData() {
+        if (modelLoaded) {
+            logger.debug("*** AlphaZero NN: Model already loaded, skipping reload ***");
+            return;
+        }
+        
         try {
             // Phase 3: Dual-path implementation (same pattern as LeelaZero)
             if (ioWrapper.isAsyncEnabled()) {
@@ -605,19 +611,21 @@ public class AlphaZeroNeuralNetwork implements AlphaZeroInterfaces.NeuralNetwork
                     
                     logger.info("*** AlphaZero NN: Loaded via async I/O (new format) - {} positions, {} residuals, {} iterations, {} episodes ***", 
                         positionCache.size(), residualCache.size(), trainingIterations, trainingEpisodes);
+                    modelLoaded = true;
                     return;
-                } else if (loadedData instanceof String) {
-                    // Old format - direct serialization, async loaded as string
-                    logger.info("*** AlphaZero: Detected old format file, falling back to sync for compatibility ***");
                 } else {
-                    logger.warn("*** AlphaZero: Async load failed (unknown format), falling back to sync ***");
+                    logger.info("*** AlphaZero: Async load returned unexpected format ({}), falling back to sync ***", 
+                        loadedData != null ? loadedData.getClass().getSimpleName() : "null");
                 }
             }
             
             // Fallback to direct I/O for backward compatibility
             java.io.File datFile = new java.io.File("alphazero_cache.dat");
             if (datFile.exists()) {
+                logger.info("*** AlphaZero: Loading from DAT file using sync I/O ***");
                 loadFromDatFile(datFile);
+            } else {
+                logger.info("*** AlphaZero: No existing cache file found, starting fresh ***");
             }
         } catch (Exception e) {
             logger.error("*** AlphaZero NN: Failed to load model data: {} ***", e.getMessage());
@@ -640,6 +648,7 @@ public class AlphaZeroNeuralNetwork implements AlphaZeroInterfaces.NeuralNetwork
                     trainingEpisodes = saveData.trainingEpisodes;
                     logger.info("*** AlphaZero NN: Loaded from DAT (new format) - {} positions, {} residuals, {} iterations, {} episodes ***", 
                         positionCache.size(), residualCache.size(), trainingIterations, trainingEpisodes);
+                    modelLoaded = true;
                 } else if (firstObject instanceof Map) {
                     // Old format - direct Map serialization
                     @SuppressWarnings("unchecked")
@@ -665,6 +674,7 @@ public class AlphaZeroNeuralNetwork implements AlphaZeroInterfaces.NeuralNetwork
                     }
                     logger.info("*** AlphaZero NN: Loaded from DAT (old format) - {} positions, {} residuals, {} iterations, {} episodes ***", 
                         positionCache.size(), residualCache.size(), trainingIterations, trainingEpisodes);
+                    modelLoaded = true;
                 } else {
                     logger.error("*** AlphaZero NN: Unknown DAT file format: {} ***", firstObject.getClass().getSimpleName());
                 }

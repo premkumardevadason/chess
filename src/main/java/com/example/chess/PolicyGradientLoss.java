@@ -23,6 +23,11 @@ public class PolicyGradientLoss implements ILossFunction {
 	private volatile double entropyCoeff;
     private static final double EPS = 1e-8;
     
+    // Default constructor for JSON deserialization
+    public PolicyGradientLoss() {
+        this.entropyCoeff = 0.01; // Default value
+    }
+    
     public PolicyGradientLoss(double entropyCoeff) {
         this.entropyCoeff = entropyCoeff;
     }
