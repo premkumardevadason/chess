@@ -244,12 +244,14 @@ public class AsyncTrainingDataManager {
                         return;
                     }
                     
-                    // Extra check for DeepLearning4J models - 30 minute debounce
-                    if (filename.endsWith(".zip") && lastTime != null && 
-                        (currentTime - lastTime) < (30 * 60 * 1000)) { // 30 minutes
-                        logger.debug("*** ASYNC I/O: Skipping frequent DeepLearning4J save for {} ({}min ago) ***", 
-                            filename, (currentTime - lastTime) / (60 * 1000));
-                        return;
+                    // PERFORMANCE FIX: Reduce AlphaZero debounce to allow more frequent saves
+                    if (filename.endsWith(".zip") && lastTime != null) {
+                        long debounceTime = filename.contains("alphazero") ? (30 * 1000) : (30 * 60 * 1000); // 30sec for AlphaZero, 30min for others
+                        if ((currentTime - lastTime) < debounceTime) {
+                            logger.debug("*** ASYNC I/O: Skipping frequent DeepLearning4J save for {} ({}sec ago) ***", 
+                                filename, (currentTime - lastTime) / 1000);
+                            return;
+                        }
                     }
                     
                     // Update tracking

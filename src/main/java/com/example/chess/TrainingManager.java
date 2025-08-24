@@ -541,9 +541,12 @@ public class TrainingManager {
             String status = "Not Available";
             
             if (game.isAlphaZeroEnabled() && game.getAlphaZeroAI() != null) {
+                // CRITICAL FIX: Force neural network to save current state before reading
+                game.getAlphaZeroAI().saveNeuralNetwork();
                 episodes = game.getAlphaZeroAI().getTrainingEpisodes();
                 status = game.getAlphaZeroAI().getTrainingStatus();
                 cacheSize = episodes / 10; // Estimate cache size
+                logger.debug("*** TrainingManager: AlphaZero episodes read directly: {} ***", episodes);
             } else if (hasData) {
                 // Estimate from file size if AI not available
                 long fileSize = dataFile.length();
