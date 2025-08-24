@@ -17,15 +17,19 @@ public class ChessTacticalDefense {
         int[] queenDefense = detectQueenThreats(board, validMoves, aiName);
         if (queenDefense != null) return queenDefense;
         
-        // Priority 2: Immediate checkmate threats
+        // Priority 2: Valuable pieces under attack (Rook, Bishop, Knight)
+        int[] valuablePieceDefense = detectValuablePieceThreats(board, validMoves, aiName);
+        if (valuablePieceDefense != null) return valuablePieceDefense;
+        
+        // Priority 3: Immediate checkmate threats
         int[] checkmateDefense = detectCheckmateThreats(board, validMoves, aiName);
         if (checkmateDefense != null) return checkmateDefense;
         
-        // Priority 3: Opening traps
+        // Priority 4: Opening traps
         int[] trapDefense = detectOpeningTraps(board, validMoves, aiName);
         if (trapDefense != null) return trapDefense;
         
-        // Priority 4: Tactical patterns
+        // Priority 5: Tactical patterns
         int[] tacticalDefense = detectTacticalThreats(board, validMoves, aiName);
         if (tacticalDefense != null) return tacticalDefense;
         
@@ -53,34 +57,92 @@ public class ChessTacticalDefense {
         
         logger.info("*** TACTICAL DEFENSE: Queen under attack at [{},{}] ***", queenPos[0], queenPos[1]);
         
-        // Try Queen escape moves first
+        return defendValuablePiece(board, validMoves, queenPos, "♛", "Queen");
+    }
+    
+    /**
+     * Detect and defend threats against all valuable pieces (Rook, Bishop, Knight)
+     */
+    private static int[] detectValuablePieceThreats(String[][] board, List<int[]> validMoves, String aiName) {
+        String[] valuablePieces = {"♜", "♝", "♞"}; // Rook, Bishop, Knight
+        String[] pieceNames = {"Rook", "Bishop", "Knight"};
+        
+        for (int p = 0; p < valuablePieces.length; p++) {
+            String pieceType = valuablePieces[p];
+            String pieceName = pieceNames[p];
+            
+            // Find all pieces of this type
+            for (int i = 0; i < 8; i++) {
+                for (int j = 0; j < 8; j++) {
+                    if (pieceType.equals(board[i][j])) {
+                        // Check if this piece is under attack
+                        if (isSquareUnderAttack(board, i, j, true)) {
+                            logger.info("*** TACTICAL DEFENSE: {} under attack at [{},{}] ***", pieceName, i, j);
+                            
+                            int[] defense = defendValuablePiece(board, validMoves, new int[]{i, j}, pieceType, pieceName);
+                            if (defense != null) {
+                                return defense;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        return null;
+    }
+    
+    /**
+     * Universal piece defense logic: Escape → Block → Capture
+     */
+    private static int[] defendValuablePiece(String[][] board, List<int[]> validMoves, int[] piecePos, String pieceType, String pieceName) {
+        // Priority 1: Try piece escape moves first
         for (int[] move : validMoves) {
-            if (move[0] == queenPos[0] && move[1] == queenPos[1]) {
-                // Simulate Queen move to check safety
+            if (move[0] == piecePos[0] && move[1] == piecePos[1]) {
+                // Simulate piece move to check safety
                 String captured = board[move[2]][move[3]];
-                board[move[2]][move[3]] = "♛";
-                board[move[0]][move[1]] = "";
+                board[move[2]][move[3]] = pieceType;
+                board[move[0]][move[1]] = " ";
                 
                 boolean safe = !isSquareUnderAttack(board, move[2], move[3], true);
                 
                 // Restore board
-                board[move[0]][move[1]] = "♛";
+                board[move[0]][move[1]] = pieceType;
                 board[move[2]][move[3]] = captured;
                 
                 if (safe) {
-                    logger.info("*** TACTICAL DEFENSE: Queen escape to [{},{}] ***", move[2], move[3]);
+                    logger.info("*** TACTICAL DEFENSE: {} escape to [{},{}] ***", pieceName, move[2], move[3]);
                     return move;
                 }
             }
         }
         
-        // Try capturing attackers
-        List<int[]> attackers = findAttackersOfSquare(board, queenPos[0], queenPos[1], true);
+        // Priority 2: Try blocking the attack
+        List<int[]> attackers = findAttackersOfSquare(board, piecePos[0], piecePos[1], true);
+        for (int[] attacker : attackers) {
+            int[] blockMove = findBlockingMove(board, validMoves, attacker, piecePos);
+            if (blockMove != null) {
+                logger.info("*** TACTICAL DEFENSE: Block {} attack with piece to [{},{}] ***", pieceName, blockMove[2], blockMove[3]);
+                return blockMove;
+            }
+        }
+        
+        // Priority 3: Try capturing attackers (only if advantageous)
         for (int[] attacker : attackers) {
             for (int[] move : validMoves) {
                 if (move[2] == attacker[0] && move[3] == attacker[1]) {
-                    logger.info("*** TACTICAL DEFENSE: Capture Queen attacker ***");
-                    return move;
+                    // Check if capture is advantageous
+                    String attackerPiece = board[attacker[0]][attacker[1]];
+                    String capturingPiece = board[move[0]][move[1]];
+                    double attackerValue = getChessPieceValue(attackerPiece);
+                    double capturingValue = getChessPieceValue(capturingPiece);
+                    double defendedValue = getChessPieceValue(pieceType);
+                    
+                    // Capture if we gain material or save a more valuable piece
+                    if (attackerValue >= capturingValue || defendedValue > capturingValue) {
+                        logger.info("*** TACTICAL DEFENSE: Capture {} attacker (save {}) ***", pieceName, pieceName);
+                        return move;
+                    }
                 }
             }
         }
@@ -751,5 +813,59 @@ public class ChessTacticalDefense {
             }
         }
         return attackers;
+    }
+    
+    /**
+     * Find a move that blocks the attack from attacker to target
+     */
+    private static int[] findBlockingMove(String[][] board, List<int[]> validMoves, int[] attacker, int[] target) {
+        String attackerPiece = board[attacker[0]][attacker[1]];
+        
+        // Only sliding pieces (Queen, Rook, Bishop) can be blocked
+        if (!"♕♖♗♛♜♝".contains(attackerPiece)) {
+            return null; // Knight, King, Pawn attacks cannot be blocked
+        }
+        
+        // Find squares between attacker and target
+        List<int[]> blockingSquares = getSquaresBetween(attacker[0], attacker[1], target[0], target[1]);
+        
+        // Try to move any piece to a blocking square
+        for (int[] blockSquare : blockingSquares) {
+            for (int[] move : validMoves) {
+                if (move[2] == blockSquare[0] && move[3] == blockSquare[1]) {
+                    // Don't block with the Queen itself (defeats the purpose)
+                    if (!"♛".equals(board[move[0]][move[1]])) {
+                        return move;
+                    }
+                }
+            }
+        }
+        
+        return null;
+    }
+    
+    /**
+     * Get all squares between two positions (for blocking calculations)
+     */
+    private static List<int[]> getSquaresBetween(int fromR, int fromC, int toR, int toC) {
+        List<int[]> squares = new ArrayList<>();
+        
+        int dr = Integer.compare(toR, fromR);
+        int dc = Integer.compare(toC, fromC);
+        
+        // Must be on same rank, file, or diagonal
+        if (dr == 0 && dc == 0) return squares; // Same square
+        if (dr != 0 && dc != 0 && Math.abs(dr) != Math.abs(dc)) return squares; // Not diagonal
+        
+        int r = fromR + dr;
+        int c = fromC + dc;
+        
+        while (r != toR || c != toC) {
+            squares.add(new int[]{r, c});
+            r += dr;
+            c += dc;
+        }
+        
+        return squares;
     }
 }

@@ -213,17 +213,18 @@ public class AlphaZeroAI {
                 long endTime = System.currentTimeMillis();
                 
                 double trainingTimeMinutes = (endTime - startTime) / (1000.0 * 60.0);
-                int finalEpisodes = getTrainingEpisodes();
+                
+                // CRITICAL FIX: Get latest episode count from neural network after training
+                int finalEpisodes = neuralNetwork.getTrainingEpisodes();
                 
                 logger.info("*** AlphaZero: Training completed successfully ***");
                 logger.info("Training statistics: {} episodes, {} minutes, {} episodes/min", 
                     finalEpisodes, String.format("%.1f", trainingTimeMinutes), String.format("%.1f", finalGames / Math.max(trainingTimeMinutes, 0.1)));
                 
-                // Save neural network after training
-                saveNeuralNetwork();
-                
-                // Provide effectiveness assessment
+                // Provide effectiveness assessment using latest episodes count
                 assessTrainingEffectiveness(finalEpisodes);
+                
+                // Note: Neural network already saved by training service - no need to save again
                 
             } catch (Exception e) {
                 if (Thread.currentThread().isInterrupted()) {
@@ -318,7 +319,20 @@ public class AlphaZeroAI {
         return trainingThread != null && trainingThread.isAlive() && !trainingStopRequested;
     }
     
+    private volatile long lastSaveTime = 0;
+    private static final long SAVE_DEBOUNCE_MS = 5000; // 5 second debounce
+    
     public void saveNeuralNetwork() {
+        long currentTime = System.currentTimeMillis();
+        
+        // Debounce: Skip save if we saved recently (within 5 seconds)
+        if (currentTime - lastSaveTime < SAVE_DEBOUNCE_MS) {
+            logger.debug("*** AlphaZero: Skipping redundant save (last save {}ms ago) ***", currentTime - lastSaveTime);
+            return;
+        }
+        
+        lastSaveTime = currentTime;
+        
         // Phase 3: Dual-path implementation
         if (ioWrapper.isAsyncEnabled()) {
             // AlphaZero neural network doesn't expose MultiLayerNetwork directly

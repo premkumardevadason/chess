@@ -568,18 +568,28 @@ public class AlphaZeroNeuralNetwork implements AlphaZeroInterfaces.NeuralNetwork
         return trainingEpisodes; // CRITICAL FIX: Return actual episodes, not iterations
     }
     
+    private volatile long lastAutoSaveTime = 0;
+    private static final long AUTO_SAVE_DEBOUNCE_MS = 30000; // 30 second debounce for auto-saves
+    
     public void incrementEpisodes(int episodes) {
         trainingEpisodes += episodes;
         logger.info("*** AlphaZero NN: Episodes incremented by {} to total {} ***", episodes, trainingEpisodes);
-        
-        // CRITICAL FIX: Save immediately to ensure episode count persistence
-        if (trainingEpisodes % 5 == 0) {
-            saveModel();
-            logger.info("*** AlphaZero NN: Episode count saved at {} episodes ***", trainingEpisodes);
-        }
+        // Centralized periodic save in TrainingManager handles all AI systems
     }
     
+    private volatile long lastModelSaveTime = 0;
+    private static final long MODEL_SAVE_DEBOUNCE_MS = 3000; // 3 second debounce for model saves
+    
     public void saveModel() {
+        long currentTime = System.currentTimeMillis();
+        
+        // Debounce: Skip save if we saved recently (within 3 seconds)
+        if (currentTime - lastModelSaveTime < MODEL_SAVE_DEBOUNCE_MS) {
+            logger.debug("*** AlphaZero NN: Skipping redundant model save (last save {}ms ago) ***", currentTime - lastModelSaveTime);
+            return;
+        }
+        
+        lastModelSaveTime = currentTime;
         saveModelData();
     }
     
