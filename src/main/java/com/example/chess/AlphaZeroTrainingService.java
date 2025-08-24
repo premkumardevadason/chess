@@ -17,6 +17,8 @@ public class AlphaZeroTrainingService {
     private final LeelaChessZeroOpeningBook openingBook;
     private final ChessLegalMoveAdapter moveAdapter;
     private volatile boolean stopRequested = false;
+    private volatile long lastTrainingSaveTime = 0;
+    private static final long TRAINING_SAVE_DEBOUNCE_MS = 10000; // 10 second debounce for training saves
     
     public AlphaZeroTrainingService(AlphaZeroInterfaces.NeuralNetwork neuralNetwork, 
                                    AlphaZeroInterfaces.MCTSEngine mctsEngine,
@@ -77,9 +79,8 @@ public class AlphaZeroTrainingService {
             neuralNetwork.train(trainingData);
         }
         
-        // CRITICAL FIX: Save neural network after training to persist episode count
-        neuralNetwork.saveModel();
-        logger.info("*** AlphaZero Training: Neural network saved with {} total episodes ***", neuralNetwork.getTrainingEpisodes());
+        // TrainingManager handles training lifecycle saves - no need to save here
+        logger.info("*** AlphaZero Training: Completed with {} total episodes (TrainingManager will handle save) ***", neuralNetwork.getTrainingEpisodes());
         
         logger.info("*** AlphaZero Training: Completed {} games, Total episodes: {} ***", 
             completedGames, neuralNetwork.getTrainingEpisodes());

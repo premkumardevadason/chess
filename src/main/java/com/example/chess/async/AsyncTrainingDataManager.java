@@ -195,7 +195,7 @@ public class AsyncTrainingDataManager {
         } catch (Exception e) {
             logger.debug("Could not check state change status: {}", e.getMessage());
         }
-        // Default to true for safety if we can't determine state
+        // Default to true during shutdown to ensure all active AI state is saved
         return true;
     }
     
@@ -475,19 +475,20 @@ public class AsyncTrainingDataManager {
     
     private CompletableFuture<Void> saveAllDirtyData() {
         return CompletableFuture.runAsync(() -> {
+            int dirtyCount = (int) dirtyFlags.entrySet().stream().mapToLong(e -> e.getValue().get() ? 1 : 0).sum();
+            
             // Check if any actual state changes occurred before saving
-            if (!shouldMarkDirty()) {
+            if (!shouldMarkDirty() && dirtyCount == 0) {
                 logger.info("*** ASYNC I/O: No AI state changes detected - skipping redundant save ***");
                 return;
             }
-            
-            int dirtyCount = (int) dirtyFlags.entrySet().stream().mapToLong(e -> e.getValue().get() ? 1 : 0).sum();
-            logger.info("*** ASYNC I/O: Saving all dirty data - {} files marked dirty ***", dirtyCount);
             
             if (dirtyCount == 0) {
                 logger.info("*** ASYNC I/O: No dirty data to save ***");
                 return;
             }
+            
+            logger.info("*** ASYNC I/O: Saving all dirty data - {} files marked dirty ***", dirtyCount);
             
             java.util.List<CompletableFuture<Void>> saveTasks = new java.util.ArrayList<>();
             
@@ -676,22 +677,17 @@ public class AsyncTrainingDataManager {
             Class<?> modelSerializerClass = Class.forName("org.deeplearning4j.util.ModelSerializer");
             Object result = null;
             
-            try {
-                // Try direct DL4J API call
+            // Determine model type based on filename to avoid backward compatibility issues
+            boolean isComputationGraph = filename.contains("dqn");
+            
+            if (isComputationGraph) {
+                // Load as ComputationGraph directly
+                result = org.deeplearning4j.util.ModelSerializer.restoreComputationGraph(modelStream, true);
+                logger.info("*** ASYNC I/O: Successfully loaded as ComputationGraph ***");
+            } else {
+                // Load as MultiLayerNetwork directly
                 result = org.deeplearning4j.util.ModelSerializer.restoreMultiLayerNetwork(modelStream, true);
                 logger.info("*** ASYNC I/O: Successfully loaded as MultiLayerNetwork ***");
-            } catch (Exception e1) {
-                logger.warn("*** ASYNC I/O: MultiLayerNetwork load failed: {} ***", e1.getMessage());
-                try {
-                    modelStream = new java.io.ByteArrayInputStream(data);
-                    result = org.deeplearning4j.util.ModelSerializer.restoreComputationGraph(modelStream, true);
-                    logger.info("*** ASYNC I/O: Successfully loaded as ComputationGraph ***");
-                } catch (Exception e2) {
-                    logger.error("*** ASYNC I/O: ComputationGraph load failed: {} ***", e2.getMessage());
-                    logger.error("*** ASYNC I/O: File size: {} bytes, ZIP signature: {} ***", 
-                        data.length, (data.length >= 4 && data[0] == 0x50 && data[1] == 0x4B));
-                    throw new RuntimeException("DeepLearning4J model deserialization failed", e2);
-                }
             }
             
             logger.info("*** ASYNC I/O: DeepLearning4J model loaded using NIO.2 stream bridge ***");

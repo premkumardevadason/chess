@@ -3780,8 +3780,15 @@ public class ChessGame {
         var alphaZeroTask = java.util.concurrent.CompletableFuture.runAsync(() -> {
             if (isAlphaZeroEnabled()) {
                 try {
-                    alphaZeroAI.saveNeuralNetwork();
-                    logger.debug("AlphaZero: Neural network saved");
+                    // CRITICAL FIX: Don't save if training just completed - data already saved by TrainingService
+                    int episodes = alphaZeroAI.getTrainingEpisodes();
+                    if (episodes > 0) {
+                        // Note: saveNeuralNetwork() now has debounce protection
+                        alphaZeroAI.saveNeuralNetwork();
+                        logger.debug("AlphaZero: Neural network save requested ({} episodes)", episodes);
+                    } else {
+                        logger.debug("AlphaZero: Skipping save - no training data (0 episodes)");
+                    }
                 } catch (Exception e) {
                     logger.error("AlphaZero: Save failed - {}", e.getMessage());
                 }
@@ -3902,8 +3909,15 @@ public class ChessGame {
         
         if (isAlphaZeroEnabled()) {
             try {
-                alphaZeroAI.saveNeuralNetwork();
-                logger.debug("AlphaZero: Neural network saved synchronously");
+                // CRITICAL FIX: Don't save if no training data exists
+                int episodes = alphaZeroAI.getTrainingEpisodes();
+                if (episodes > 0) {
+                    // Note: saveNeuralNetwork() now has debounce protection
+                    alphaZeroAI.saveNeuralNetwork();
+                    logger.debug("AlphaZero: Neural network save requested synchronously ({} episodes)", episodes);
+                } else {
+                    logger.debug("AlphaZero: Skipping synchronous save - no training data (0 episodes)");
+                }
             } catch (Exception e) {
                 logger.error("AlphaZero: Synchronous save failed - {}", e.getMessage());
             }
