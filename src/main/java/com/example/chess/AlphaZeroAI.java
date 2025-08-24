@@ -199,6 +199,12 @@ public class AlphaZeroAI {
         final int finalGames = effectiveGames;
         trainingThread = new Thread(() -> {
             try {
+                // CRITICAL FIX: Check stop flags before starting training
+                if (trainingStopRequested || stopTrainingFlag) {
+                    logger.info("*** AlphaZero: Training cancelled before start - stop flags set ***");
+                    return;
+                }
+                
                 logger.info("*** AlphaZero: Training thread started, calling runSelfPlayTraining with {} episodes ***", finalGames);
                 
                 // Enhanced training with progress monitoring

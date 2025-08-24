@@ -569,7 +569,13 @@ public class AlphaZeroNeuralNetwork implements AlphaZeroInterfaces.NeuralNetwork
     
     public void incrementEpisodes(int episodes) {
         trainingEpisodes += episodes;
-        logger.debug("*** AlphaZero NN: Episodes incremented by {} to total {} ***", episodes, trainingEpisodes);
+        logger.info("*** AlphaZero NN: Episodes incremented by {} to total {} ***", episodes, trainingEpisodes);
+        
+        // CRITICAL FIX: Save immediately to ensure episode count persistence
+        if (trainingEpisodes % 5 == 0) {
+            saveModel();
+            logger.info("*** AlphaZero NN: Episode count saved at {} episodes ***", trainingEpisodes);
+        }
     }
     
     public void saveModel() {

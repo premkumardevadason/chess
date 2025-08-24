@@ -36,28 +36,39 @@ public class AlphaZeroTrainingService {
         int completedGames = 0;
         
         for (int game = 0; game < games && !stopRequested; game++) {
-            if (stopRequested) break;
-            
-            List<AlphaZeroInterfaces.TrainingExample> gameData = playSelfPlayGame();
-            if (!gameData.isEmpty()) {
-                trainingData.addAll(gameData);
-                completedGames++;
-                
-                // CRITICAL FIX: Increment episode counter for each completed game
-                if (neuralNetwork instanceof AlphaZeroNeuralNetwork) {
-                    ((AlphaZeroNeuralNetwork) neuralNetwork).incrementEpisodes(1);
-                }
-                
-                // Train neural network every 10 games or at the end
-                if (completedGames % 10 == 0 || game == games - 1) {
-                    neuralNetwork.train(trainingData);
-                    trainingData.clear(); // Clear after training
-                    logger.debug("*** AlphaZero Training: Batch training completed for {} games ***", completedGames);
-                }
+            // CRITICAL FIX: Check stop flag at start of each game
+            if (stopRequested) {
+                logger.info("*** AlphaZero Training: Stop requested at game {} ***", game);
+                break;
             }
             
-            if ((game + 1) % 100 == 0) {
-                logger.info("*** AlphaZero Training: Completed {} games ***", game + 1);
+            try {
+                List<AlphaZeroInterfaces.TrainingExample> gameData = playSelfPlayGame();
+                if (!gameData.isEmpty()) {
+                    trainingData.addAll(gameData);
+                    completedGames++;
+                    
+                    // CRITICAL FIX: Increment episode counter for each completed game
+                    if (neuralNetwork instanceof AlphaZeroNeuralNetwork) {
+                        ((AlphaZeroNeuralNetwork) neuralNetwork).incrementEpisodes(1);
+                    }
+                    
+                    // PERFORMANCE FIX: Train more frequently to prevent memory buildup
+                    if (completedGames % 5 == 0 || game == games - 1) {
+                        neuralNetwork.train(trainingData);
+                        trainingData.clear(); // Clear after training
+                        logger.debug("*** AlphaZero Training: Batch training completed for {} games ***", completedGames);
+                    }
+                }
+                
+                // More frequent progress updates
+                if ((game + 1) % 10 == 0) {
+                    logger.info("*** AlphaZero Training: Completed {} games ***", game + 1);
+                }
+                
+            } catch (Exception e) {
+                logger.error("*** AlphaZero Training: Game {} failed - {} ***", game + 1, e.getMessage());
+                // Continue with next game instead of stopping
             }
         }
         
@@ -68,6 +79,7 @@ public class AlphaZeroTrainingService {
         
         // CRITICAL FIX: Save neural network after training to persist episode count
         neuralNetwork.saveModel();
+        logger.info("*** AlphaZero Training: Neural network saved with {} total episodes ***", neuralNetwork.getTrainingEpisodes());
         
         logger.info("*** AlphaZero Training: Completed {} games, Total episodes: {} ***", 
             completedGames, neuralNetwork.getTrainingEpisodes());
@@ -84,8 +96,13 @@ public class AlphaZeroTrainingService {
         boolean whiteTurn = virtualBoard.isWhiteTurn();
         int moveCount = 0;
         
-        while (moveCount < 100 && !moveAdapter.isGameOver(board) && !stopRequested) {
-            if (stopRequested) break;
+        // PERFORMANCE FIX: Shorter games to speed up training
+        while (moveCount < 50 && !moveAdapter.isGameOver(board) && !stopRequested) {
+            // CRITICAL FIX: Check stop flag during game
+            if (stopRequested) {
+                logger.debug("*** AlphaZero Training: Stop requested during game at move {} ***", moveCount);
+                break;
+            }
             
             List<int[]> validMoves = moveAdapter.getAllLegalMoves(board, whiteTurn);
             if (validMoves.isEmpty()) break;
@@ -93,10 +110,12 @@ public class AlphaZeroTrainingService {
             int[] selectedMove = selectMove(board, validMoves, moveCount);
             if (selectedMove == null) break;
             
-            double[] policy = createPolicyFromMove(selectedMove, validMoves);
-            double value = evaluatePosition(board, whiteTurn);
-            
-            gameData.add(new AlphaZeroInterfaces.TrainingExample(copyBoard(board), policy, value));
+            // PERFORMANCE FIX: Only store training data every few moves to reduce memory
+            if (moveCount % 3 == 0) {
+                double[] policy = createPolicyFromMove(selectedMove, validMoves);
+                double value = evaluatePosition(board, whiteTurn);
+                gameData.add(new AlphaZeroInterfaces.TrainingExample(copyBoard(board), policy, value));
+            }
             
             board = chessRules.makeMove(board, selectedMove);
             whiteTurn = !whiteTurn;
