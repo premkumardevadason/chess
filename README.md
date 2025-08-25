@@ -37,6 +37,8 @@ A sophisticated browser-based Chess game built with Spring Boot, featuring 12 AI
 - **External APIs**: OpenAI GPT-4 integration
 - **Build Tool**: Maven
 - **Security**: CSRF protection, rate limiting, input validation
+- **Infrastructure**: AWS EKS, Terraform, Helm, Istio service mesh
+- **Cloud Services**: CloudFront CDN, WAF, API Gateway, S3, Secrets Manager
 
 ## Quick Start
 
@@ -58,6 +60,63 @@ Right-click `ChessApplication.java` → Run As → Spring Boot App
 
 #### Access the Game
 Open your browser to: http://localhost:8081
+
+## AWS Infrastructure Deployment
+
+⚠️ **IMPORTANT**: Complete AWS infrastructure tooling has been implemented but is **NOT YET TESTED**. All scripts require thorough validation in development environments before production use.
+
+### Infrastructure Features
+- **Multi-VPC Architecture**: Separate internet-facing and private VPCs
+- **EKS Kubernetes Cluster**: Private cluster with Istio service mesh
+- **Granular Resource Management**: Deploy and manage resources incrementally
+- **Cost Optimization**: 32-66% cost savings with halt/restart capabilities
+- **Complete Security**: WAF, private networking, secrets management
+- **Monitoring Stack**: Prometheus, Grafana, Jaeger distributed tracing
+
+### Quick Infrastructure Setup
+```bash
+# Navigate to infrastructure directory
+cd infra
+
+# Deploy incrementally (recommended for testing)
+./scripts/resource-manager.sh dev install vpc      # Network foundation
+./scripts/resource-manager.sh dev install storage  # S3 and ECR
+./scripts/resource-manager.sh dev install security # Secrets and WAF
+./scripts/resource-manager.sh dev install compute  # EKS cluster
+./scripts/resource-manager.sh dev install network  # API Gateway, CloudFront
+./scripts/resource-manager.sh dev install apps     # Istio, monitoring, chess app
+
+# Or deploy everything at once (not recommended for first deployment)
+./scripts/resource-manager.sh dev install all
+
+# Check status
+./scripts/resource-manager.sh dev status all
+```
+
+### Cost Management
+```bash
+# Halt resources to save costs (66% savings in production)
+./scripts/resource-manager.sh dev halt compute
+
+# Restart when needed
+./scripts/resource-manager.sh dev restart compute
+
+# Remove everything when done testing
+./scripts/resource-manager.sh dev remove all
+```
+
+### Infrastructure Documentation
+- **Complete Guide**: [`infra/README.md`](infra/README.md)
+- **Deployment Design**: [`docs/AWS_DEPLOYMENT_DESIGN.md`](docs/AWS_DEPLOYMENT_DESIGN.md)
+- **Incremental Testing**: [`infra/scripts/deployment-order.md`](infra/scripts/deployment-order.md)
+
+### Infrastructure Components
+- **13 Terraform modules** for complete AWS resource management
+- **Helm charts** for Kubernetes application deployment
+- **Granular scripts** for per-resource lifecycle management
+- **Automated testing** scenarios for validation
+- **CI/CD pipeline** with GitHub Actions
+- **Cost optimization** tools and strategies
 
 ## Architecture Overview
 
