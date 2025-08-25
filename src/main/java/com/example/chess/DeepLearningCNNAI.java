@@ -39,7 +39,7 @@ public class DeepLearningCNNAI {
     private static final Logger logger = LogManager.getLogger(DeepLearningCNNAI.class);
     private MultiLayerNetwork network;
     private AtomicBoolean isTraining = new AtomicBoolean(false);
-    private Thread trainingThread;
+    private volatile Thread trainingThread;
     private volatile int trainingIterations = 0;
     private volatile String trainingStatus = "Not training";
     private static final String MODEL_FILE = "chess_cnn_model.zip";
@@ -461,7 +461,7 @@ public class DeepLearningCNNAI {
             return;
         }
         
-        trainingThread = Thread.ofVirtual().name("CNN-Training-Thread").start(() -> {
+        this.trainingThread = Thread.ofVirtual().name("CNN-Training-Thread").start(() -> {
             isTraining.set(true);
             logger.info("*** CNN AI: Training started (continuous), batch size: {} ***", BATCH_SIZE);
             
@@ -473,8 +473,8 @@ public class DeepLearningCNNAI {
                     
                     // Use virtual board for training
                     for (int i = 0; i < BATCH_SIZE && isTraining.get(); i++) {
-                        // Check stop flag every 10 iterations for faster response
-                        if (i % 10 == 0 && !isTraining.get()) {
+                        // Check stop flag every 5 iterations for faster response
+                        if (i % 5 == 0 && !isTraining.get()) {
                             logger.info("*** CNN AI: STOP DETECTED during batch preparation - Exiting training loop ***");
                             break;
                         }
@@ -531,7 +531,7 @@ public class DeepLearningCNNAI {
                         
                         DataSet dataSet = new DataSet(batchInput, batchTarget);
                         
-                        // Check stop flag before expensive network.fit()
+                        // Check stop flag before expensive DL4J operation
                         if (!isTraining.get()) {
                             logger.info("*** CNN AI: STOP DETECTED before network.fit() - Exiting training loop ***");
                             break;
@@ -539,7 +539,7 @@ public class DeepLearningCNNAI {
                         
                         network.fit(dataSet);
                         
-                        // Check stop flag immediately after expensive network.fit()
+                        // Check stop flag immediately after expensive DL4J operation
                         if (!isTraining.get()) {
                             logger.info("*** CNN AI: STOP DETECTED after network.fit() - Exiting training loop ***");
                             break;
@@ -616,10 +616,18 @@ public class DeepLearningCNNAI {
     }
     
     public void stopTraining() {
-        if (isTraining.get()) {
-            logger.info("*** CNN AI: STOP REQUEST RECEIVED - Setting training flags ***");
-            isTraining.set(false);
-            logger.info("*** CNN AI: STOP FLAGS SET - Training will stop on next check ***");
+        logger.info("*** CNN AI: STOP REQUEST RECEIVED ***");
+        isTraining.set(false);
+        
+        // DL4J-specific: Wait for current fit() to complete
+        if (trainingThread != null && trainingThread.isAlive()) {
+            try {
+                trainingThread.join(30000); // Wait max 30 seconds
+                logger.info("*** CNN AI: Training thread stopped gracefully ***");
+            } catch (InterruptedException e) {
+                trainingThread.interrupt();
+                logger.warn("*** CNN AI: Training thread interrupted ***");
+            }
         }
     }
     

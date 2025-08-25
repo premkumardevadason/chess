@@ -24,6 +24,7 @@ public class ChessApplication {
     
     private static ChessGame chessGame;
     public static volatile boolean shutdownInProgress = false;
+    private static ConfigurableApplicationContext applicationContext;
     
     private AsyncTrainingDataManager asyncDataManager;
     
@@ -52,6 +53,10 @@ public class ChessApplication {
             return instance.asyncDataManager;
         }
         return null;
+    }
+    
+    public static ConfigurableApplicationContext getApplicationContext() {
+        return applicationContext;
     }    
     public static void main(String[] args) {
         // Log JVM command line parameters
@@ -59,6 +64,7 @@ public class ChessApplication {
         logger.info("JVM Arguments: {}", runtimeMxBean.getInputArguments());
         
         ConfigurableApplicationContext context = SpringApplication.run(ChessApplication.class, args);
+        applicationContext = context;
         
         // Add shutdown hook with forced execution
         Thread shutdownHook = new Thread(() -> {
@@ -86,8 +92,13 @@ public class ChessApplication {
                 try {
                     Thread.sleep(300000); // Save every 5 minutes
                     if (chessGame != null && !shutdownInProgress && chessGame.hasStateChanged()) {
-                        chessGame.saveTrainingData();
-                        System.out.println("*** PERIODIC TRAINING DATA SAVE COMPLETE ***");
+                        // Use direct AI saves for periodic backup (training may be active)
+                        try {
+                            chessGame.saveAllAIDirectly();
+                            System.out.println("*** PERIODIC TRAINING DATA SAVE COMPLETE ***");
+                        } catch (Exception e) {
+                            System.err.println("Periodic save error: " + e.getMessage());
+                        }
                     }
                 } catch (InterruptedException e) {
                     break;
