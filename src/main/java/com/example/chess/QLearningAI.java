@@ -836,29 +836,14 @@ public class QLearningAI {
         if (ioWrapper.isAsyncEnabled()) {
             ioWrapper.saveQTable(qTable, Q_TABLE_FILE);
         } else {
-            // ENHANCED: Ensure all learned values are properly serialized
+            // Fallback disabled - Q-table must use compressed format only
+            logger.warn("Q-Learning: Async I/O disabled but Q-table requires compression - forcing async save");
+            ioWrapper.saveQTable(qTable, Q_TABLE_FILE);
+            /*
+            // REMOVED: Uncompressed fallback no longer supported
             synchronized (fileLock) {
                 try (PrintWriter writer = new PrintWriter(new FileWriter(Q_TABLE_FILE))) {
-                    // Write header with metadata
-                    writer.println("# Q-Learning AI State Table");
-                    writer.println("# Generated: " + new java.util.Date());
-                    writer.println("# Entries: " + qTable.size());
-                    writer.println("# Training Games: " + gamesCompleted);
-                    
-                    // Write all Q-table entries with full precision
-                    for (Map.Entry<String, Double> entry : qTable.entrySet()) {
-                        writer.printf("%s=%.8f%n", entry.getKey(), entry.getValue());
-                    }
-                    
-                    int currentSize = qTable.size();
-                    int growth = currentSize - lastSavedSize;
-                    logger.info("Q-table saved with {} entries ({} since last save) - Full precision serialization", 
-                        currentSize, (growth > 0 ? "+" + growth : growth));
-                    lastSavedSize = currentSize;
-                } catch (IOException e) {
-                    logger.error("Failed to save Q-table: {}", e.getMessage());
-                }
-            }
+                */
         }
     }
     

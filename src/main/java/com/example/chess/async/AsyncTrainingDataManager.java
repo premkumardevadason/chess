@@ -99,6 +99,12 @@ public class AsyncTrainingDataManager {
                         return;
                     }
                     
+                    // Handle Q-table with compression
+                    if (filename.contains("qtable")) {
+                        saveQTableCompressed(filename, data);
+                        return;
+                    }
+                    
                     // Handle Java serializable objects
                     if (data instanceof java.io.Serializable && !data.getClass().equals(String.class)) {
                         saveSerializableObject(filename, data);
@@ -163,15 +169,14 @@ public class AsyncTrainingDataManager {
     }
     
     public CompletableFuture<Void> saveOnTrainingStop() {
-        trainingStopRequested = true; // Set stop flag immediately
         return coordinator.executeAtomicFeature(AtomicFeatureCoordinator.AtomicFeature.TRAINING_STOP_SAVE, () -> {
             // Cancel all queued operations first
             cancelQueuedOperations();
             // Save only dirty data that was marked before training stopped
             saveAllDirtyData().join();
-            // Clear all dirty flags to prevent shutdown saves
-            clearAllDirtyFlags();
-            logger.info("*** ASYNC I/O: Training stop save completed - all dirty flags cleared ***");
+            // Set stop flag AFTER saving to allow final AI saves
+            trainingStopRequested = true;
+            logger.info("*** ASYNC I/O: Training stop save completed ***");
         });
     }
     
@@ -214,9 +219,9 @@ public class AsyncTrainingDataManager {
     }
     
     public CompletableFuture<Void> saveAIData(String aiName, Object data, String filename) {
-        // CRITICAL: Check if training stopped before queuing new saves - but allow completion of in-progress AI saves
-        if (shouldStopIO() && !aiSaveInProgress.computeIfAbsent(aiName, k -> new AtomicBoolean(false)).get()) {
-            logger.info("*** ASYNC I/O: Blocking new save request for {} - training stopped ***", aiName);
+        // CRITICAL: Allow final saves when training completes naturally, block only during shutdown
+        if (coordinator.isShuttingDown()) {
+            logger.info("*** ASYNC I/O: Blocking new save request for {} - application shutting down ***", aiName);
             return CompletableFuture.completedFuture(null);
         }
         
@@ -255,9 +260,9 @@ public class AsyncTrainingDataManager {
     }
     
     public CompletableFuture<Void> saveAIData(String aiName, Object data) {
-        // CRITICAL: Check if training stopped before queuing new saves
-        if (shouldStopIO()) {
-            logger.info("*** ASYNC I/O: Blocking new save request for {} - training stopped ***", aiName);
+        // CRITICAL: Allow final saves when training completes naturally, block only during shutdown
+        if (coordinator.isShuttingDown()) {
+            logger.info("*** ASYNC I/O: Blocking new save request for {} - application shutting down ***", aiName);
             return CompletableFuture.completedFuture(null);
         }
         return saveAIData(aiName, data, aiName + ".dat");
@@ -285,9 +290,9 @@ public class AsyncTrainingDataManager {
     }
     
     public void markDirty(String filename) {
-        // CRITICAL: Don't mark dirty if training has stopped, unless processing user game data
-        if (shouldStopIO()) {
-            logger.debug("*** ASYNC I/O: Skipping dirty mark for {} - training stopped ***", filename);
+        // CRITICAL: Don't mark dirty only during application shutdown, unless processing user game data
+        if (coordinator.isShuttingDown() && !userGameDataProcessing) {
+            logger.debug("*** ASYNC I/O: Skipping dirty mark for {} - application shutting down ***", filename);
             return;
         }
         
@@ -298,6 +303,12 @@ public class AsyncTrainingDataManager {
     }
     
     private boolean shouldMarkDirty() {
+        // Don't mark dirty for periodic saves if training has stopped
+        // But allow shutdown and game reset saves
+        if (trainingStopRequested && !coordinator.isShuttingDown()) {
+            return false;
+        }
+        
         // Check if training was started or user played a game
         try {
             // Get ChessGame instance to check state
@@ -311,7 +322,16 @@ public class AsyncTrainingDataManager {
         } catch (Exception e) {
             logger.debug("Could not check state change status: {}", e.getMessage());
         }
-        // Default to true during shutdown to ensure all active AI state is saved
+        
+        // During shutdown, check if there are actual dirty files instead of defaulting to true
+        if (coordinator.isShuttingDown()) {
+            int dirtyCount = (int) dirtyFlags.entrySet().stream().mapToLong(e -> e.getValue().get() ? 1 : 0).sum();
+            boolean hasDirtyFiles = dirtyCount > 0;
+            logger.debug("State change check during shutdown: hasDirtyFiles={}", hasDirtyFiles);
+            return hasDirtyFiles;
+        }
+        
+        // Default to true for non-shutdown cases
         logger.debug("State change check: defaulting to true (fallback)");
         return true;
     }
@@ -340,9 +360,9 @@ public class AsyncTrainingDataManager {
             
             synchronized (fileLock) {
                 try {
-                    // Check if training stopped before expensive I/O
-                    if (shouldStopIO()) {
-                        logger.info("*** ASYNC I/O: Training operation cancelled - training stopped or shutdown in progress ***");
+                    // Check if application is shutting down before expensive I/O
+                    if (coordinator.isShuttingDown()) {
+                        logger.info("*** ASYNC I/O: Training operation cancelled - application shutting down ***");
                         return;
                     }
                     
@@ -362,7 +382,7 @@ public class AsyncTrainingDataManager {
                     }
                     
                     // PERFORMANCE FIX: Reduce AlphaZero debounce to allow more frequent saves
-                    if (filename.endsWith(".zip") && lastTime != null) {
+                    if (filename.endsWith(".zip") && lastTime != null && !trainingStopRequested) {
                         long debounceTime = filename.contains("alphazero") ? (30 * 1000) : (30 * 60 * 1000); // 30sec for AlphaZero, 30min for others
                         if ((currentTime - lastTime) < debounceTime) {
                             logger.debug("*** ASYNC I/O: Skipping frequent DeepLearning4J save for {} ({}sec ago) ***", 
@@ -377,9 +397,9 @@ public class AsyncTrainingDataManager {
                     
                     // Handle DeepLearning4J models with stream bridge
                     if (data.getClass().getSimpleName().equals("MultiLayerNetwork") || filename.endsWith(".zip")) {
-                        // Check stop flag before expensive model save
-                        if (shouldStopIO()) {
-                            logger.info("*** ASYNC I/O: DeepLearning4J training save cancelled - training stopped or shutdown in progress ***");
+                        // Check shutdown flag before expensive model save
+                        if (coordinator.isShuttingDown()) {
+                            logger.info("*** ASYNC I/O: DeepLearning4J training save cancelled - application shutting down ***");
                             return;
                         }
                         saveDeepLearning4JModel(filename, data);
@@ -388,9 +408,9 @@ public class AsyncTrainingDataManager {
                     
                     // Handle Java serializable objects (like GeneticAlgorithm population)
                     if (data instanceof java.io.Serializable && !data.getClass().equals(String.class)) {
-                        // Check stop flag before expensive serialization
-                        if (shouldStopIO()) {
-                            logger.info("*** ASYNC I/O: Training serialization cancelled - training stopped or shutdown in progress ***");
+                        // Check shutdown flag before expensive serialization
+                        if (coordinator.isShuttingDown()) {
+                            logger.info("*** ASYNC I/O: Training serialization cancelled - application shutting down ***");
                             return;
                         }
                         saveSerializableObject(filename, data);
@@ -579,6 +599,10 @@ public class AsyncTrainingDataManager {
                 else if (filename.contains("cnn_model")) aiName = "CNN";
                 else if (filename.contains("dqn_model")) aiName = "DQN";
                 else if (filename.contains("dqn_target")) aiName = "DQN-Target";
+                else if (filename.contains("leela_policy")) aiName = "LeelaZero-Policy";
+                else if (filename.contains("leela_value")) aiName = "LeelaZero-Value";
+                else if (filename.contains("a3c_actor")) aiName = "A3C-Actor";
+                else if (filename.contains("a3c_critic")) aiName = "A3C-Critic";
                 
                 long fileSize = java.nio.file.Files.size(filePath);
                 logger.info("*** ASYNC I/O: {} model saved using ATOMIC FILE OPERATIONS ({} bytes) - CORRUPTION PROTECTED ***", aiName, fileSize);
@@ -633,12 +657,9 @@ public class AsyncTrainingDataManager {
     
     private CompletableFuture<Void> saveAllDirtyData() {
         return CompletableFuture.runAsync(() -> {
-            // CRITICAL: Check if training stopped - if so, skip all saves except shutdown
-            if (shouldStopIO() && !coordinator.isShuttingDown()) {
-                logger.info("*** ASYNC I/O: Training stopped - skipping dirty data save ***");
-                // Clear all dirty flags to prevent future saves
-                clearAllDirtyFlags();
-                return;
+            // CRITICAL: Only skip saves during application shutdown, allow final training saves
+            if (coordinator.isShuttingDown()) {
+                logger.info("*** ASYNC I/O: Application shutting down - using shutdown save path ***");
             }
             
             int dirtyCount = (int) dirtyFlags.entrySet().stream().mapToLong(e -> e.getValue().get() ? 1 : 0).sum();
@@ -646,7 +667,7 @@ public class AsyncTrainingDataManager {
             // Check if any actual state changes occurred before saving
             if (!shouldMarkDirty() && dirtyCount == 0) {
                 logger.info("*** ASYNC I/O: No AI state changes detected - skipping redundant save ***");
-                return;
+                return; // CompletableFuture.runAsync() will complete normally
             }
             
             if (dirtyCount == 0) {
@@ -661,11 +682,9 @@ public class AsyncTrainingDataManager {
             dirtyFlags.entrySet().parallelStream()
                 .filter(entry -> entry.getValue().get())
                 .forEach(entry -> {
-                    // CRITICAL: Check stop status for each file
-                    if (shouldStopIO() && !coordinator.isShuttingDown()) {
-                        logger.info("*** ASYNC I/O: Skipping dirty file {} - training stopped ***", entry.getKey());
-                        entry.getValue().set(false); // Mark as clean to prevent future saves
-                        return;
+                    // CRITICAL: Only skip files during application shutdown
+                    if (coordinator.isShuttingDown()) {
+                        logger.debug("*** ASYNC I/O: Processing dirty file {} during shutdown ***", entry.getKey());
                     }
                     
                     String filename = entry.getKey();
@@ -749,8 +768,13 @@ public class AsyncTrainingDataManager {
                     return model;
                 }
                 
-                // Handle serializable objects (like GeneticAlgorithm population, Q-Learning table, and AlphaZero cache)
-                if (filename.contains("/") || filename.contains("population") || filename.contains("qtable") || filename.contains("alphazero_cache")) {
+                // Handle Q-Learning table as compressed format only
+                if (filename.contains("qtable")) {
+                    return loadQTableCompressed(filename);
+                }
+                
+                // Handle serializable objects
+                if (filename.contains("/") || filename.contains("population") || filename.contains("alphazero_cache")) {
                     return loadSerializableObject(filename);
                 }
                 
@@ -893,6 +917,139 @@ public class AsyncTrainingDataManager {
             }
         }
     }
+    
+    private void saveQTableCompressed(String filename, Object data) {
+        Object fileLock = fileLocks.computeIfAbsent(filename, k -> new Object());
+        
+        synchronized (fileLock) {
+            try {
+                Path filePath = Paths.get(filename + ".gz");
+                if (filePath.getParent() != null) {
+                    java.nio.file.Files.createDirectories(filePath.getParent());
+                }
+                
+                // Compress Q-table data
+                java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+                try (java.util.zip.GZIPOutputStream gzipOut = new java.util.zip.GZIPOutputStream(baos)) {
+                    gzipOut.write(data.toString().getBytes("UTF-8"));
+                }
+                byte[] compressedData = baos.toByteArray();
+                
+                // Write compressed data using NIO.2
+                AsynchronousFileChannel channel = AsynchronousFileChannel.open(filePath, 
+                    StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING);
+                
+                ByteBuffer buffer = ByteBuffer.wrap(compressedData);
+                CompletableFuture<Integer> writeFuture = new CompletableFuture<>();
+                
+                channel.write(buffer, 0, null, new CompletionHandler<Integer, Void>() {
+                    @Override
+                    public void completed(Integer result, Void attachment) {
+                        try {
+                            channel.close();
+                            dirtyFlags.computeIfAbsent(filename, k -> new AtomicBoolean()).set(false);
+                            logger.info("*** ASYNC I/O: Q-table saved COMPRESSED using NIO.2 ({} bytes compressed from {} bytes) ***", 
+                                result, data.toString().getBytes().length);
+                            writeFuture.complete(result);
+                        } catch (Exception e) {
+                            writeFuture.completeExceptionally(e);
+                        }
+                    }
+                    
+                    @Override
+                    public void failed(Throwable exc, Void attachment) {
+                        try { channel.close(); } catch (Exception e) {}
+                        logger.error("*** ASYNC I/O: Q-table compressed save FAILED - {} ***", exc.getMessage());
+                        writeFuture.completeExceptionally(exc);
+                    }
+                });
+                
+                writeFuture.join();
+                
+            } catch (Exception e) {
+                logger.error("*** ASYNC I/O: Q-table compression FAILED - {} ***", e.getMessage());
+                throw new RuntimeException("Q-table compression failed", e);
+            } finally {
+                activeIOOperations.decrementAndGet();
+            }
+        }
+    }
+    
+    private Object loadQTableCompressed(String filename) {
+        try {
+            Path filePath = Paths.get(filename + ".gz");
+            if (!java.nio.file.Files.exists(filePath)) {
+                logger.info("*** ASYNC I/O: {} does not exist, returning null ***", filename + ".gz");
+                return null;
+            }
+            
+            AsynchronousFileChannel channel = AsynchronousFileChannel.open(filePath, StandardOpenOption.READ);
+            long fileSize = channel.size();
+            
+            ByteBuffer buffer = ByteBuffer.allocate((int) fileSize);
+            CompletableFuture<Integer> readFuture = new CompletableFuture<>();
+            
+            channel.read(buffer, 0, null, new CompletionHandler<Integer, Void>() {
+                @Override
+                public void completed(Integer result, Void attachment) {
+                    readFuture.complete(result);
+                }
+                
+                @Override
+                public void failed(Throwable exc, Void attachment) {
+                    readFuture.completeExceptionally(exc);
+                }
+            });
+            
+            readFuture.join();
+            buffer.flip();
+            channel.close();
+            
+            // Decompress data
+            byte[] compressedData = new byte[buffer.remaining()];
+            buffer.get(compressedData);
+            
+            java.io.ByteArrayOutputStream decompressed = new java.io.ByteArrayOutputStream();
+            try (java.util.zip.GZIPInputStream gzipIn = new java.util.zip.GZIPInputStream(
+                    new java.io.ByteArrayInputStream(compressedData))) {
+                byte[] buf = new byte[1024];
+                int len;
+                while ((len = gzipIn.read(buf)) != -1) {
+                    decompressed.write(buf, 0, len);
+                }
+            }
+            
+            String content = decompressed.toString("UTF-8");
+            
+            // Parse Q-table format
+            java.util.Map<String, Double> qTable = new java.util.concurrent.ConcurrentHashMap<>();
+            String[] lines = content.split("\n");
+            int loaded = 0;
+            
+            for (String line : lines) {
+                line = line.trim();
+                if (line.contains("=") && !line.startsWith("#")) {
+                    String[] parts = line.split("=", 2);
+                    if (parts.length == 2) {
+                        try {
+                            qTable.put(parts[0], Double.parseDouble(parts[1]));
+                            loaded++;
+                        } catch (NumberFormatException ignored) {}
+                    }
+                }
+            }
+            
+            logger.info("*** ASYNC I/O: Q-table loaded COMPRESSED using NIO.2 ({} entries, {} bytes compressed) ***", 
+                loaded, fileSize);
+            return qTable;
+            
+        } catch (Exception e) {
+            logger.error("*** ASYNC I/O: Q-table compressed load FAILED - {} ***", e.getMessage());
+            return null;
+        }
+    }
+    
+
     
     private Object loadSerializableObject(String filename) {
         try {
