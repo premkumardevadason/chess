@@ -13,6 +13,8 @@ target/**
 *.model
 *.bin
 *.tmp
+*.gz
+*.class
 
 # AI training directories
 ga_models/
