@@ -3002,7 +3002,12 @@ public class ChessGame {
     public LeelaChessZeroAI getLeelaZeroAI() { return leelaZeroAI; }
     public GeneticAlgorithmAI getGeneticAI() { return geneticAI; }
     public LeelaChessZeroOpeningBook getLeelaOpeningBook() { return leelaOpeningBook; }
-    public TrainingManager getTrainingManager() { return trainingManager; }
+    public TrainingManager getTrainingManager() { 
+        if (trainingManager == null) {
+            trainingManager = new TrainingManager();
+        }
+        return trainingManager; 
+    }
     
     // Methods for AI training - allow AIs to use ChessGame's move validation
     public void setBoard(String[][] newBoard) {
@@ -3050,7 +3055,9 @@ public class ChessGame {
             broadcastGameState();
         }
         
-        saveTrainingData();
+        if (trainingManager != null) {
+            trainingManager.saveOnGameReset(this);
+        }
     }
     
     /**
@@ -3091,6 +3098,17 @@ public class ChessGame {
         // Only process game data and save if there were actual moves made
         if (moveHistory.size() > 0) {
             logger.info("*** PARALLEL AI GAME DATA PROCESSING: Starting all enabled AIs simultaneously ***");
+            
+            // Enable user game data processing mode to allow saves
+            try {
+                Object asyncManager = com.example.chess.ChessApplication.getAsyncManager();
+                if (asyncManager != null) {
+                    java.lang.reflect.Method enableMethod = asyncManager.getClass().getMethod("enableUserGameDataProcessing");
+                    enableMethod.invoke(asyncManager);
+                }
+            } catch (Exception e) {
+                logger.debug("Could not enable user game data processing: {}", e.getMessage());
+            }
             
             // Create parallel tasks for all AI game data processing
             var alphaZeroTask = isAlphaZeroEnabled() ? 
@@ -3167,6 +3185,17 @@ public class ChessGame {
                 
                 logger.info("*** PARALLEL AI GAME DATA PROCESSING: All AIs completed simultaneously ***");
                 
+                // Disable user game data processing mode
+                try {
+                    Object asyncManager = com.example.chess.ChessApplication.getAsyncManager();
+                    if (asyncManager != null) {
+                        java.lang.reflect.Method disableMethod = asyncManager.getClass().getMethod("disableUserGameDataProcessing");
+                        disableMethod.invoke(asyncManager);
+                    }
+                } catch (Exception e) {
+                    logger.debug("Could not disable user game data processing: {}", e.getMessage());
+                }
+                
             } catch (java.util.concurrent.TimeoutException e) {
                 logger.error("AI game data processing timeout after 30 seconds: {}", e.getMessage());
                 // Cancel remaining tasks
@@ -3178,6 +3207,17 @@ public class ChessGame {
                 a3cTask.cancel(true);
             } catch (Exception e) {
                 logger.error("AI game data processing error: {}", e.getMessage());
+            } finally {
+                // Always disable user game data processing mode
+                try {
+                    Object asyncManager = com.example.chess.ChessApplication.getAsyncManager();
+                    if (asyncManager != null) {
+                        java.lang.reflect.Method disableMethod = asyncManager.getClass().getMethod("disableUserGameDataProcessing");
+                        disableMethod.invoke(asyncManager);
+                    }
+                } catch (Exception ex) {
+                    logger.debug("Could not disable user game data processing in finally block: {}", ex.getMessage());
+                }
             }
             
             // Add game to LeelaZero opening book learning
@@ -3201,7 +3241,9 @@ public class ChessGame {
             }
             
             // CRITICAL FIX: Wait for training data save to complete BEFORE resetting
-            saveTrainingDataSynchronously();
+            if (trainingManager != null) {
+                trainingManager.saveOnGameReset(this);
+            }
         } else {
             logger.debug("*** No moves made - skipping game data processing and save ***");
         }
@@ -3808,247 +3850,9 @@ public class ChessGame {
         markUserGameStarted(); // Game data processing for user game
     }
     
-    public void saveTrainingData() {
-        long currentTime = System.currentTimeMillis();
-        if (!stateChanged && (currentTime - lastSaveTime) < 30000) {
-            logger.debug("No state changes or recent save - skipping save");
-            return;
-        }
-        lastSaveTime = currentTime;
-        
-        logger.info("*** SAVING ALL AI TRAINING DATA WITH TRUE PARALLEL EXECUTION ***");
-        resetStateChangeFlags(); // Reset all state change flags after saving
-        
-        // Create CompletableFuture tasks for TRUE parallel execution
-        var qLearningTask = java.util.concurrent.CompletableFuture.runAsync(() -> {
-            if (isQLearningEnabled()) {
-                try {
-                    qLearningAI.saveQTable();
-                    logger.debug("Q-Learning: Training data saved");
-                } catch (Exception e) {
-                    logger.error("Q-Learning: Save failed - {}", e.getMessage());
-                }
-            }
-        });
-        
-        var deepLearningTask = java.util.concurrent.CompletableFuture.runAsync(() -> {
-            if (isDeepLearningEnabled()) {
-                try {
-                    deepLearningAI.saveModelNow();
-                    logger.debug("Deep Learning: Model saved");
-                } catch (Exception e) {
-                    logger.error("Deep Learning: Save failed - {}", e.getMessage());
-                }
-            }
-        });
-        
-        var deepLearningCNNTask = java.util.concurrent.CompletableFuture.runAsync(() -> {
-            if (isDeepLearningCNNEnabled()) {
-                try {
-                    deepLearningCNNAI.saveModelNow();
-                    logger.debug("CNN Deep Learning: Model saved");
-                } catch (Exception e) {
-                    logger.error("CNN Deep Learning: Save failed - {}", e.getMessage());
-                }
-            }
-        });
-        
-        var dqnTask = java.util.concurrent.CompletableFuture.runAsync(() -> {
-            if (isDQNEnabled()) {
-                try {
-                    dqnAI.saveModels();
-                    dqnAI.saveExperiences();
-                    logger.debug("DQN: Models and experiences saved");
-                } catch (Exception e) {
-                    logger.error("DQN: Save failed - {}", e.getMessage());
-                }
-            }
-        });
-        
-        var alphaZeroTask = java.util.concurrent.CompletableFuture.runAsync(() -> {
-            if (isAlphaZeroEnabled()) {
-                try {
-                    // CRITICAL FIX: Don't save if training just completed - data already saved by TrainingService
-                    int episodes = alphaZeroAI.getTrainingEpisodes();
-                    if (episodes > 0) {
-                        // Note: saveNeuralNetwork() now has debounce protection
-                        alphaZeroAI.saveNeuralNetwork();
-                        logger.debug("AlphaZero: Neural network save requested ({} episodes)", episodes);
-                    } else {
-                        logger.debug("AlphaZero: Skipping save - no training data (0 episodes)");
-                    }
-                } catch (Exception e) {
-                    logger.error("AlphaZero: Save failed - {}", e.getMessage());
-                }
-            }
-        });
-        
-        var leelaZeroTask = java.util.concurrent.CompletableFuture.runAsync(() -> {
-            if (isLeelaZeroEnabled()) {
-                try {
-                    // LeelaZero state saving handled automatically
-                    logger.debug("LeelaZero: State preserved");
-                } catch (Exception e) {
-                    logger.error("LeelaZero: Save failed - {}", e.getMessage());
-                }
-            }
-        });
-        
-        var geneticTask = java.util.concurrent.CompletableFuture.runAsync(() -> {
-            if (isGeneticEnabled()) {
-                try {
-                    geneticAI.savePopulation();
-                    logger.debug("Genetic Algorithm: Population saved");
-                } catch (Exception e) {
-                    logger.error("Genetic Algorithm: Save failed - {}", e.getMessage());
-                }
-            }
-        });
-        
-        var alphaFold3Task = java.util.concurrent.CompletableFuture.runAsync(() -> {
-            if (isAlphaFold3Enabled()) {
-                try {
-                    alphaFold3AI.saveState();
-                    logger.debug("AlphaFold3: State saved");
-                } catch (Exception e) {
-                    logger.error("AlphaFold3: Save failed - {}", e.getMessage());
-                }
-            }
-        });
-        
-        var a3cTask = java.util.concurrent.CompletableFuture.runAsync(() -> {
-            if (isA3CEnabled()) {
-                try {
-                    a3cAI.saveModels(); // Explicitly save A3C models
-                    logger.debug("A3C: State saved");
-                } catch (Exception e) {
-                    logger.error("A3C: Save failed - {}", e.getMessage());
-                }
-            }
-        });
-        
-        // Wait for ALL tasks to complete in TRUE parallel execution
-        try {
-            java.util.concurrent.CompletableFuture.allOf(
-                qLearningTask, deepLearningTask, deepLearningCNNTask, dqnTask, 
-                alphaZeroTask, leelaZeroTask, geneticTask, alphaFold3Task, a3cTask
-            ).get(60, java.util.concurrent.TimeUnit.SECONDS);
-            
-        } catch (java.util.concurrent.TimeoutException e) {
-            logger.error("AI save timeout after 60 seconds: {}", e.getMessage());
-        } catch (Exception e) {
-            logger.error("AI save error: {}", e.getMessage());
-        }
-        
-        logger.info("*** ALL AI TRAINING DATA SAVE COMPLETE ***");
-    }
+
     
-    /**
-     * Synchronous version of saveTrainingData for use during reset to ensure completion
-     */
-    private void saveTrainingDataSynchronously() {
-        long currentTime = System.currentTimeMillis();
-        if (!stateChanged && (currentTime - lastSaveTime) < 30000) {
-            logger.debug("No state changes or recent save - skipping synchronous save");
-            return;
-        }
-        lastSaveTime = currentTime;
-        
-        logger.info("*** SYNCHRONOUS SAVE: Ensuring all AI training data is saved before reset ***");
-        resetStateChangeFlags(); // Reset all state change flags after save
-        
-        // Save each AI system synchronously to ensure completion
-        if (isQLearningEnabled()) {
-            try {
-                qLearningAI.saveQTable();
-                logger.debug("Q-Learning: Training data saved synchronously");
-            } catch (Exception e) {
-                logger.error("Q-Learning: Synchronous save failed - {}", e.getMessage());
-            }
-        }
-        
-        if (isDeepLearningEnabled()) {
-            try {
-                deepLearningAI.saveModelNow();
-                logger.debug("Deep Learning: Model saved synchronously");
-            } catch (Exception e) {
-                logger.error("Deep Learning: Synchronous save failed - {}", e.getMessage());
-            }
-        }
-        
-        if (isDeepLearningCNNEnabled()) {
-            try {
-                deepLearningCNNAI.saveModelNow();
-                logger.debug("CNN Deep Learning: Model saved synchronously");
-            } catch (Exception e) {
-                logger.error("CNN Deep Learning: Synchronous save failed - {}", e.getMessage());
-            }
-        }
-        
-        if (isDQNEnabled()) {
-            try {
-                dqnAI.saveModels();
-                dqnAI.saveExperiences();
-                logger.debug("DQN: Models and experiences saved synchronously");
-            } catch (Exception e) {
-                logger.error("DQN: Synchronous save failed - {}", e.getMessage());
-            }
-        }
-        
-        if (isAlphaZeroEnabled()) {
-            try {
-                // CRITICAL FIX: Don't save if no training data exists
-                int episodes = alphaZeroAI.getTrainingEpisodes();
-                if (episodes > 0) {
-                    // Note: saveNeuralNetwork() now has debounce protection
-                    alphaZeroAI.saveNeuralNetwork();
-                    logger.debug("AlphaZero: Neural network save requested synchronously ({} episodes)", episodes);
-                } else {
-                    logger.debug("AlphaZero: Skipping synchronous save - no training data (0 episodes)");
-                }
-            } catch (Exception e) {
-                logger.error("AlphaZero: Synchronous save failed - {}", e.getMessage());
-            }
-        }
-        
-        if (isLeelaZeroEnabled()) {
-            try {
-                // LeelaZero state saving handled automatically
-                logger.debug("LeelaZero: State preserved synchronously");
-            } catch (Exception e) {
-                logger.error("LeelaZero: Synchronous save failed - {}", e.getMessage());
-            }
-        }
-        
-        if (isGeneticEnabled()) {
-            try {
-                geneticAI.savePopulation();
-                logger.debug("Genetic Algorithm: Population saved synchronously");
-            } catch (Exception e) {
-                logger.error("Genetic Algorithm: Synchronous save failed - {}", e.getMessage());
-            }
-        }
-        
-        if (isAlphaFold3Enabled()) {
-            try {
-                alphaFold3AI.saveState();
-                logger.debug("AlphaFold3: State saved synchronously");
-            } catch (Exception e) {
-                logger.error("AlphaFold3: Synchronous save failed - {}", e.getMessage());
-            }
-        }
-        
-        if (isA3CEnabled()) {
-            try {
-                a3cAI.shutdown(); // A3C saves models in shutdown method
-                logger.debug("A3C: State saved synchronously");
-            } catch (Exception e) {
-                logger.error("A3C: Synchronous save failed - {}", e.getMessage());
-            }
-        }
-        
-        logger.info("*** SYNCHRONOUS SAVE COMPLETE - All AI training data secured ***");
-    }
+
     
     private boolean isAnyTrainingActive() {
         return trainingManager != null && trainingManager.isTrainingActive();
@@ -5415,5 +5219,76 @@ public class ChessGame {
         }
         
         return directory.delete();
+    }
+
+    
+    /**
+     * Save all AI training data directly (for periodic backup when training may be active)
+     * This method bypasses the coordination layer and saves directly to avoid conflicts
+     */
+    public void saveAllAIDirectly() {
+        logger.debug("*** DIRECT AI SAVE: Saving all AI training data directly ***");
+        
+        try {
+            // Save Q-Learning data
+            if (isQLearningEnabled() && qLearningAI != null) {
+                qLearningAI.saveQTable();
+                logger.debug("Q-Learning: Direct save completed");
+            }
+            
+            // Save Deep Learning models
+            if (isDeepLearningEnabled() && deepLearningAI != null) {
+                deepLearningAI.saveModelNow();
+                logger.debug("Deep Learning: Direct save completed");
+            }
+            
+            // Save CNN Deep Learning models
+            if (isDeepLearningCNNEnabled() && deepLearningCNNAI != null) {
+                deepLearningCNNAI.saveModelNow();
+                logger.debug("CNN Deep Learning: Direct save completed");
+            }
+            
+            // Save DQN data
+            if (isDQNEnabled() && dqnAI != null) {
+                dqnAI.saveModels();
+                dqnAI.saveExperiences();
+                logger.debug("DQN: Direct save completed");
+            }
+            
+            // Save AlphaZero neural network
+            if (isAlphaZeroEnabled() && alphaZeroAI != null) {
+                alphaZeroAI.saveNeuralNetwork();
+                logger.debug("AlphaZero: Direct save completed");
+            }
+            
+            // Save LeelaZero state
+            if (isLeelaZeroEnabled() && leelaZeroAI != null) {
+                leelaZeroAI.saveState();
+                logger.debug("LeelaZero: Direct save completed");
+            }
+            
+            // Save Genetic Algorithm population
+            if (isGeneticEnabled() && geneticAI != null) {
+                geneticAI.savePopulation();
+                logger.debug("Genetic Algorithm: Direct save completed");
+            }
+            
+            // Save AlphaFold3 state
+            if (isAlphaFold3Enabled() && alphaFold3AI != null) {
+                alphaFold3AI.saveState();
+                logger.debug("AlphaFold3: Direct save completed");
+            }
+            
+            // Save A3C state
+            if (isA3CEnabled() && a3cAI != null) {
+                a3cAI.saveModels();
+                logger.debug("A3C: Direct save completed");
+            }
+            
+            logger.debug("*** DIRECT AI SAVE: All enabled AI systems saved successfully ***");
+            
+        } catch (Exception e) {
+            logger.error("*** DIRECT AI SAVE: Error during save - {} ***", e.getMessage());
+        }
     }
 }

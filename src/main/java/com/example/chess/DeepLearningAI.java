@@ -49,7 +49,7 @@ public class DeepLearningAI {
     private static final Logger logger = LogManager.getLogger(DeepLearningAI.class);
     private MultiLayerNetwork network;
     private AtomicBoolean isTraining = new AtomicBoolean(false);
-    private Thread trainingThread;
+    private volatile Thread trainingThread;
     private volatile int trainingIterations = 0;
     private volatile int currentEpoch = 0;
     private volatile double currentLearningRate = INITIAL_LEARNING_RATE;
@@ -299,7 +299,7 @@ public class DeepLearningAI {
         // Start data generation thread
         startDataGeneration();
         
-        trainingThread = Thread.ofVirtual().name("DeepLearning-Training").start(() -> {
+        this.trainingThread = Thread.ofVirtual().name("DeepLearning-Training").start(() -> {
             isTraining.set(true);
             logger.debug("Deep Learning training started with batch size: {}", BATCH_SIZE);
             
@@ -312,8 +312,8 @@ public class DeepLearningAI {
                     targetBatch.clear();
                     
                     for (int i = 0; i < BATCH_SIZE && isTraining.get(); i++) {
-                        // Check stop flag every iteration for immediate response
-                        if (!isTraining.get()) {
+                        // Check stop flag every 5 iterations for faster response
+                        if (i % 5 == 0 && !isTraining.get()) {
                             logger.info("*** Deep Learning AI: STOP DETECTED during batch preparation - Exiting training loop ***");
                             break;
                         }
@@ -321,31 +321,34 @@ public class DeepLearningAI {
                         INDArray input;
                         INDArray target;
                         
-                        if (qLearningAI != null) {
+                        if (qLearningAI != null && qLearningAI.isTraining()) {
                             // Generate real chess position
                             String[][] board = generateRandomChessPosition();
                             List<int[]> validMoves = generateValidMoves(board);
                             
                             if (!validMoves.isEmpty()) {
-                                // Get Q-Learning's best move for this position
-                                int[] bestMove = qLearningAI.selectMove(board, validMoves, true);
-                                if (bestMove != null) {
-                                    input = encodeBoardToVectorOptimized(board);
-                                    // Target is move quality score from Q-Learning evaluation
-                                    double moveScore = evaluateWithQLearning(board, bestMove);
-                                    target = createTargetOptimized(moveScore);
+                                // CRITICAL: Check if Q-Learning is still training before blocking call
+                                if (qLearningAI.isTraining()) {
+                                    int[] bestMove = qLearningAI.selectMove(board, validMoves, true);
+                                    if (bestMove != null) {
+                                        input = encodeBoardToVectorOptimized(board);
+                                        double moveScore = evaluateWithQLearning(board, bestMove);
+                                        target = createTargetOptimized(moveScore);
+                                    } else {
+                                        input = encodeBoardToVectorOptimized(board);
+                                        target = createTargetOptimized(0.0);
+                                    }
                                 } else {
-                                    // Fallback to basic evaluation
+                                    // Q-Learning stopped - use basic evaluation
                                     input = encodeBoardToVectorOptimized(board);
-                                    target = createTargetOptimized(0.0);
+                                    target = createTargetOptimized(evaluateBasicPosition(board));
                                 }
                             } else {
-                                // Generate basic position
                                 input = encodeBoardToVectorOptimized(generateRandomChessPosition());
                                 target = createTargetOptimized(0.0);
                             }
                         } else {
-                            // No Q-Learning available - use basic evaluation
+                            // No Q-Learning available or stopped - use basic evaluation
                             String[][] board = generateRandomChessPosition();
                             input = encodeBoardToVectorOptimized(board);
                             target = createTargetOptimized(evaluateBasicPosition(board));
@@ -362,18 +365,18 @@ public class DeepLearningAI {
                         
                         DataSet dataSet = new DataSet(batchInput, batchTarget);
                         
-                        // Check stop flag before expensive training
+                        // Check stop flag before expensive DL4J operation
                         if (!isTraining.get()) {
-                            logger.info("*** Deep Learning AI: STOP DETECTED before trainWithSkipConnections() - Exiting training loop ***");
+                            logger.info("*** Deep Learning AI: STOP DETECTED before network.fit() - Exiting training loop ***");
                             break;
                         }
                         
                         // Apply skip connections manually (residual learning)
                         trainWithSkipConnections(dataSet);
                         
-                        // Check stop flag immediately after expensive training
+                        // Check stop flag immediately after expensive DL4J operation
                         if (!isTraining.get()) {
-                            logger.info("*** Deep Learning AI: STOP DETECTED after trainWithSkipConnections() - Exiting training loop ***");
+                            logger.info("*** Deep Learning AI: STOP DETECTED after network.fit() - Exiting training loop ***");
                             break;
                         }
                         
@@ -432,17 +435,26 @@ public class DeepLearningAI {
     }
     
     public void stopTraining() {
-        logger.info("*** Deep Learning AI: STOP REQUEST RECEIVED - Setting training flags ***");
+        logger.info("*** Deep Learning AI: STOP REQUEST RECEIVED ***");
         isTraining.set(false);
         stopDataGeneration();
+        
+        // DL4J-specific: Wait for current fit() to complete
+        if (trainingThread != null && trainingThread.isAlive()) {
+            try {
+                trainingThread.join(30000); // Wait max 30 seconds
+                logger.info("*** Deep Learning AI: Training thread stopped gracefully ***");
+            } catch (InterruptedException e) {
+                trainingThread.interrupt();
+                logger.warn("*** Deep Learning AI: Training thread interrupted ***");
+            }
+        }
         
         // Save model asynchronously to reduce stop time
         Thread.ofVirtual().name("DeepLearning-Save").start(() -> {
             saveModel();
             logger.debug("Deep Learning: Model saved asynchronously");
         });
-        
-        logger.info("*** Deep Learning AI: STOP FLAGS SET - Training will stop on next check ***");
     }
     
     private void startDataGeneration() {

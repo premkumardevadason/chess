@@ -56,6 +56,7 @@ public class DeepQNetworkAI {
     private int targetUpdateFreq = 1000;
     private int trainingSteps = 0;
     private AtomicBoolean isTraining = new AtomicBoolean(false);
+    private volatile Thread trainingThread;
     
     // Distributional RL parameters
     private int numAtoms = 51;  // Number of atoms in value distribution
@@ -507,13 +508,13 @@ public class DeepQNetworkAI {
     
     public void startTraining() {
         isTraining.set(true);
-        Thread trainingThread = Thread.ofVirtual().name("DQN-Training").start(() -> {
+        this.trainingThread = Thread.ofVirtual().name("DQN-Training").start(() -> {
             logger.info("*** DQN: Training started with Lc0 opening book ***");
             
             // Generate training games using opening book
             for (int game = 0; game < 1000 && isTraining.get(); game++) {
-                // Check stop flag every 5 games for faster response
-                if (game % 5 == 0 && !isTraining.get()) {
+                // Check stop flag every 3 games for faster response
+                if (game % 3 == 0 && !isTraining.get()) {
                     logger.info("*** DQN AI: STOP DETECTED at game {} - Exiting training loop ***", game + 1);
                     break;
                 }
@@ -562,14 +563,18 @@ public class DeepQNetworkAI {
                     if (gameOver) break;
                 }
                 
-                // Train on experiences (check stop flag first)
-                if (isTraining.get()) {
-                    trainStep();
-                    
-                    // Check stop flag after training step
-                    if (!isTraining.get()) {
-                        break;
-                    }
+                // Check stop flag before expensive DL4J operation
+                if (!isTraining.get()) {
+                    logger.info("*** DQN AI: STOP DETECTED before trainStep() - Exiting training loop ***");
+                    break;
+                }
+                
+                trainStep();
+                
+                // Check stop flag immediately after expensive DL4J operation
+                if (!isTraining.get()) {
+                    logger.info("*** DQN AI: STOP DETECTED after trainStep() - Exiting training loop ***");
+                    break;
                 }
                 
                 if (game % 100 == 0) {
@@ -585,16 +590,18 @@ public class DeepQNetworkAI {
             int continuousTrainingSteps = 0;
             while (isTraining.get()) {
                 try {
-                    // Check stop flag before expensive training
+                    // Check stop flag before expensive DL4J operation
                     if (!isTraining.get()) {
+                        logger.info("*** DQN AI: STOP DETECTED before continuous trainStep() - Exiting training loop ***");
                         break;
                     }
                     
                     trainStep();
                     continuousTrainingSteps++;
                     
-                    // Check stop flag every 10 training steps for faster response
-                    if (continuousTrainingSteps % 10 == 0 && !isTraining.get()) {
+                    // Check stop flag every 5 training steps for faster response
+                    if (continuousTrainingSteps % 5 == 0 && !isTraining.get()) {
+                        logger.info("*** DQN AI: STOP DETECTED after continuous trainStep() - Exiting training loop ***");
                         break;
                     }
                     
@@ -620,7 +627,19 @@ public class DeepQNetworkAI {
     }
     
     public void stopTraining() {
+        logger.info("*** DQN AI: STOP REQUEST RECEIVED ***");
         isTraining.set(false);
+        
+        // DQN-specific: Wait for current fit() to complete
+        if (trainingThread != null && trainingThread.isAlive()) {
+            try {
+                trainingThread.join(30000); // Wait max 30 seconds
+                logger.info("*** DQN AI: Training thread stopped gracefully ***");
+            } catch (InterruptedException e) {
+                trainingThread.interrupt();
+                logger.warn("*** DQN AI: Training thread interrupted ***");
+            }
+        }
         
         // Save models and experiences asynchronously to reduce stop time
         Thread.ofVirtual().name("DQN-Save").start(() -> {

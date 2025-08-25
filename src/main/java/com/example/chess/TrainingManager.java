@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -22,6 +23,7 @@ public class TrainingManager {
     
     private volatile boolean isTrainingActive = false;
     private volatile boolean stopTrainingRequested = false;
+    private final Map<String, Thread> trainingThreads = new ConcurrentHashMap<>();
     
     public boolean isTrainingActive() {
         return isTrainingActive;
@@ -82,6 +84,35 @@ public class TrainingManager {
         isTrainingActive = false;
         logger.info("*** PERIODIC SAVE: Stop flag set - will stop on next check ***");
         
+        // CRITICAL: Cancel any queued async operations immediately
+        try {
+            Object asyncManager = com.example.chess.ChessApplication.getAsyncManager();
+            if (asyncManager != null) {
+                java.lang.reflect.Method cancelMethod = asyncManager.getClass().getDeclaredMethod("cancelQueuedOperations");
+                cancelMethod.setAccessible(true);
+                cancelMethod.invoke(asyncManager);
+                logger.info("*** ASYNC I/O: Queued operations cancelled ***");
+                
+                // CRITICAL: Also clear all dirty flags to prevent any further saves
+                java.lang.reflect.Method clearDirtyMethod = asyncManager.getClass().getDeclaredMethod("clearAllDirtyFlags");
+                clearDirtyMethod.setAccessible(true);
+                clearDirtyMethod.invoke(asyncManager);
+                logger.info("*** ASYNC I/O: All dirty flags cleared ***");
+            }
+        } catch (Exception e) {
+            logger.debug("Could not cancel queued operations: {}", e.getMessage());
+        }
+        
+        // Interrupt all training threads immediately
+        for (Map.Entry<String, Thread> entry : trainingThreads.entrySet()) {
+            Thread thread = entry.getValue();
+            if (thread != null && thread.isAlive()) {
+                thread.interrupt();
+                logger.info("*** TrainingManager: Interrupted {} thread ***", entry.getKey());
+            }
+        }
+        trainingThreads.clear();
+        
         // Stop all AI training systems with timeout protection
         stopAIWithTimeout("Q-Learning", () -> {
             if (game.isQLearningEnabled()) game.getQLearningAI().stopTraining();
@@ -125,9 +156,27 @@ public class TrainingManager {
             }
         });
         
-        // Final save before stopping
+        // Final save before stopping - use async manager
         logger.info("*** FINAL SAVE: Saving all AI training data before shutdown ***");
-        game.saveTrainingData();
+        try {
+            Object asyncManager = com.example.chess.ChessApplication.getAsyncManager();
+            if (asyncManager != null) {
+                java.lang.reflect.Method saveOnTrainingStopMethod = asyncManager.getClass().getMethod("saveOnTrainingStop");
+                Object saveTaskResult = saveOnTrainingStopMethod.invoke(asyncManager);
+                
+                if (saveTaskResult instanceof java.util.concurrent.CompletableFuture) {
+                    java.util.concurrent.CompletableFuture<?> saveTask = (java.util.concurrent.CompletableFuture<?>) saveTaskResult;
+                    saveTask.get(30, java.util.concurrent.TimeUnit.SECONDS); // Wait up to 30 seconds
+                    logger.info("*** ASYNC I/O: Training stop save completed ***");
+                } else {
+                    logger.warn("*** ASYNC I/O: Training stop save returned null ***");
+                }
+            } else {
+                logger.warn("*** ASYNC I/O: AsyncManager not available ***");
+            }
+        } catch (Exception e) {
+            logger.error("*** ASYNC I/O: Training stop save failed - {} ***", e.getMessage());
+        }
         
         logger.info("*** ALL AI TRAINING STOPPED ***");
     }
@@ -145,7 +194,7 @@ public class TrainingManager {
     
     private void startQLearningTraining(ChessGame game) {
         if (game.isQLearningEnabled()) {
-            Thread.ofVirtual().name("Q-Learning-Training").start(() -> {
+            Thread thread = Thread.ofVirtual().name("Q-Learning-Training").start(() -> {
                 try {
                     // FIXED: Single training session instead of infinite loop
                     if (!stopTrainingRequested && isTrainingActive) {
@@ -158,6 +207,7 @@ public class TrainingManager {
                     logger.error("Q-Learning training error: {}", e.getMessage());
                 }
             });
+            trainingThreads.put("Q-Learning", thread);
         }
     }
     
@@ -246,13 +296,13 @@ public class TrainingManager {
     
     private void startMCTSTraining(ChessGame game) {
         if (game.isMCTSEnabled()) {
-            Thread.ofVirtual().name("MCTS-Training").start(() -> {
+            Thread thread = Thread.ofVirtual().name("MCTS-Training").start(() -> {
                 try {
                     // MCTS training via virtual board simulation
                     int gameCount = 0;
-                    while (!stopTrainingRequested && gameCount < 5000) {
-                        // Check stop flag every 10 games for faster response
-                        if (gameCount % 10 == 0 && stopTrainingRequested) {
+                    while (!stopTrainingRequested && !Thread.currentThread().isInterrupted() && gameCount < 5000) {
+                        // Check stop flag every game for immediate response
+                        if (stopTrainingRequested || Thread.currentThread().isInterrupted()) {
                             break;
                         }
                         
@@ -285,6 +335,7 @@ public class TrainingManager {
                     logger.error("MCTS training error: {}", e.getMessage());
                 }
             });
+            trainingThreads.put("MCTS", thread);
         }
     }
     
@@ -303,7 +354,7 @@ public class TrainingManager {
                         logger.info("*** CENTRALIZED PERIODIC SAVE: Saving all AI training data ***");
                         // Mark state as changed before saving
                         game.notifyStateChanged();
-                        game.saveTrainingData();
+                        saveOnGameReset(game);
                         logger.info("*** CENTRALIZED PERIODIC SAVE: Complete ***");
                     }
                 } catch (InterruptedException e) {
@@ -316,6 +367,29 @@ public class TrainingManager {
             
             logger.info("*** CENTRALIZED PERIODIC SAVE: Stopped ***");
         });
+    }
+    
+    public void saveOnGameReset(ChessGame game) {
+        logger.info("*** GAME RESET SAVE: Saving all AI training data ***");
+        try {
+            Object asyncManager = com.example.chess.ChessApplication.getAsyncManager();
+            if (asyncManager != null) {
+                java.lang.reflect.Method saveOnGameResetMethod = asyncManager.getClass().getMethod("saveOnGameReset");
+                Object saveTaskResult = saveOnGameResetMethod.invoke(asyncManager);
+                
+                if (saveTaskResult instanceof java.util.concurrent.CompletableFuture) {
+                    java.util.concurrent.CompletableFuture<?> saveTask = (java.util.concurrent.CompletableFuture<?>) saveTaskResult;
+                    saveTask.get(30, java.util.concurrent.TimeUnit.SECONDS);
+                    logger.info("*** GAME RESET SAVE: Completed ***");
+                } else {
+                    logger.warn("*** GAME RESET SAVE: Returned null ***");
+                }
+            } else {
+                logger.warn("*** GAME RESET SAVE: AsyncManager not available ***");
+            }
+        } catch (Exception e) {
+            logger.error("*** GAME RESET SAVE: Failed - {} ***", e.getMessage());
+        }
     }
     
     /**

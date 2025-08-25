@@ -32,9 +32,13 @@ public class AsyncTrainingDataManager {
     // CRITICAL FIX: File-level locks to prevent race conditions
     private final Map<String, Object> fileLocks = new ConcurrentHashMap<>();
     private final ExecutorService ioExecutor = Executors.newFixedThreadPool(11);
+    private volatile boolean trainingStopRequested = false;
+    private volatile boolean userGameDataProcessing = false;
+    private final Map<String, AtomicBoolean> aiSaveInProgress = new ConcurrentHashMap<>();
     private final AsyncIOMetrics metrics = new AsyncIOMetrics();
     private static final long SAVE_DEBOUNCE_MS = 1000; // 1 second debounce
     private final java.util.concurrent.atomic.AtomicInteger activeIOOperations = new java.util.concurrent.atomic.AtomicInteger(0);
+    private final java.util.concurrent.ConcurrentHashMap<String, CompletableFuture<Void>> queuedOperations = new java.util.concurrent.ConcurrentHashMap<>();
     
     public AsyncTrainingDataManager() {
         this.aiTracker = new AICompletionTracker();
@@ -42,8 +46,42 @@ public class AsyncTrainingDataManager {
     }
     
     private boolean shouldStopIO() {
-        // Only stop I/O during shutdown, not during game reset or periodic saves
-        return coordinator.isShuttingDown();
+        // Allow saves during user game data processing even if training stopped
+        if (userGameDataProcessing) {
+            return false;
+        }
+        
+        // Check immediate stop flag first
+        if (trainingStopRequested) {
+            return true;
+        }
+        
+        // During shutdown, block saves same as training stop
+        if (coordinator.isShuttingDown()) {
+            return true; // Block shutdown saves
+        }
+        
+        // Check if training has been stopped via TrainingManager
+        try {
+            Object chessGame = getChessGameInstance();
+            if (chessGame != null) {
+                java.lang.reflect.Method getTrainingManagerMethod = chessGame.getClass().getMethod("getTrainingManager");
+                Object trainingManager = getTrainingManagerMethod.invoke(chessGame);
+                if (trainingManager != null) {
+                    java.lang.reflect.Method isTrainingActiveMethod = trainingManager.getClass().getMethod("isTrainingActive");
+                    boolean isTrainingActive = (Boolean) isTrainingActiveMethod.invoke(trainingManager);
+                    if (!isTrainingActive) {
+                        trainingStopRequested = true; // Set flag for faster future checks
+                        logger.info("*** ASYNC I/O: Training stopped via TrainingManager - cancelling I/O operations ***");
+                        return true;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            logger.debug("Could not check training status: {}", e.getMessage());
+        }
+        
+        return false;
     }
     
     private CompletableFuture<Void> writeDataAsyncForShutdown(String filename, Object data) {
@@ -125,9 +163,48 @@ public class AsyncTrainingDataManager {
     }
     
     public CompletableFuture<Void> saveOnTrainingStop() {
+        trainingStopRequested = true; // Set stop flag immediately
         return coordinator.executeAtomicFeature(AtomicFeatureCoordinator.AtomicFeature.TRAINING_STOP_SAVE, () -> {
+            // Cancel all queued operations first
+            cancelQueuedOperations();
+            // Save only dirty data that was marked before training stopped
             saveAllDirtyData().join();
+            // Clear all dirty flags to prevent shutdown saves
+            clearAllDirtyFlags();
+            logger.info("*** ASYNC I/O: Training stop save completed - all dirty flags cleared ***");
         });
+    }
+    
+    private void cancelQueuedOperations() {
+        int cancelledCount = 0;
+        for (Map.Entry<String, CompletableFuture<Void>> entry : queuedOperations.entrySet()) {
+            CompletableFuture<Void> operation = entry.getValue();
+            if (!operation.isDone()) {
+                operation.cancel(true);
+                cancelledCount++;
+                logger.info("*** ASYNC I/O: Cancelled queued operation for {} ***", entry.getKey());
+            }
+        }
+        queuedOperations.clear();
+        if (cancelledCount > 0) {
+            logger.info("*** ASYNC I/O: Cancelled {} queued operations due to training stop ***", cancelledCount);
+        }
+    }
+    
+    public void clearAllDirtyFlags() {
+        int clearedCount = 0;
+        for (Map.Entry<String, AtomicBoolean> entry : dirtyFlags.entrySet()) {
+            if (entry.getValue().get()) {
+                entry.getValue().set(false);
+                clearedCount++;
+                logger.info("*** ASYNC I/O: Cleared dirty flag for {} ***", entry.getKey());
+            }
+        }
+        // Also clear the data cache to prevent any future saves
+        dataCache.clear();
+        if (clearedCount > 0) {
+            logger.info("*** ASYNC I/O: Cleared {} dirty flags and data cache due to training stop ***", clearedCount);
+        }
     }
     
     public CompletableFuture<Void> saveOnGameReset() {
@@ -137,21 +214,52 @@ public class AsyncTrainingDataManager {
     }
     
     public CompletableFuture<Void> saveAIData(String aiName, Object data, String filename) {
+        // CRITICAL: Check if training stopped before queuing new saves - but allow completion of in-progress AI saves
+        if (shouldStopIO() && !aiSaveInProgress.computeIfAbsent(aiName, k -> new AtomicBoolean(false)).get()) {
+            logger.info("*** ASYNC I/O: Blocking new save request for {} - training stopped ***", aiName);
+            return CompletableFuture.completedFuture(null);
+        }
+        
+        // Mark this AI's save as in progress to ensure atomicity
+        aiSaveInProgress.computeIfAbsent(aiName, k -> new AtomicBoolean(false)).set(true);
+        
         // Cache the data for potential flush during shutdown
         dataCache.put(filename, data);
         markDirty(filename);
         
-        return coordinator.executeAsyncIO(aiName, () -> {
+        CompletableFuture<Void> operation = coordinator.executeAsyncIO(aiName, () -> {
             aiTracker.markAIActive(aiName);
             try {
                 return writeDataAsync(filename, data);
             } finally {
                 aiTracker.markAIComplete(aiName);
+                queuedOperations.remove(filename); // Remove from tracking when complete
+                // Check if this was the last file for this AI (handle all multi-file AIs)
+                boolean hasMoreFiles = queuedOperations.keySet().stream().anyMatch(f -> 
+                    f.startsWith(aiName.toLowerCase()) || 
+                    (aiName.equals("DQN") && (f.contains("dqn_") || f.contains("DQN_"))) ||
+                    (aiName.equals("A3C") && f.contains("a3c_")) ||
+                    (aiName.equals("LeelaZero") && f.contains("leela_")) ||
+                    (aiName.equals("Genetic") && f.contains("ga_"))
+                );
+                if (!hasMoreFiles && aiSaveInProgress.containsKey(aiName)) {
+                    aiSaveInProgress.get(aiName).set(false); // Mark AI save as complete
+                    logger.info("*** ASYNC I/O: {} atomic save completed - all files saved ***", aiName);
+                }
             }
         });
+        
+        // Track the operation so we can cancel it if training stops
+        queuedOperations.put(filename, operation);
+        return operation;
     }
     
     public CompletableFuture<Void> saveAIData(String aiName, Object data) {
+        // CRITICAL: Check if training stopped before queuing new saves
+        if (shouldStopIO()) {
+            logger.info("*** ASYNC I/O: Blocking new save request for {} - training stopped ***", aiName);
+            return CompletableFuture.completedFuture(null);
+        }
         return saveAIData(aiName, data, aiName + ".dat");
     }
     
@@ -177,6 +285,12 @@ public class AsyncTrainingDataManager {
     }
     
     public void markDirty(String filename) {
+        // CRITICAL: Don't mark dirty if training has stopped, unless processing user game data
+        if (shouldStopIO()) {
+            logger.debug("*** ASYNC I/O: Skipping dirty mark for {} - training stopped ***", filename);
+            return;
+        }
+        
         // Only mark dirty if actual state changes occurred
         if (shouldMarkDirty()) {
             dirtyFlags.computeIfAbsent(filename, k -> new AtomicBoolean()).set(true);
@@ -228,7 +342,7 @@ public class AsyncTrainingDataManager {
                 try {
                     // Check if training stopped before expensive I/O
                     if (shouldStopIO()) {
-                        logger.info("*** ASYNC I/O: Training operation cancelled - shutdown in progress ***");
+                        logger.info("*** ASYNC I/O: Training operation cancelled - training stopped or shutdown in progress ***");
                         return;
                     }
                     
@@ -265,7 +379,7 @@ public class AsyncTrainingDataManager {
                     if (data.getClass().getSimpleName().equals("MultiLayerNetwork") || filename.endsWith(".zip")) {
                         // Check stop flag before expensive model save
                         if (shouldStopIO()) {
-                            logger.info("*** ASYNC I/O: DeepLearning4J training save cancelled - shutdown in progress ***");
+                            logger.info("*** ASYNC I/O: DeepLearning4J training save cancelled - training stopped or shutdown in progress ***");
                             return;
                         }
                         saveDeepLearning4JModel(filename, data);
@@ -276,7 +390,7 @@ public class AsyncTrainingDataManager {
                     if (data instanceof java.io.Serializable && !data.getClass().equals(String.class)) {
                         // Check stop flag before expensive serialization
                         if (shouldStopIO()) {
-                            logger.info("*** ASYNC I/O: Training serialization cancelled - shutdown in progress ***");
+                            logger.info("*** ASYNC I/O: Training serialization cancelled - training stopped or shutdown in progress ***");
                             return;
                         }
                         saveSerializableObject(filename, data);
@@ -419,9 +533,9 @@ public class AsyncTrainingDataManager {
                 AsynchronousFileChannel channel = AsynchronousFileChannel.open(filePath, 
                     StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING);
                 
-                // Create OutputStream bridge from AsynchronousFileChannel
+                // Create thread-safe OutputStream bridge from AsynchronousFileChannel
                 java.io.OutputStream channelStream = new java.io.OutputStream() {
-                    private long position = 0;
+                    private final java.util.concurrent.atomic.AtomicLong position = new java.util.concurrent.atomic.AtomicLong(0);
                     
                     @Override
                     public void write(int b) throws java.io.IOException {
@@ -429,11 +543,12 @@ public class AsyncTrainingDataManager {
                     }
                     
                     @Override
-                    public void write(byte[] b, int off, int len) throws java.io.IOException {
+                    public synchronized void write(byte[] b, int off, int len) throws java.io.IOException {
                         ByteBuffer buffer = ByteBuffer.wrap(b, off, len);
                         try {
-                            channel.write(buffer, position).get();
-                            position += len;
+                            long pos = position.get();
+                            channel.write(buffer, pos).get();
+                            position.addAndGet(len);
                         } catch (Exception e) {
                             throw new java.io.IOException("NIO.2 write failed", e);
                         }
@@ -454,7 +569,15 @@ public class AsyncTrainingDataManager {
                 }
                 
                 channel.close();
-                logger.info("*** ASYNC I/O: DeepLearning4J model saved using NIO.2 stream bridge - RACE CONDITION PROTECTED ***");
+                
+                // Identify which AI system based on filename
+                String aiName = "Unknown";
+                if (filename.contains("deeplearning_model")) aiName = "DeepLearning";
+                else if (filename.contains("cnn_model")) aiName = "CNN";
+                else if (filename.contains("dqn_model")) aiName = "DQN";
+                else if (filename.contains("dqn_target")) aiName = "DQN-Target";
+                
+                logger.info("*** ASYNC I/O: {} model saved using NIO.2 stream bridge - RACE CONDITION PROTECTED ***", aiName);
                 
             } catch (Exception e) {
                 logger.error("*** ASYNC I/O: DeepLearning4J model save FAILED - {} ***", e.getMessage());
@@ -478,6 +601,14 @@ public class AsyncTrainingDataManager {
     
     private CompletableFuture<Void> saveAllDirtyData() {
         return CompletableFuture.runAsync(() -> {
+            // CRITICAL: Check if training stopped - if so, skip all saves except shutdown
+            if (shouldStopIO() && !coordinator.isShuttingDown()) {
+                logger.info("*** ASYNC I/O: Training stopped - skipping dirty data save ***");
+                // Clear all dirty flags to prevent future saves
+                clearAllDirtyFlags();
+                return;
+            }
+            
             int dirtyCount = (int) dirtyFlags.entrySet().stream().mapToLong(e -> e.getValue().get() ? 1 : 0).sum();
             
             // Check if any actual state changes occurred before saving
@@ -498,6 +629,13 @@ public class AsyncTrainingDataManager {
             dirtyFlags.entrySet().parallelStream()
                 .filter(entry -> entry.getValue().get())
                 .forEach(entry -> {
+                    // CRITICAL: Check stop status for each file
+                    if (shouldStopIO() && !coordinator.isShuttingDown()) {
+                        logger.info("*** ASYNC I/O: Skipping dirty file {} - training stopped ***", entry.getKey());
+                        entry.getValue().set(false); // Mark as clean to prevent future saves
+                        return;
+                    }
+                    
                     String filename = entry.getKey();
                     Object cachedData = dataCache.get(filename);
                     
@@ -548,6 +686,22 @@ public class AsyncTrainingDataManager {
      */
     public boolean isIOInProgress() {
         return activeIOOperations.get() > 0;
+    }
+    
+    /**
+     * Enable user game data processing mode - allows saves even when training stopped
+     */
+    public void enableUserGameDataProcessing() {
+        userGameDataProcessing = true;
+        logger.debug("*** ASYNC I/O: User game data processing ENABLED - saves allowed ***");
+    }
+    
+    /**
+     * Disable user game data processing mode
+     */
+    public void disableUserGameDataProcessing() {
+        userGameDataProcessing = false;
+        logger.debug("*** ASYNC I/O: User game data processing DISABLED ***");
     }
     
     private CompletableFuture<Object> readDataAsync(String filename) {
