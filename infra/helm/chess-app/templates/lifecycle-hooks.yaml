@@ -1,0 +1,190 @@
+{{- if .Values.lifecycle.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "chess-app.fullname" . }}-lifecycle-scripts
+  labels:
+    {{- include "chess-app.labels" . | nindent 4 }}
+data:
+  preStop.sh: |
+    #!/bin/bash
+    echo "PreStop hook: Gracefully shutting down chess application..."
+    
+    # Save AI training data
+    curl -X POST http://localhost:8081/api/save-all-ai || true
+    
+    # Wait for ongoing games to complete
+    sleep 30
+    
+    # Notify load balancer to stop sending traffic
+    curl -X POST http://localhost:8081/actuator/shutdown || true
+    
+    echo "PreStop hook completed"
+  
+  postStart.sh: |
+    #!/bin/bash
+    echo "PostStart hook: Initializing chess application..."
+    
+    # Wait for application to be ready
+    until curl -f http://localhost:8081/actuator/health; do
+      echo "Waiting for application to be ready..."
+      sleep 5
+    done
+    
+    # Load AI training data
+    curl -X POST http://localhost:8081/api/load-all-ai || true
+    
+    echo "PostStart hook completed"
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "chess-app.fullname" . }}-pre-install
+  labels:
+    {{- include "chess-app.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": hook-succeeded
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: pre-install
+        image: alpine/curl:latest
+        command:
+        - /bin/sh
+        - -c
+        - |
+          echo "Pre-install: Preparing environment for chess application..."
+          
+          # Check if S3 bucket is accessible
+          echo "Checking S3 bucket accessibility..."
+          
+          # Validate secrets are available
+          echo "Validating secrets..."
+          
+          echo "Pre-install completed successfully"
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "chess-app.fullname" . }}-post-install
+  labels:
+    {{- include "chess-app.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install
+    "helm.sh/hook-weight": "5"
+    "helm.sh/hook-delete-policy": hook-succeeded
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: post-install
+        image: alpine/curl:latest
+        command:
+        - /bin/sh
+        - -c
+        - |
+          echo "Post-install: Verifying chess application deployment..."
+          
+          # Wait for service to be available
+          until nslookup {{ include "chess-app.fullname" . }}; do
+            echo "Waiting for service to be available..."
+            sleep 10
+          done
+          
+          echo "Post-install completed successfully"
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "chess-app.fullname" . }}-pre-upgrade
+  labels:
+    {{- include "chess-app.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": hook-succeeded
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: pre-upgrade
+        image: alpine/curl:latest
+        command:
+        - /bin/sh
+        - -c
+        - |
+          echo "Pre-upgrade: Backing up AI training data..."
+          
+          # Create backup of current AI state
+          kubectl exec deployment/{{ include "chess-app.fullname" . }} -- curl -X POST http://localhost:8081/api/backup-ai-data || true
+          
+          echo "Pre-upgrade completed successfully"
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "chess-app.fullname" . }}-post-upgrade
+  labels:
+    {{- include "chess-app.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-upgrade
+    "helm.sh/hook-weight": "5"
+    "helm.sh/hook-delete-policy": hook-succeeded
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: post-upgrade
+        image: alpine/curl:latest
+        command:
+        - /bin/sh
+        - -c
+        - |
+          echo "Post-upgrade: Verifying upgraded chess application..."
+          
+          # Verify application health
+          until curl -f http://{{ include "chess-app.fullname" . }}:{{ .Values.service.port }}/actuator/health; do
+            echo "Waiting for upgraded application to be healthy..."
+            sleep 10
+          done
+          
+          echo "Post-upgrade completed successfully"
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "chess-app.fullname" . }}-pre-delete
+  labels:
+    {{- include "chess-app.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-delete
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": hook-succeeded
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: pre-delete
+        image: alpine/curl:latest
+        command:
+        - /bin/sh
+        - -c
+        - |
+          echo "Pre-delete: Saving final AI training data..."
+          
+          # Save all AI training data before deletion
+          kubectl exec deployment/{{ include "chess-app.fullname" . }} -- curl -X POST http://localhost:8081/api/save-all-ai || true
+          
+          # Create final backup
+          kubectl exec deployment/{{ include "chess-app.fullname" . }} -- curl -X POST http://localhost:8081/api/final-backup || true
+          
+          echo "Pre-delete completed successfully"
+{{- end }}

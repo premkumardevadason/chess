@@ -1,0 +1,81 @@
+# Default values - overridden by environment-specific files
+global:
+  image:
+    repository: ""
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  
+  replicaCount: 3
+  
+  service:
+    type: ClusterIP
+    port: 8081
+  
+  serviceAccount:
+    create: true
+    roleArn: ""
+  
+  s3:
+    bucket: ""
+    region: "us-west-2"
+  
+  istio:
+    enabled: true
+    hosts:
+      - chess-app.internal
+  
+  resources:
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+    requests:
+      cpu: 1000m
+      memory: 2Gi
+  
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+  
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# Lifecycle Management
+lifecycle:
+  enabled: true
+  preStopGracePeriodSeconds: 60
+  postStartDelaySeconds: 30
+
+# Environment-specific overrides
+image:
+  repository: "{{ .Values.global.image.repository }}"
+  tag: "{{ .Values.global.image.tag }}"
+  pullPolicy: "{{ .Values.global.image.pullPolicy }}"
+
+replicaCount: "{{ .Values.global.replicaCount }}"
+
+service:
+  type: ClusterIP
+  port: "{{ .Values.global.service.port }}"
+
+serviceAccount:
+  create: true
+  annotations:
+    eks.amazonaws.com/role-arn: "{{ .Values.global.serviceAccount.roleArn }}"
+
+s3:
+  bucket: "{{ .Values.global.s3.bucket }}"
+  region: "{{ .Values.global.s3.region }}"
+
+istio:
+  enabled: "{{ .Values.global.istio.enabled }}"
+  gateway:
+    hosts: "{{ .Values.global.istio.hosts }}"
+
+resources: "{{ .Values.global.resources }}"
+autoscaling: "{{ .Values.global.autoscaling }}"
+nodeSelector: "{{ .Values.global.nodeSelector }}"
+tolerations: "{{ .Values.global.tolerations }}"
+affinity: "{{ .Values.global.affinity }}"
