@@ -842,11 +842,20 @@ public class DeepLearningCNNAI {
                 }
                 
                 // Phase 3: Dual-path implementation with enhanced error handling
+                boolean asyncSaveSuccessful = false;
                 if (ioWrapper.isAsyncEnabled()) {
-                    logger.debug("CNN AI: Using async save path");
-                    ioWrapper.saveAIData("CNN", network, MODEL_FILE);
-                    saveTrainingIterations();
-                } else {
+                    try {
+                        logger.debug("CNN AI: Using async save path");
+                        ioWrapper.saveAIData("CNN", network, MODEL_FILE);
+                        saveTrainingIterations();
+                        asyncSaveSuccessful = true;
+                        logger.info("CNN AI: Model saved via async I/O");
+                    } catch (Exception asyncEx) {
+                        logger.warn("CNN AI: Async save failed, falling back to sync - {}", asyncEx.getMessage());
+                    }
+                }
+                
+                if (!asyncSaveSuccessful) {
                     // Enhanced synchronous save with atomic operations
                     logger.debug("CNN AI: Using synchronous save path");
                     String tempFile = MODEL_FILE + ".tmp";

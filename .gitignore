@@ -12,6 +12,7 @@ target/**
 *.zip
 *.model
 *.bin
+*.tmp
 
 # AI training directories
 ga_models/

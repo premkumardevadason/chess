@@ -3437,6 +3437,11 @@ public class ChessGame {
             logger.error("Error during training data save: {}", e.getMessage());
         }
         
+        // Shutdown TrainingManager first to stop periodic save thread
+        if (trainingManager != null) {
+            trainingManager.shutdown();
+        }
+        
         // Shutdown all AI systems gracefully (only enabled AIs)
         try {
             if (isQLearningEnabled()) {

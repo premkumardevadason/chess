@@ -24,6 +24,7 @@ public class TrainingManager {
     private volatile boolean isTrainingActive = false;
     private volatile boolean stopTrainingRequested = false;
     private final Map<String, Thread> trainingThreads = new ConcurrentHashMap<>();
+    private volatile Thread periodicSaveThread = null;
     
     public boolean isTrainingActive() {
         return isTrainingActive;
@@ -41,6 +42,9 @@ public class TrainingManager {
         
         isTrainingActive = true;
         stopTrainingRequested = false;
+        
+        // CRITICAL: Reset periodic save thread reference for fresh start
+        periodicSaveThread = null;
         
         // CRITICAL: Mark state as changed when training starts
         game.notifyStateChanged();
@@ -83,6 +87,16 @@ public class TrainingManager {
         stopTrainingRequested = true;
         isTrainingActive = false;
         logger.info("*** PERIODIC SAVE: Stop flag set - will stop on next check ***");
+        
+        // CRITICAL: Clear training threads map for fresh start
+        trainingThreads.clear();
+        
+        // CRITICAL: Interrupt periodic save thread immediately
+        if (periodicSaveThread != null && periodicSaveThread.isAlive()) {
+            periodicSaveThread.interrupt();
+            logger.info("*** PERIODIC SAVE: Thread interrupted ***");
+        }
+        periodicSaveThread = null; // Clear reference for next start
         
         // CRITICAL: Cancel any queued async operations immediately
         try {
@@ -156,26 +170,32 @@ public class TrainingManager {
             }
         });
         
-        // Final save before stopping - use async manager
-        logger.info("*** FINAL SAVE: Saving all AI training data before shutdown ***");
-        try {
-            Object asyncManager = com.example.chess.ChessApplication.getAsyncManager();
-            if (asyncManager != null) {
-                java.lang.reflect.Method saveOnTrainingStopMethod = asyncManager.getClass().getMethod("saveOnTrainingStop");
-                Object saveTaskResult = saveOnTrainingStopMethod.invoke(asyncManager);
-                
-                if (saveTaskResult instanceof java.util.concurrent.CompletableFuture) {
-                    java.util.concurrent.CompletableFuture<?> saveTask = (java.util.concurrent.CompletableFuture<?>) saveTaskResult;
-                    saveTask.get(30, java.util.concurrent.TimeUnit.SECONDS); // Wait up to 30 seconds
-                    logger.info("*** ASYNC I/O: Training stop save completed ***");
+        // Final save before stopping - use async manager (only if not shutting down)
+        if (!com.example.chess.ChessApplication.shutdownInProgress) {
+            logger.info("*** FINAL SAVE: Saving all AI training data before shutdown ***");
+            try {
+                Object asyncManager = com.example.chess.ChessApplication.getAsyncManager();
+                if (asyncManager != null) {
+                    java.lang.reflect.Method saveOnTrainingStopMethod = asyncManager.getClass().getMethod("saveOnTrainingStop");
+                    Object saveTaskResult = saveOnTrainingStopMethod.invoke(asyncManager);
+                    
+                    if (saveTaskResult instanceof java.util.concurrent.CompletableFuture) {
+                        java.util.concurrent.CompletableFuture<?> saveTask = (java.util.concurrent.CompletableFuture<?>) saveTaskResult;
+                        saveTask.get(30, java.util.concurrent.TimeUnit.SECONDS); // Wait up to 30 seconds
+                        logger.info("*** ASYNC I/O: Training stop save completed ***");
+                    } else {
+                        logger.info("*** ASYNC I/O: Training stop save completed (synchronous) ***");
+                    }
                 } else {
-                    logger.warn("*** ASYNC I/O: Training stop save returned null ***");
+                    logger.warn("*** ASYNC I/O: AsyncManager not available ***");
                 }
-            } else {
-                logger.warn("*** ASYNC I/O: AsyncManager not available ***");
+            } catch (java.util.concurrent.TimeoutException e) {
+                logger.warn("*** ASYNC I/O: Training stop save timed out after 30 seconds ***");
+            } catch (Exception e) {
+                logger.error("*** ASYNC I/O: Training stop save failed - {} ***", e.getMessage());
             }
-        } catch (Exception e) {
-            logger.error("*** ASYNC I/O: Training stop save failed - {} ***", e.getMessage());
+        } else {
+            logger.info("*** FINAL SAVE: Skipped during application shutdown ***");
         }
         
         logger.info("*** ALL AI TRAINING STOPPED ***");
@@ -343,7 +363,13 @@ public class TrainingManager {
      * Centralized periodic save mechanism - saves all AI training data every 30 minutes
      */
     private void startPeriodicSave(ChessGame game) {
-        Thread.ofVirtual().name("Centralized-Periodic-Save").start(() -> {
+        // CRITICAL: Prevent multiple periodic save threads
+        if (periodicSaveThread != null && periodicSaveThread.isAlive()) {
+            logger.info("*** PERIODIC SAVE: Already running - skipping duplicate start ***");
+            return;
+        }
+        
+        periodicSaveThread = Thread.ofVirtual().name("Centralized-Periodic-Save").start(() -> {
             logger.info("*** CENTRALIZED PERIODIC SAVE: Started (every 30 minutes) ***");
             
             while (!stopTrainingRequested) {
@@ -382,11 +408,13 @@ public class TrainingManager {
                     saveTask.get(30, java.util.concurrent.TimeUnit.SECONDS);
                     logger.info("*** GAME RESET SAVE: Completed ***");
                 } else {
-                    logger.warn("*** GAME RESET SAVE: Returned null ***");
+                    logger.info("*** GAME RESET SAVE: Completed (synchronous) ***");
                 }
             } else {
                 logger.warn("*** GAME RESET SAVE: AsyncManager not available ***");
             }
+        } catch (java.util.concurrent.TimeoutException e) {
+            logger.warn("*** GAME RESET SAVE: Timed out after 30 seconds ***");
         } catch (Exception e) {
             logger.error("*** GAME RESET SAVE: Failed - {} ***", e.getMessage());
         }
@@ -973,6 +1001,30 @@ public class TrainingManager {
         } else {
             logger.info("❌ POOR: Training data quality requires significant improvement");
         }
+    }
+    
+    /**
+     * Shutdown method to be called during application shutdown
+     * Ensures periodic save thread is stopped immediately
+     */
+    public void shutdown() {
+        logger.info("*** TRAINING MANAGER SHUTDOWN: Stopping periodic save thread ***");
+        
+        // Stop training and periodic saves immediately
+        stopTrainingRequested = true;
+        isTrainingActive = false;
+        
+        // Interrupt periodic save thread immediately
+        if (periodicSaveThread != null && periodicSaveThread.isAlive()) {
+            periodicSaveThread.interrupt();
+            logger.info("*** PERIODIC SAVE: Thread interrupted during shutdown ***");
+        }
+        periodicSaveThread = null;
+        
+        // Clear training threads
+        trainingThreads.clear();
+        
+        logger.info("*** TRAINING MANAGER SHUTDOWN: Complete ***");
     }
     
     private static class QualityReport {
