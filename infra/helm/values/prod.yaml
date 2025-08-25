@@ -1,0 +1,55 @@
+global:
+  environment: prod
+  image:
+    repository: "123456789012.dkr.ecr.us-west-2.amazonaws.com/chess-app"
+    tag: "v1.0.0"
+    pullPolicy: IfNotPresent
+  
+  replicaCount: 3
+  
+  service:
+    port: 8081
+  
+  serviceAccount:
+    roleArn: "arn:aws:iam::123456789012:role/chess-app-prod-role"
+  
+  s3:
+    bucket: "chess-ai-models-prod-xyz789"
+    region: "us-west-2"
+  
+  istio:
+    enabled: true
+    hosts:
+      - chess-app.internal
+  
+  resources:
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+    requests:
+      cpu: 1000m
+      memory: 2Gi
+  
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+  
+  nodeSelector:
+    node-type: "general"
+  
+  tolerations: []
+  
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+            - key: app.kubernetes.io/name
+              operator: In
+              values:
+              - chess-app
+          topologyKey: kubernetes.io/hostname

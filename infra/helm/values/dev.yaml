@@ -1,0 +1,41 @@
+global:
+  environment: dev
+  image:
+    repository: "123456789012.dkr.ecr.us-west-2.amazonaws.com/chess-app"
+    tag: "dev-latest"
+    pullPolicy: Always
+  
+  replicaCount: 1
+  
+  service:
+    port: 8081
+  
+  serviceAccount:
+    roleArn: "arn:aws:iam::123456789012:role/chess-app-dev-role"
+  
+  s3:
+    bucket: "chess-ai-models-dev-abc123"
+    region: "us-west-2"
+  
+  istio:
+    enabled: true
+    hosts:
+      - chess-app-dev.internal
+  
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+    requests:
+      cpu: 500m
+      memory: 1Gi
+  
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 3
+    targetCPUUtilizationPercentage: 80
+  
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
