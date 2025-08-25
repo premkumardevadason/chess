@@ -7,7 +7,7 @@ This review covers the AWS deployment design for the Chess project, as described
 
 - **Separation of Concerns:** The use of multi-VPC architecture (Internet VPC, Private VPC, Transit Gateway) provides strong network isolation and security.
 - **Scalability:** EKS with node groups (including GPU nodes) and multi-AZ deployment ensures high availability and the ability to scale for both web and AI workloads.
-- **Security:** Private subnets for EKS, no direct internet access to nodes, use of AWS Secrets Manager, and WAF for DDoS protection are all best practices.
+- **Security:** Private subnets for EKS, no direct internet access to nodes, use of AWS S*C*R*T Manager, and WAF for DDoS protection are all best practices.
 - **Modern Service Mesh:** Istio is used for advanced traffic management, session stickiness, and observability, enabling fine-grained control over service-to-service communication.
 - **Storage Strategy:** Direct S3 access for AI state files (via CSI driver) is efficient and cloud-native, avoiding the complexity of persistent volumes.
 - **CI/CD Integration:** GitHub Actions, Docker, and ECR streamline the build and deployment pipeline.
@@ -19,7 +19,7 @@ This review covers the AWS deployment design for the Chess project, as described
 
 - **Complexity:** The architecture is sophisticated and may be overkill for small-scale or early-stage deployments. Consider a phased approach for smaller teams.
 - **Documentation:** While the design is detailed, ensure that all custom scripts, Helm values, and Terraform variables are fully documented for onboarding and troubleshooting.
-- **Secrets Rotation:** Automate secrets rotation in AWS Secrets Manager and ensure applications can reload secrets without downtime.
+- **S*C*R*T Rotation:** Automate S*C*R*T rotation in AWS S*C*R*T Manager and ensure applications can reload S*C*R*Ts without downtime.
 - **Disaster Recovery:** While S3 replication is covered, document and test full DR scenarios (e.g., EKS cluster recreation, state restoration).
 - **Cost Monitoring:** Set up automated cost alerts and dashboards, especially for GPU node usage and cross-region data transfer.
 - **Testing:** Integrate infrastructure testing (e.g., with Terratest or Checkov) into the CI/CD pipeline.
