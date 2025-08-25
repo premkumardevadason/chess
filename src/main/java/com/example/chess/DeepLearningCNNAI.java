@@ -739,35 +739,68 @@ public class DeepLearningCNNAI {
     }
     
     private boolean loadModel() {
-        // Phase 3: Dual-path implementation
+        // Phase 3: Dual-path implementation with enhanced error handling
         if (ioWrapper.isAsyncEnabled()) {
             try {
                 logger.info("*** ASYNC I/O: CNN loading model using NIO.2 async LOAD path ***");
                 Object data = ioWrapper.loadAIData("CNN", MODEL_FILE);
                 if (data instanceof MultiLayerNetwork) {
-                    network = (MultiLayerNetwork) data;
-                    logger.info("*** CNN AI: Model loaded using NIO.2 stream bridge ***");
-                    return true;
+                    MultiLayerNetwork loadedNetwork = (MultiLayerNetwork) data;
+                    if (validateAdvancedCNNArchitecture(loadedNetwork)) {
+                        network = loadedNetwork;
+                        loadTrainingIterations();
+                        logger.info("*** CNN AI: Model loaded using NIO.2 ({} params, {} iterations) ***", 
+                            network.numParams(), trainingIterations);
+                        return true;
+                    } else {
+                        logger.warn("*** CNN AI: Async loaded model incompatible with advanced architecture ***");
+                    }
+                } else if (data != null) {
+                    logger.warn("*** CNN AI: Async loaded data is not MultiLayerNetwork: {} ***", data.getClass().getSimpleName());
                 }
             } catch (Exception e) {
                 logger.warn("*** CNN AI: Async load failed, falling back to sync - {} ***", e.getMessage());
             }
         }
         
-        // Existing synchronous code - unchanged
+        // Enhanced synchronous loading with corruption detection
         try {
             File modelFile = new File(MODEL_FILE);
             if (modelFile.exists()) {
+                // Check file size first
+                if (modelFile.length() < 1000) {
+                    logger.warn("CNN AI: Model file suspiciously small ({} bytes) - possible corruption", modelFile.length());
+                    handleCorruptedModel();
+                    return false;
+                }
+                
+                logger.info("CNN AI: Loading model from file ({} bytes)", modelFile.length());
                 MultiLayerNetwork loadedNetwork = ModelSerializer.restoreMultiLayerNetwork(modelFile);
+                
+                if (loadedNetwork == null) {
+                    logger.error("CNN AI: Loaded network is null - file corrupted");
+                    handleCorruptedModel();
+                    return false;
+                }
+                
+                if (loadedNetwork.numParams() == 0) {
+                    logger.error("CNN AI: Loaded network has 0 parameters - file corrupted");
+                    handleCorruptedModel();
+                    return false;
+                }
+                
                 if (validateAdvancedCNNArchitecture(loadedNetwork)) {
                     network = loadedNetwork;
                     loadTrainingIterations();
-                    logger.info("CNN AI: Advanced CNN model loaded successfully (iterations: {})", trainingIterations);
+                    logger.info("CNN AI: Advanced CNN model loaded successfully ({} params, {} iterations)", 
+                        network.numParams(), trainingIterations);
                     return true;
                 } else {
-                    logger.warn("CNN AI: Loaded model incompatible with advanced architecture");
+                    logger.warn("CNN AI: Loaded model incompatible with advanced architecture - will recreate");
                     return false;
                 }
+            } else {
+                logger.info("CNN AI: No existing model file found");
             }
         } catch (Exception e) {
             logger.error("CNN AI: Model loading failed - {}", e.getMessage());
@@ -795,20 +828,78 @@ public class DeepLearningCNNAI {
     
     public void saveModel() {
         synchronized (saveLock) {
-            // Phase 3: Dual-path implementation
-            if (ioWrapper.isAsyncEnabled()) {
-                ioWrapper.saveAIData("CNN", network, MODEL_FILE);
-                saveTrainingIterations();
-            } else {
-                // Existing synchronous code - unchanged
-                try {
-                    // Save directly to final file to avoid rename issues
-                    ModelSerializer.writeModel(network, MODEL_FILE, true);
+            try {
+                // Check memory before save
+                Runtime runtime = Runtime.getRuntime();
+                long freeMemory = runtime.freeMemory();
+                long maxMemory = runtime.maxMemory();
+                long usedMemory = runtime.totalMemory() - freeMemory;
+                
+                if ((maxMemory - usedMemory) < (150 * 1024 * 1024)) { // 150MB threshold
+                    logger.warn("CNN AI: Low memory before save - forcing GC");
+                    System.gc();
+                    Thread.sleep(500);
+                }
+                
+                // Phase 3: Dual-path implementation with enhanced error handling
+                if (ioWrapper.isAsyncEnabled()) {
+                    logger.debug("CNN AI: Using async save path");
+                    ioWrapper.saveAIData("CNN", network, MODEL_FILE);
                     saveTrainingIterations();
-                    File modelFile = new File(MODEL_FILE);
-                    logger.info("CNN AI: Model saved ({} bytes, {} iterations)", modelFile.length(), trainingIterations);
-                } catch (Exception e) {
-                    logger.error("CNN AI: Failed to save model - {}", e.getMessage());
+                } else {
+                    // Enhanced synchronous save with atomic operations
+                    logger.debug("CNN AI: Using synchronous save path");
+                    String tempFile = MODEL_FILE + ".tmp";
+                    
+                    try {
+                        // Save to temporary file first
+                        ModelSerializer.writeModel(network, tempFile, true);
+                        
+                        // Verify saved file
+                        File temp = new File(tempFile);
+                        if (temp.length() < 1000) {
+                            throw new RuntimeException("Saved model file too small: " + temp.length() + " bytes");
+                        }
+                        
+                        // Quick verification load
+                        try {
+                            MultiLayerNetwork testLoad = ModelSerializer.restoreMultiLayerNetwork(temp);
+                            if (testLoad == null || testLoad.numParams() == 0) {
+                                throw new RuntimeException("Saved model verification failed");
+                            }
+                        } catch (Exception verifyEx) {
+                            throw new RuntimeException("Model verification failed: " + verifyEx.getMessage());
+                        }
+                        
+                        // Atomic move to final location
+                        File finalFile = new File(MODEL_FILE);
+                        if (finalFile.exists()) {
+                            finalFile.delete();
+                        }
+                        if (!temp.renameTo(finalFile)) {
+                            throw new RuntimeException("Failed to move temporary file to final location");
+                        }
+                        
+                        saveTrainingIterations();
+                        logger.info("CNN AI: Model saved with verification ({} bytes, {} iterations)", 
+                            finalFile.length(), trainingIterations);
+                        
+                    } catch (Exception saveEx) {
+                        // Clean up temporary file
+                        new File(tempFile).delete();
+                        throw saveEx;
+                    }
+                }
+                
+            } catch (Exception e) {
+                logger.error("CNN AI: Failed to save model - {}", e.getMessage());
+                
+                // If this is during training, don't let save failures stop training
+                if (isTraining.get()) {
+                    logger.warn("CNN AI: Continuing training despite save failure");
+                } else {
+                    // If not training, this is a critical error
+                    throw new RuntimeException("CNN model save failed", e);
                 }
             }
         }

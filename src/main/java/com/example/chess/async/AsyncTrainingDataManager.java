@@ -524,51 +524,54 @@ public class AsyncTrainingDataManager {
     }
     
     private void saveDeepLearning4JModel(String filename, Object model) {
-        // CRITICAL FIX: File-level synchronization for DeepLearning4J models
+        // CRITICAL FIX: Use atomic file operations instead of stream bridge to prevent corruption
         Object fileLock = fileLocks.computeIfAbsent(filename, k -> new Object());
         
         synchronized (fileLock) {
             try {
+                // Check available memory before large model save
+                Runtime runtime = Runtime.getRuntime();
+                long freeMemory = runtime.freeMemory();
+                long maxMemory = runtime.maxMemory();
+                long usedMemory = runtime.totalMemory() - freeMemory;
+                
+                if ((maxMemory - usedMemory) < (200 * 1024 * 1024)) { // 200MB threshold
+                    logger.warn("*** ASYNC I/O: Low memory detected before model save - forcing GC ***");
+                    System.gc();
+                    Thread.sleep(1000); // Allow GC to complete
+                }
+                
                 Path filePath = Paths.get(filename);
-                AsynchronousFileChannel channel = AsynchronousFileChannel.open(filePath, 
-                    StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING);
+                Path tempPath = Paths.get(filename + ".tmp");
                 
-                // Create thread-safe OutputStream bridge from AsynchronousFileChannel
-                java.io.OutputStream channelStream = new java.io.OutputStream() {
-                    private final java.util.concurrent.atomic.AtomicLong position = new java.util.concurrent.atomic.AtomicLong(0);
-                    
-                    @Override
-                    public void write(int b) throws java.io.IOException {
-                        write(new byte[]{(byte) b});
-                    }
-                    
-                    @Override
-                    public synchronized void write(byte[] b, int off, int len) throws java.io.IOException {
-                        ByteBuffer buffer = ByteBuffer.wrap(b, off, len);
-                        try {
-                            long pos = position.get();
-                            channel.write(buffer, pos).get();
-                            position.addAndGet(len);
-                        } catch (Exception e) {
-                            throw new java.io.IOException("NIO.2 write failed", e);
-                        }
-                    }
-                };
+                // Create parent directories
+                if (filePath.getParent() != null) {
+                    java.nio.file.Files.createDirectories(filePath.getParent());
+                }
                 
-                // Use direct DL4J API calls
+                // ATOMIC OPERATION: Save to temporary file first
                 if (model instanceof org.deeplearning4j.nn.multilayer.MultiLayerNetwork) {
                     org.deeplearning4j.util.ModelSerializer.writeModel(
-                        (org.deeplearning4j.nn.multilayer.MultiLayerNetwork) model, channelStream, true);
+                        (org.deeplearning4j.nn.multilayer.MultiLayerNetwork) model, tempPath.toFile(), true);
                 } else if (model instanceof org.deeplearning4j.nn.graph.ComputationGraph) {
                     org.deeplearning4j.util.ModelSerializer.writeModel(
-                        (org.deeplearning4j.nn.graph.ComputationGraph) model, channelStream, true);
+                        (org.deeplearning4j.nn.graph.ComputationGraph) model, tempPath.toFile(), true);
                 } else {
                     // Generic model interface
                     org.deeplearning4j.util.ModelSerializer.writeModel(
-                        (org.deeplearning4j.nn.api.Model) model, channelStream, true);
+                        (org.deeplearning4j.nn.api.Model) model, tempPath.toFile(), true);
                 }
                 
-                channel.close();
+                // Verify saved file integrity
+                if (!verifyModelFile(tempPath, model)) {
+                    java.nio.file.Files.deleteIfExists(tempPath);
+                    throw new RuntimeException("Model save verification failed - file corrupted");
+                }
+                
+                // ATOMIC MOVE: Replace original file atomically
+                java.nio.file.Files.move(tempPath, filePath, 
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                    java.nio.file.StandardCopyOption.ATOMIC_MOVE);
                 
                 // Identify which AI system based on filename
                 String aiName = "Unknown";
@@ -577,14 +580,43 @@ public class AsyncTrainingDataManager {
                 else if (filename.contains("dqn_model")) aiName = "DQN";
                 else if (filename.contains("dqn_target")) aiName = "DQN-Target";
                 
-                logger.info("*** ASYNC I/O: {} model saved using NIO.2 stream bridge - RACE CONDITION PROTECTED ***", aiName);
+                long fileSize = java.nio.file.Files.size(filePath);
+                logger.info("*** ASYNC I/O: {} model saved using ATOMIC FILE OPERATIONS ({} bytes) - CORRUPTION PROTECTED ***", aiName, fileSize);
                 
             } catch (Exception e) {
                 logger.error("*** ASYNC I/O: DeepLearning4J model save FAILED - {} ***", e.getMessage());
-                throw new RuntimeException("DeepLearning4J stream bridge save failed", e);
+                // Clean up temporary file if it exists
+                try {
+                    java.nio.file.Files.deleteIfExists(Paths.get(filename + ".tmp"));
+                } catch (Exception cleanupEx) {
+                    logger.debug("Failed to cleanup temp file: {}", cleanupEx.getMessage());
+                }
+                throw new RuntimeException("DeepLearning4J atomic save failed", e);
             } finally {
                 activeIOOperations.decrementAndGet();
             }
+        }
+    }
+    
+    private boolean verifyModelFile(Path modelPath, Object originalModel) {
+        try {
+            // Quick verification: check if file can be loaded
+            if (originalModel instanceof org.deeplearning4j.nn.multilayer.MultiLayerNetwork) {
+                org.deeplearning4j.nn.multilayer.MultiLayerNetwork testLoad = 
+                    org.deeplearning4j.util.ModelSerializer.restoreMultiLayerNetwork(modelPath.toFile());
+                return testLoad != null && testLoad.numParams() > 0;
+            } else if (originalModel instanceof org.deeplearning4j.nn.graph.ComputationGraph) {
+                org.deeplearning4j.nn.graph.ComputationGraph testLoad = 
+                    org.deeplearning4j.util.ModelSerializer.restoreComputationGraph(modelPath.toFile());
+                return testLoad != null && testLoad.numParams() > 0;
+            }
+            
+            // For generic models, just check file size
+            return java.nio.file.Files.size(modelPath) > 1000; // Minimum reasonable size
+            
+        } catch (Exception e) {
+            logger.warn("Model verification failed: {}", e.getMessage());
+            return false;
         }
     }
     
@@ -770,89 +802,95 @@ public class AsyncTrainingDataManager {
                 return null;
             }
             
-            AsynchronousFileChannel channel = AsynchronousFileChannel.open(filePath, StandardOpenOption.READ);
-            long fileSize = channel.size();
-            
+            long fileSize = java.nio.file.Files.size(filePath);
             if (fileSize == 0) {
-                channel.close();
                 logger.info("*** ASYNC I/O: {} is empty, returning null ***", filename);
                 return null;
             }
             
-            // Read entire file into memory first for DeepLearning4J compatibility
-            ByteBuffer buffer = ByteBuffer.allocate((int) fileSize);
-            CompletableFuture<Integer> readFuture = new CompletableFuture<>();
-            
-            channel.read(buffer, 0, null, new CompletionHandler<Integer, Void>() {
-                @Override
-                public void completed(Integer result, Void attachment) {
-                    readFuture.complete(result);
-                }
-                
-                @Override
-                public void failed(Throwable exc, Void attachment) {
-                    readFuture.completeExceptionally(exc);
-                }
-            });
-            
-            readFuture.join();
-            buffer.flip();
-            channel.close();
-            
-            // Create InputStream from buffer
-            byte[] data = new byte[buffer.remaining()];
-            buffer.get(data);
-            
-            // Check if this is a ZIP file (DL4J models are saved as ZIP)
-            java.io.InputStream modelStream;
-            if (data.length >= 4 && data[0] == 0x50 && data[1] == 0x4B && data[2] == 0x03 && data[3] == 0x04) {
-                // This is a ZIP file - extract the model data
-                try (java.util.zip.ZipInputStream zis = new java.util.zip.ZipInputStream(new java.io.ByteArrayInputStream(data))) {
-                    java.util.zip.ZipEntry entry;
-                    while ((entry = zis.getNextEntry()) != null) {
-                        if (entry.getName().equals("coefficients.bin") || entry.getName().equals("configuration.json") || !entry.isDirectory()) {
-                            // Found model data - read it
-                            java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
-                            byte[] buffer2 = new byte[8192];
-                            int len;
-                            while ((len = zis.read(buffer2)) > 0) {
-                                baos.write(buffer2, 0, len);
-                            }
-                            // Use the entire ZIP as input stream for DL4J
-                            modelStream = new java.io.ByteArrayInputStream(data);
-                            break;
-                        }
-                    }
-                    modelStream = new java.io.ByteArrayInputStream(data);
-                }
-            } else {
-                // Raw model data
-                modelStream = new java.io.ByteArrayInputStream(data);
+            // Check for corruption indicators
+            if (fileSize < 1000) {
+                logger.warn("*** ASYNC I/O: {} suspiciously small ({} bytes) - possible corruption ***", filename, fileSize);
+                return null;
             }
             
-            // Use DeepLearning4J ModelSerializer with InputStream - try different model types
-            Class<?> modelSerializerClass = Class.forName("org.deeplearning4j.util.ModelSerializer");
+            // SIMPLIFIED LOAD: Use direct file loading instead of stream bridge
             Object result = null;
             
-            // Determine model type based on filename to avoid backward compatibility issues
+            // Determine model type based on filename
             boolean isComputationGraph = filename.contains("dqn");
             
-            if (isComputationGraph) {
-                // Load as ComputationGraph directly
-                result = org.deeplearning4j.util.ModelSerializer.restoreComputationGraph(modelStream, true);
-                logger.info("*** ASYNC I/O: Successfully loaded as ComputationGraph ***");
-            } else {
-                // Load as MultiLayerNetwork directly
-                result = org.deeplearning4j.util.ModelSerializer.restoreMultiLayerNetwork(modelStream, true);
-                logger.info("*** ASYNC I/O: Successfully loaded as MultiLayerNetwork ***");
+            try {
+                if (isComputationGraph) {
+                    // Load as ComputationGraph directly from file
+                    result = org.deeplearning4j.util.ModelSerializer.restoreComputationGraph(filePath.toFile());
+                    logger.info("*** ASYNC I/O: Successfully loaded as ComputationGraph ***");
+                } else {
+                    // Load as MultiLayerNetwork directly from file
+                    result = org.deeplearning4j.util.ModelSerializer.restoreMultiLayerNetwork(filePath.toFile());
+                    logger.info("*** ASYNC I/O: Successfully loaded as MultiLayerNetwork ***");
+                }
+            } catch (Exception primaryLoadException) {
+                logger.warn("*** ASYNC I/O: Primary load method failed, trying alternative - {} ***", primaryLoadException.getMessage());
+                
+                // Try alternative model type if primary fails
+                try {
+                    if (isComputationGraph) {
+                        result = org.deeplearning4j.util.ModelSerializer.restoreMultiLayerNetwork(filePath.toFile());
+                        logger.info("*** ASYNC I/O: Successfully loaded as MultiLayerNetwork (fallback) ***");
+                    } else {
+                        result = org.deeplearning4j.util.ModelSerializer.restoreComputationGraph(filePath.toFile());
+                        logger.info("*** ASYNC I/O: Successfully loaded as ComputationGraph (fallback) ***");
+                    }
+                } catch (Exception fallbackException) {
+                    logger.error("*** ASYNC I/O: Both load methods failed - file may be corrupted ***");
+                    handleCorruptedModelFile(filePath);
+                    return null;
+                }
             }
             
-            logger.info("*** ASYNC I/O: DeepLearning4J model loaded using NIO.2 stream bridge ***");
+            // Verify loaded model
+            if (result != null) {
+                long numParams = 0;
+                if (result instanceof org.deeplearning4j.nn.multilayer.MultiLayerNetwork) {
+                    numParams = ((org.deeplearning4j.nn.multilayer.MultiLayerNetwork) result).numParams();
+                } else if (result instanceof org.deeplearning4j.nn.graph.ComputationGraph) {
+                    numParams = ((org.deeplearning4j.nn.graph.ComputationGraph) result).numParams();
+                }
+                
+                if (numParams == 0) {
+                    logger.warn("*** ASYNC I/O: Loaded model has 0 parameters - possible corruption ***");
+                    handleCorruptedModelFile(filePath);
+                    return null;
+                }
+                
+                logger.info("*** ASYNC I/O: DeepLearning4J model loaded successfully ({} bytes, {} params) ***", fileSize, numParams);
+            }
+            
             return result;
             
         } catch (Exception e) {
             logger.error("*** ASYNC I/O: DeepLearning4J model load FAILED - {} ***", e.getMessage());
+            handleCorruptedModelFile(Paths.get(filename));
             return null;
+        }
+    }
+    
+    private void handleCorruptedModelFile(Path modelPath) {
+        try {
+            // Create backup of corrupted file for analysis
+            Path backupPath = Paths.get(modelPath.toString() + ".corrupted." + System.currentTimeMillis());
+            java.nio.file.Files.move(modelPath, backupPath);
+            logger.warn("*** ASYNC I/O: Corrupted model backed up to {} ***", backupPath.getFileName());
+        } catch (Exception e) {
+            logger.error("*** ASYNC I/O: Failed to backup corrupted model: {} ***", e.getMessage());
+            // Try to delete the corrupted file
+            try {
+                java.nio.file.Files.deleteIfExists(modelPath);
+                logger.info("*** ASYNC I/O: Corrupted model file deleted ***");
+            } catch (Exception deleteEx) {
+                logger.error("*** ASYNC I/O: Failed to delete corrupted model: {} ***", deleteEx.getMessage());
+            }
         }
     }
     
