@@ -938,6 +938,14 @@ public class ChessGame {
         return null;
     }
     
+    /**
+     * Public wrapper for findBestMove() to enable testing
+     * @return best move as [fromRow, fromCol, toRow, toCol] or null if no valid move
+     */
+    public int[] findBestMoveForTesting() {
+        return findBestMove();
+    }
+    
     private int[] findBestMove() {
         ensureAISystemsInitialized(); // Initialize AIs if not done yet
         saveGameState();

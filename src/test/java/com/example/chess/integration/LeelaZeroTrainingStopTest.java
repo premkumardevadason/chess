@@ -1,10 +1,12 @@
+package com.example.chess.integration;
+
 import com.example.chess.LeelaChessZeroAI;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Test to verify that LeelaZero training can be properly stopped
+ * Integration test to verify that LeelaZero training can be properly stopped
  */
 public class LeelaZeroTrainingStopTest {
     
