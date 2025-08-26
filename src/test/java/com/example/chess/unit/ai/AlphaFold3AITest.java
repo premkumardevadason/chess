@@ -124,7 +124,7 @@ public class AlphaFold3AITest {
         alphaFold3AI.saveState();
         
         // Verify save file exists and has content
-        File saveFile = new File("alphafold3_state.dat");
+        File saveFile = new File("state/alphafold3_state.dat");
         if (saveFile.exists()) {
             assertTrue(saveFile.length() > 0, "State file should have content");
         }

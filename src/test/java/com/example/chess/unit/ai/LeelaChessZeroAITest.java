@@ -119,7 +119,7 @@ public class LeelaChessZeroAITest {
         leelaAI.saveState();
         
         // Verify save operation completed
-        java.io.File saveFile = new java.io.File("leela_chess_zero_model.zip");
+        java.io.File saveFile = new java.io.File("state/leela_policy_model.zip");
         if (saveFile.exists()) {
             assertTrue(saveFile.length() > 0, "Model file should have content");
         }

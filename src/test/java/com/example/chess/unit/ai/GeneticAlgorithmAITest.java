@@ -299,8 +299,8 @@ public class GeneticAlgorithmAITest {
         geneticAI.savePopulation();
         
         // Verify save files exist
-        File populationFile = new File("ga_population.dat");
-        File generationFile = new File("ga_generation.dat");
+        File populationFile = new File("state/ga_population.dat");
+        File generationFile = new File("state/ga_generation.dat");
         
         if (populationFile.exists()) {
             assertTrue(populationFile.length() > 0, "Population file should have content");

@@ -66,8 +66,8 @@ public class QLearningAITest {
         // Save Q-table
         qLearningAI.saveQTable();
         
-        // Verify save file exists
-        File qTableFile = new File("state/chess_qtable.dat");
+        // Verify save file exists (GZIP compressed)
+        File qTableFile = new File("state/chess_qtable.dat.gz");
         if (qTableFile.exists()) {
             assertTrue(qTableFile.length() > 0, "Q-table file should have content");
         }

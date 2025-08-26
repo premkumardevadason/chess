@@ -29,7 +29,7 @@ public class DeepLearningAITest {
     @Test
     void testModelPersistence() {
         deepLearningAI.saveModelNow();
-        assertTrue(new File("chess_deeplearning_model.zip").exists());
+        assertTrue(new File("state/chess_deeplearning_model.zip").exists());
         
         DeepLearningAI newAI = new DeepLearningAI();
         // isModelInitialized is not available - test via selectMove
@@ -110,7 +110,7 @@ public class DeepLearningAITest {
     @Test
     void testModelCorruptionRecovery() {
         deepLearningAI.saveModelNow();
-        File modelFile = new File("chess_deeplearning_model.zip");
+        File modelFile = new File("state/chess_deeplearning_model.zip");
         assertTrue(modelFile.exists());
         
         // Simulate corruption by deleting file

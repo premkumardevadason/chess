@@ -117,7 +117,7 @@ public class DeepLearningCNNAITest {
         cnnAI.saveModelNow();
         
         // Verify save file exists
-        File modelFile = new File("chess_cnn_model.zip");
+        File modelFile = new File("state/chess_cnn_model.zip");
         if (modelFile.exists()) {
             assertTrue(modelFile.length() > 0, "CNN model file should have content");
         }
