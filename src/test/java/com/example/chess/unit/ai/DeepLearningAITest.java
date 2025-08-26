@@ -45,21 +45,51 @@ public class DeepLearningAITest {
     
     @Test
     void testPositionEvaluation() {
-        // evaluatePosition is not available - test via selectMove
-        int[] move = deepLearningAI.selectMove(game.getBoard(), game.getAllValidMoves(true));
-        assertNotNull(move);
+        // Test neural network position evaluation
+        double initialEval = deepLearningAI.evaluatePosition(game.getBoard());
+        assertTrue(initialEval >= -1.0 && initialEval <= 1.0, "Position evaluation should be normalized");
+        
+        // Test evaluation consistency
+        double secondEval = deepLearningAI.evaluatePosition(game.getBoard());
+        assertEquals(initialEval, secondEval, 0.001, "Position evaluation should be consistent");
+        
+        // Test different positions give different evaluations
+        game.makeMove(6, 4, 4, 4); // e2-e4
+        double afterMoveEval = deepLearningAI.evaluatePosition(game.getBoard());
+        assertNotEquals(initialEval, afterMoveEval, 0.001, "Different positions should have different evaluations");
     }
     
     @Test
     @Timeout(60)
     void testBatchTraining() {
         int initialIterations = deepLearningAI.getTrainingIterations();
-        // Start training briefly
-        game.trainAI();
-        try { Thread.sleep(3000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
-        game.stopTraining();
-        int afterTraining = deepLearningAI.getTrainingIterations();
-        assertTrue(afterTraining >= initialIterations);
+        double initialLoss = deepLearningAI.getCurrentLoss();
+        
+        // Generate training data
+        for (int i = 0; i < 10; i++) {
+            ChessGame trainingGame = new ChessGame();
+            
+            // Play a few moves to generate position-evaluation pairs
+            for (int moves = 0; moves < 3; moves++) {
+                int[] move = deepLearningAI.selectMove(trainingGame.getBoard(), 
+                    trainingGame.getAllValidMoves(moves % 2 == 0));
+                if (move != null) {
+                    double positionValue = (moves % 2 == 0) ? 0.1 : -0.1; // Simple evaluation
+                    deepLearningAI.addTrainingData(trainingGame.getBoard(), positionValue);
+                    trainingGame.makeMove(move[0], move[1], move[2], move[3]);
+                }
+            }
+        }
+        
+        // Train on batch
+        deepLearningAI.trainOnBatch(128);
+        
+        int finalIterations = deepLearningAI.getTrainingIterations();
+        assertTrue(finalIterations > initialIterations, "Training iterations should increase");
+        
+        // Verify model learns (loss should change)
+        double finalLoss = deepLearningAI.getCurrentLoss();
+        assertNotEquals(initialLoss, finalLoss, 0.001, "Training should change model loss");
     }
     
     @Test

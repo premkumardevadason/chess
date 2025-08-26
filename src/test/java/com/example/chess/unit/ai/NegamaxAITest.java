@@ -26,26 +26,47 @@ public class NegamaxAITest {
     }
     
     @Test
+    @Timeout(15)
     void testIterativeDeepening() {
-        // Test iterative deepening via selectMove
-        int[] move3 = negamaxAI.selectMove(game.getBoard(), game.getAllValidMoves(false));
-        int[] move4 = negamaxAI.selectMove(game.getBoard(), game.getAllValidMoves(false));
+        // Test iterative deepening with different time limits
+        long startTime = System.currentTimeMillis();
+        int[] quickMove = negamaxAI.selectMoveWithDepth(game.getBoard(), game.getAllValidMoves(true), 2);
+        long quickTime = System.currentTimeMillis() - startTime;
         
-        // Both moves should be valid
-        assertNotNull(move3);
-        assertNotNull(move4);
+        startTime = System.currentTimeMillis();
+        int[] deepMove = negamaxAI.selectMoveWithDepth(game.getBoard(), game.getAllValidMoves(true), 4);
+        long deepTime = System.currentTimeMillis() - startTime;
+        
+        assertNotNull(quickMove, "Shallow search should find move");
+        assertNotNull(deepMove, "Deep search should find move");
+        assertTrue(deepTime > quickTime, "Deeper search should take more time");
+        
+        // Verify search statistics
+        int nodesSearched = negamaxAI.getNodesSearched();
+        assertTrue(nodesSearched > 0, "Should search multiple nodes");
+        
+        int transpositionHits = negamaxAI.getTranspositionHits();
+        assertTrue(transpositionHits >= 0, "Transposition table should track hits");
     }
     
     @Test
     void testPositionEvaluation() {
-        // evaluatePosition is private - test via selectMove
-        int[] move = negamaxAI.selectMove(game.getBoard(), game.getAllValidMoves(true));
-        assertNotNull(move);
+        // Test position evaluation with known positions
+        double initialEval = negamaxAI.evaluatePosition(game.getBoard(), true);
+        assertTrue(Math.abs(initialEval) < 100, "Initial position should be roughly equal");
         
-        // Make a move and test again
+        // Test evaluation after good opening move
         game.makeMove(6, 4, 4, 4); // e2-e4
-        int[] move2 = negamaxAI.selectMove(game.getBoard(), game.getAllValidMoves(false));
-        assertNotNull(move2);
+        double afterE4 = negamaxAI.evaluatePosition(game.getBoard(), false);
+        
+        // Test evaluation consistency
+        double secondEval = negamaxAI.evaluatePosition(game.getBoard(), false);
+        assertEquals(afterE4, secondEval, 0.001, "Position evaluation should be deterministic");
+        
+        // Test tactical position evaluation
+        String[][] scholarsMate = ChessPositions.getScholarsMatePosition();
+        double mateEval = negamaxAI.evaluatePosition(scholarsMate, false);
+        assertTrue(mateEval < -500, "Checkmate position should have very negative evaluation for losing side");
     }
     
     @Test
@@ -57,15 +78,29 @@ public class NegamaxAITest {
     }
     
     @Test
-    @Timeout(6)
+    @Timeout(8)
     void testTimeBoundedSearch() {
-        // Time limit is fixed at 5 seconds - test completion time
+        // Test time-bounded search with different limits
         long startTime = System.currentTimeMillis();
-        int[] move = negamaxAI.selectMove(game.getBoard(), game.getAllValidMoves(false));
-        long duration = System.currentTimeMillis() - startTime;
+        int[] move1s = negamaxAI.selectMoveWithTimeLimit(game.getBoard(), game.getAllValidMoves(true), 1000);
+        long time1s = System.currentTimeMillis() - startTime;
         
-        assertTrue(duration <= 6000); // Should complete within 5s time limit + buffer
-        assertNotNull(move);
+        startTime = System.currentTimeMillis();
+        int[] move3s = negamaxAI.selectMoveWithTimeLimit(game.getBoard(), game.getAllValidMoves(true), 3000);
+        long time3s = System.currentTimeMillis() - startTime;
+        
+        assertNotNull(move1s, "1-second search should find move");
+        assertNotNull(move3s, "3-second search should find move");
+        
+        assertTrue(time1s <= 1500, "1-second search should respect time limit: " + time1s + "ms");
+        assertTrue(time3s <= 3500, "3-second search should respect time limit: " + time3s + "ms");
+        
+        // Longer search should explore more nodes
+        int nodes1s = negamaxAI.getNodesSearchedInLastMove();
+        negamaxAI.selectMoveWithTimeLimit(game.getBoard(), game.getAllValidMoves(true), 3000);
+        int nodes3s = negamaxAI.getNodesSearchedInLastMove();
+        
+        assertTrue(nodes3s >= nodes1s, "Longer search should explore more nodes");
     }
     
     @Test

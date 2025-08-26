@@ -50,23 +50,37 @@ public class ChessRuleValidatorTest {
     void testCastlingRules() {
         String[][] castlingPosition = ChessPositions.getCastlingPosition();
         
-        // Test basic king movement (castling logic is complex)
+        // Test kingside castling conditions
+        assertTrue(validator.isValidMove(castlingPosition, 7, 4, 7, 6, true), "White kingside castling should be valid");
+        assertTrue(validator.isValidMove(castlingPosition, 0, 4, 0, 6, false), "Black kingside castling should be valid");
+        
+        // Test queenside castling conditions  
+        assertTrue(validator.isValidMove(castlingPosition, 7, 4, 7, 2, true), "White queenside castling should be valid");
+        assertTrue(validator.isValidMove(castlingPosition, 0, 4, 0, 2, false), "Black queenside castling should be valid");
+        
+        // Test basic king movement
         assertTrue(validator.isValidMove(castlingPosition, 7, 4, 7, 5, true)); // King one square
         assertTrue(validator.isValidMove(castlingPosition, 0, 4, 0, 5, false)); // Black king one square
     }
     
     @Test
     void testEnPassantRules() {
-        String[][] board = game.getBoard();
+        String[][] enPassantPosition = ChessPositions.getEnPassantPosition();
         
-        // Test basic pawn movement on initial board
+        // Test en passant capture conditions
+        assertTrue(validator.isValidMove(enPassantPosition, 3, 4, 2, 3, true), "En passant capture should be valid");
+        
+        // Test regular pawn movement
+        String[][] board = game.getBoard();
         assertTrue(validator.isValidMove(board, 1, 4, 3, 4, false)); // Black pawn e7-e5
     }
     
     @Test
     void testPawnPromotionRules() {
         String[][] promotionPosition = ChessPositions.getPromotionPosition();
-        game.setBoard(promotionPosition);
+        
+        // Test pawn promotion to 8th rank
+        assertTrue(validator.isValidMove(promotionPosition, 1, 0, 0, 0, true), "Pawn promotion to 8th rank should be valid");
         
         // Test basic pawn movement
         assertTrue(validator.isValidMove(promotionPosition, 6, 0, 5, 0, true)); // White pawn forward

@@ -19,13 +19,22 @@ public class AlphaZeroAITest {
     }
     
     @Test
+    @Timeout(60)
     void testSelfPlayTraining() {
         if (alphaZeroAI != null) {
-            // Test that AlphaZero can select moves
-            int[] move = alphaZeroAI.selectMove(game.getBoard(), game.getAllValidMoves(false));
-            if (move != null) {
-                assertTrue(game.isValidMove(move[0], move[1], move[2], move[3]));
-            }
+            // Test actual self-play episode generation
+            int initialEpisodes = alphaZeroAI.getEpisodeCount();
+            
+            // Run short self-play training
+            alphaZeroAI.runSelfPlayEpisodes(3);
+            
+            int finalEpisodes = alphaZeroAI.getEpisodeCount();
+            assertTrue(finalEpisodes > initialEpisodes, "Self-play should generate new episodes");
+            
+            // Verify neural network learns from episodes
+            assertNotNull(alphaZeroAI.getPolicyPrediction(game.getBoard()));
+            assertTrue(alphaZeroAI.getValuePrediction(game.getBoard()) >= -1.0);
+            assertTrue(alphaZeroAI.getValuePrediction(game.getBoard()) <= 1.0);
         } else {
             // AlphaZero not enabled - test passes
             assertTrue(true);
@@ -33,13 +42,28 @@ public class AlphaZeroAITest {
     }
     
     @Test
+    @Timeout(30)
     void testMCTSIntegration() {
         if (alphaZeroAI != null) {
-            int[] move = alphaZeroAI.selectMove(game.getBoard(), game.getAllValidMoves(false));
-            if (move != null) {
-                assertNotNull(move);
-                assertEquals(4, move.length);
-                assertTrue(game.isValidMove(move[0], move[1], move[2], move[3]));
+            // Test MCTS tree construction and neural network guidance
+            int[] move1 = alphaZeroAI.selectMove(game.getBoard(), game.getAllValidMoves(false));
+            int searchCount1 = alphaZeroAI.getLastSearchCount();
+            
+            // MCTS should perform multiple simulations
+            assertTrue(searchCount1 > 10, "MCTS should perform multiple simulations");
+            
+            if (move1 != null) {
+                game.makeMove(move1[0], move1[1], move1[2], move1[3]);
+                
+                // Test tree reuse - second search should be faster
+                long startTime = System.currentTimeMillis();
+                int[] move2 = alphaZeroAI.selectMove(game.getBoard(), game.getAllValidMoves(true));
+                long searchTime = System.currentTimeMillis() - startTime;
+                
+                assertTrue(searchTime < 10000, "MCTS with tree reuse should be efficient");
+                if (move2 != null) {
+                    assertTrue(game.isValidMove(move2[0], move2[1], move2[2], move2[3]));
+                }
             }
         } else {
             assertTrue(true); // AlphaZero not enabled
@@ -59,12 +83,22 @@ public class AlphaZeroAITest {
     @Test
     void testPolicyValueOutputs() {
         if (alphaZeroAI != null) {
-            // Test that AlphaZero can evaluate positions
-            int[] move = alphaZeroAI.selectMove(game.getBoard(), game.getAllValidMoves(false));
-            // If move is returned, it should be valid
-            if (move != null) {
-                assertTrue(game.isValidMove(move[0], move[1], move[2], move[3]));
-            }
+            // Test neural network policy and value predictions
+            double[] policyOutput = alphaZeroAI.getPolicyPrediction(game.getBoard());
+            double valueOutput = alphaZeroAI.getValuePrediction(game.getBoard());
+            
+            // Policy should be probability distribution over moves
+            assertNotNull(policyOutput, "Policy output should not be null");
+            assertTrue(policyOutput.length > 0, "Policy should have move probabilities");
+            
+            // Value should be in [-1, 1] range
+            assertTrue(valueOutput >= -1.0 && valueOutput <= 1.0, 
+                "Value prediction should be in [-1, 1] range");
+            
+            // Test position evaluation consistency
+            double value1 = alphaZeroAI.getValuePrediction(game.getBoard());
+            double value2 = alphaZeroAI.getValuePrediction(game.getBoard());
+            assertEquals(value1, value2, 0.001, "Value prediction should be consistent");
         } else {
             assertTrue(true); // AlphaZero not enabled
         }
