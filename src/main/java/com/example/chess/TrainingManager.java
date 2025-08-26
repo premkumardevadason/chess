@@ -11,7 +11,10 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
+
+import com.example.chess.config.AIStateConfig;
 
 /**
  * Manages AI training coordination and lifecycle
@@ -20,6 +23,9 @@ import org.springframework.stereotype.Component;
 @Component
 public class TrainingManager {
     private static final Logger logger = LogManager.getLogger(TrainingManager.class);
+    
+    @Autowired
+    private AIStateConfig aiStateConfig;
     
     private volatile boolean isTrainingActive = false;
     private volatile boolean stopTrainingRequested = false;
@@ -457,7 +463,7 @@ public class TrainingManager {
         QualityReport report = new QualityReport("Q-Learning");
         
         try {
-            File dataFile = new File("chess_qtable.dat");
+            File dataFile = new File(aiStateConfig.getQlearningPath());
             if (!dataFile.exists()) {
                 report.addError("Q-Learning data file not found");
                 return report;
@@ -505,7 +511,7 @@ public class TrainingManager {
         QualityReport report = new QualityReport("Deep Learning");
         
         try {
-            File modelFile = new File("chess_deeplearning_model.zip");
+            File modelFile = new File(aiStateConfig.getDeeplearningPath());
             
             boolean modelExists = modelFile.exists();
             report.addMetric("Model File Exists", modelExists);
@@ -542,7 +548,7 @@ public class TrainingManager {
         QualityReport report = new QualityReport("CNN Deep Learning");
         
         try {
-            File modelFile = new File("chess_cnn_model.zip");
+            File modelFile = new File(aiStateConfig.getDeeplearningCnnPath());
             
             boolean modelExists = modelFile.exists();
             report.addMetric("Advanced Model Exists", modelExists);
@@ -579,9 +585,9 @@ public class TrainingManager {
         QualityReport report = new QualityReport("DQN");
         
         try {
-            File dataFile = new File("chess_dqn_experiences.dat");
-            File modelFile = new File("chess_dqn_model.zip");
-            File targetModelFile = new File("chess_dqn_target_model.zip");
+            File dataFile = new File(aiStateConfig.getDqnExperiencesPath());
+            File modelFile = new File(aiStateConfig.getDqnPath());
+            File targetModelFile = new File(aiStateConfig.getDqnTargetPath());
             
             boolean hasData = dataFile.exists();
             boolean hasModel = modelFile.exists();
@@ -630,7 +636,7 @@ public class TrainingManager {
         QualityReport report = new QualityReport("AlphaZero");
         
         try {
-            File dataFile = new File("alphazero_cache.dat");
+            File dataFile = new File(aiStateConfig.getAlphazeroCachePath());
             
             boolean hasData = dataFile.exists();
             report.addMetric("Cache File Exists", hasData);
@@ -685,8 +691,8 @@ public class TrainingManager {
         QualityReport report = new QualityReport("Leela Chess Zero");
         
         try {
-            File policyFile = new File("leela_policy.zip");
-            File valueFile = new File("leela_value.zip");
+            File policyFile = new File(aiStateConfig.getLeelazerochessPolicyPath());
+            File valueFile = new File(aiStateConfig.getLeelazerochessValuePath());
             
             boolean hasPolicyModel = policyFile.exists();
             boolean hasValueModel = valueFile.exists();
@@ -727,7 +733,7 @@ public class TrainingManager {
         QualityReport report = new QualityReport("Genetic Algorithm");
         
         try {
-            File dataFile = new File("ga_population.dat");
+            File dataFile = new File(aiStateConfig.getGeneticPath());
             
             boolean hasData = dataFile.exists();
             report.addMetric("Population File Exists", hasData);
@@ -771,7 +777,7 @@ public class TrainingManager {
         QualityReport report = new QualityReport("AlphaFold3");
         
         try {
-            File dataFile = new File("alphafold3_state.dat");
+            File dataFile = new File(aiStateConfig.getAlphafold3Path());
             
             boolean hasData = dataFile.exists();
             report.addMetric("State File Exists", hasData);
@@ -818,9 +824,9 @@ public class TrainingManager {
         
         try {
             // A3C uses DeepLearning4J models
-            java.io.File actorModel = new java.io.File("a3c_actor_model.zip");
-            java.io.File criticModel = new java.io.File("a3c_critic_model.zip");
-            java.io.File stateFile = new java.io.File("a3c_state.dat");
+            java.io.File actorModel = new java.io.File(aiStateConfig.getState().getDirectory() + "/a3c_actor_model.zip");
+            java.io.File criticModel = new java.io.File(aiStateConfig.getState().getDirectory() + "/a3c_critic_model.zip");
+            java.io.File stateFile = new java.io.File(aiStateConfig.getState().getDirectory() + "/a3c_state.dat");
             
             boolean hasActorModel = actorModel.exists();
             boolean hasCriticModel = criticModel.exists();

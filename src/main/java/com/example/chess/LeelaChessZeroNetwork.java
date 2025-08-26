@@ -368,8 +368,8 @@ public class LeelaChessZeroNetwork {
     
     public void saveModel() {
         try {
-            File policyFile = new File("leela_policy.zip");
-            File valueFile = new File("leela_value.zip");
+            File policyFile = new File("state/leela_policy.zip");
+            File valueFile = new File("state/leela_value.zip");
             
             policyNetwork.save(policyFile);
             valueNetwork.save(valueFile);
@@ -384,8 +384,8 @@ public class LeelaChessZeroNetwork {
     
     private void loadExistingModels() {
         try {
-            File policyFile = new File("leela_policy.zip");
-            File valueFile = new File("leela_value.zip");
+            File policyFile = new File("state/leela_policy.zip");
+            File valueFile = new File("state/leela_value.zip");
             
             if (policyFile.exists() && valueFile.exists()) {
                 MultiLayerNetwork loadedPolicy = MultiLayerNetwork.load(policyFile, true);
@@ -398,7 +398,7 @@ public class LeelaChessZeroNetwork {
                 
                 // Try to load actual training games count
                 try {
-                    java.io.File gamesFile = new java.io.File("leela_training_games.dat");
+                    java.io.File gamesFile = new java.io.File("state/leela_training_games.dat");
                     if (gamesFile.exists()) {
                         try (java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.FileReader(gamesFile))) {
                             String line = reader.readLine();

@@ -43,8 +43,8 @@ public class AIStateConfig {
             private String deeplearningcnn = "chess_cnn_model.zip";
             private String dqn = "chess_dqn_model.zip";
             private String alphazero = "alphazero_model.zip";
-            private String leelazerochess = "leela_model.zip";
-            private String genetic = "genetic_population.dat";
+            private Leelazerochess leelazerochess = new Leelazerochess();
+            private String genetic = "ga_population.dat";
             private String alphafold3 = "alphafold3_state.dat";
             private String a3c = "a3c_model.zip";
             
@@ -63,8 +63,23 @@ public class AIStateConfig {
             public String getAlphazero() { return alphazero; }
             public void setAlphazero(String alphazero) { this.alphazero = alphazero; }
             
-            public String getLeelazerochess() { return leelazerochess; }
-            public void setLeelazerochess(String leelazerochess) { this.leelazerochess = leelazerochess; }
+            public Leelazerochess getLeelazerochess() { return leelazerochess; }
+            public void setLeelazerochess(Leelazerochess leelazerochess) { this.leelazerochess = leelazerochess; }
+            
+            public static class Leelazerochess {
+                private String policy = "leela_policy.zip";
+                private String value = "leela_value.zip";
+                private String games = "leela_training_games.dat";
+                
+                public String getPolicy() { return policy; }
+                public void setPolicy(String policy) { this.policy = policy; }
+                
+                public String getValue() { return value; }
+                public void setValue(String value) { this.value = value; }
+                
+                public String getGames() { return games; }
+                public void setGames(String games) { this.games = games; }
+            }
             
             public String getGenetic() { return genetic; }
             public void setGenetic(String genetic) { this.genetic = genetic; }
@@ -98,8 +113,16 @@ public class AIStateConfig {
         return state.directory + "/" + state.file.alphazero;
     }
     
-    public String getLeelazerochessPath() {
-        return state.directory + "/" + state.file.leelazerochess;
+    public String getLeelazerochessPolicyPath() {
+        return state.directory + "/" + state.file.leelazerochess.policy;
+    }
+    
+    public String getLeelazerochessValuePath() {
+        return state.directory + "/" + state.file.leelazerochess.value;
+    }
+    
+    public String getLeelazerochessGamesPath() {
+        return state.directory + "/" + state.file.leelazerochess.games;
     }
     
     public String getGeneticPath() {
@@ -112,5 +135,17 @@ public class AIStateConfig {
     
     public String getA3cPath() {
         return state.directory + "/" + state.file.a3c;
+    }
+    
+    public String getDqnExperiencesPath() {
+        return state.directory + "/chess_dqn_experiences.dat";
+    }
+    
+    public String getDqnTargetPath() {
+        return state.directory + "/chess_dqn_target_model.zip";
+    }
+    
+    public String getAlphazeroCachePath() {
+        return state.directory + "/alphazero_cache.dat";
     }
 }
