@@ -35,25 +35,37 @@ public class ChessGameTest {
     
     @Test
     void testSpecialMoves() {
-        game.makeMove(6, 4, 4, 4);
-        game.makeMove(1, 4, 3, 4);
-        game.makeMove(7, 5, 4, 2);
-        // Test castling by checking if king can move 2 squares
-        assertTrue(game.isValidMove(7, 4, 7, 6)); // Kingside castling
+        // Set up castling position
+        String[][] castlingBoard = {
+            {"♜", "", "", "", "♚", "", "", "♜"},
+            {"♟", "♟", "♟", "♟", "♟", "♟", "♟", "♟"},
+            {"", "", "", "", "", "", "", ""},
+            {"", "", "", "", "", "", "", ""},
+            {"", "", "", "", "", "", "", ""},
+            {"", "", "", "", "", "", "", ""},
+            {"♙", "♙", "♙", "♙", "♙", "♙", "♙", "♙"},
+            {"♖", "", "", "", "♔", "", "", "♖"}
+        };
+        game.setBoard(castlingBoard);
+        
+        // Test castling moves
+        assertTrue(game.isValidMove(7, 4, 7, 6)); // White kingside castling
+        assertTrue(game.isValidMove(0, 4, 0, 6)); // Black kingside castling
     }
     
     @Test
     void testCheckDetection() {
-        ChessGame checkGame = new ChessGame();
-        checkGame.makeMove(6, 4, 4, 4);
-        checkGame.makeMove(1, 4, 3, 4);
-        checkGame.makeMove(7, 5, 4, 2);
-        checkGame.makeMove(1, 1, 2, 2);
-        checkGame.makeMove(7, 3, 3, 7);
-        checkGame.makeMove(1, 5, 2, 5);
-        checkGame.makeMove(3, 7, 1, 5);
-        // Check if game is over (indicates checkmate)
-        assertTrue(checkGame.isGameOver());
+        // Test Scholar's Mate sequence
+        game.makeMove(6, 4, 4, 4); // e2-e4
+        game.makeMove(1, 4, 3, 4); // e7-e5
+        game.makeMove(7, 5, 4, 2); // Bf1-c4
+        game.makeMove(1, 1, 2, 2); // b7-b6
+        game.makeMove(7, 3, 3, 7); // Qd1-h5
+        game.makeMove(1, 5, 2, 5); // f7-f6
+        game.makeMove(3, 7, 1, 5); // Qh5xf7# (checkmate)
+        
+        // Verify checkmate occurred
+        assertTrue(game.isGameOver());
     }
     
     @Test

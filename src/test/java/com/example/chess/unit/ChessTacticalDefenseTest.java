@@ -73,11 +73,9 @@ public class ChessTacticalDefenseTest {
     @Test
     void testCriticalDefenseDetection() {
         // Test critical threats by checking game state
-        boolean hasCriticalThreats = !game.isGameOver();
+        assertFalse(game.isGameOver()); // Game should be in progress
         
-        int[] criticalMove = hasCriticalThreats ? game.getAllValidMoves(false).get(0) : null;
-        if (criticalMove != null) {
-            assertTrue(game.isValidMove(criticalMove[0], criticalMove[1], criticalMove[2], criticalMove[3]));
-        }
+        // Test that valid moves exist
+        assertFalse(game.getAllValidMoves(false).isEmpty());
     }
 }
