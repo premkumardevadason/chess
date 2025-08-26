@@ -562,7 +562,7 @@ public class GeneticAlgorithmAI {
                     double bestFitnessSnapshot = bestFitness;
                     
                     // Save to temporary file first for atomic operation
-                    File tempFile = new File("ga_population.dat.tmp");
+                    File tempFile = new File("state/ga_population.dat.tmp");
                     try (ObjectOutputStream oos = new ObjectOutputStream(
                             new FileOutputStream(tempFile))) {
                         oos.writeObject(populationSnapshot);
@@ -574,7 +574,7 @@ public class GeneticAlgorithmAI {
                     saveGenerationData();
                     
                     // Atomic rename
-                    File finalFile = new File("ga_population.dat");
+                    File finalFile = new File("state/ga_population.dat");
                     if (finalFile.exists()) finalFile.delete();
                     if (tempFile.renameTo(finalFile)) {
                         logger.info("*** GA AI: Population saved - Generation {} ***", generationSnapshot);
@@ -607,7 +607,7 @@ public class GeneticAlgorithmAI {
         
         // Existing synchronous code - unchanged
         try {
-            File populationFile = new File("ga_population.dat");
+            File populationFile = new File("state/ga_population.dat");
             if (!populationFile.exists()) {
                 initializePopulation();
                 return;
@@ -656,11 +656,11 @@ public class GeneticAlgorithmAI {
     public void deleteTrainingData() {
         stopTraining();
         
-        File populationFile = new File("ga_population.dat");
+        File populationFile = new File("state/ga_population.dat");
         if (populationFile.exists()) {
             populationFile.delete();
         }
-        File generationFile = new File("ga_generation.dat");
+        File generationFile = new File("state/ga_generation.dat");
         if (generationFile.exists()) {
             generationFile.delete();
         }
@@ -731,7 +731,7 @@ public class GeneticAlgorithmAI {
     
     private void saveGenerationData() {
         try {
-            java.io.File genFile = new java.io.File("ga_generation.dat");
+            java.io.File genFile = new java.io.File("state/ga_generation.dat");
             try (java.io.FileWriter writer = new java.io.FileWriter(genFile)) {
                 writer.write(String.valueOf(generation));
             }
@@ -742,7 +742,7 @@ public class GeneticAlgorithmAI {
     
     private void loadGenerationData() {
         try {
-            java.io.File genFile = new java.io.File("ga_generation.dat");
+            java.io.File genFile = new java.io.File("state/ga_generation.dat");
             if (genFile.exists()) {
                 try (java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.FileReader(genFile))) {
                     String line = reader.readLine();

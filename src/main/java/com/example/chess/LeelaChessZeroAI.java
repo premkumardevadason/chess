@@ -272,8 +272,8 @@ public class LeelaChessZeroAI {
                 // Phase 3: Dual-path implementation
                 if (ioWrapper.isAsyncEnabled()) {
                     // LeelaZero has policyNetwork and valueNetwork - need to save both via NIO.2
-                    ioWrapper.saveAIData("LeelaZero-Policy", neuralNetwork.getPolicyNetwork(), "leela_policy.zip");
-                    ioWrapper.saveAIData("LeelaZero-Value", neuralNetwork.getValueNetwork(), "leela_value.zip");
+                    ioWrapper.saveAIData("LeelaZero-Policy", neuralNetwork.getPolicyNetwork(), "state/leela_policy.zip");
+                    ioWrapper.saveAIData("LeelaZero-Value", neuralNetwork.getValueNetwork(), "state/leela_value.zip");
                 } else {
                     neuralNetwork.saveModel();
                 }
@@ -295,19 +295,19 @@ public class LeelaChessZeroAI {
                 // CONSISTENT PATH: Always save to root directory
                 if (ioWrapper.isAsyncEnabled()) {
                     // LeelaZero has policyNetwork and valueNetwork - need to save both via NIO.2
-                    ioWrapper.saveAIData("LeelaZero-Policy", neuralNetwork.getPolicyNetwork(), "leela_policy.zip");
-                    ioWrapper.saveAIData("LeelaZero-Value", neuralNetwork.getValueNetwork(), "leela_value.zip");
+                    ioWrapper.saveAIData("LeelaZero-Policy", neuralNetwork.getPolicyNetwork(), "state/leela_policy.zip");
+                    ioWrapper.saveAIData("LeelaZero-Value", neuralNetwork.getValueNetwork(), "state/leela_value.zip");
                 } else {
                     // Create backup of existing models
-                    java.io.File policyFile = new java.io.File("leela_policy.zip");
-                    java.io.File valueFile = new java.io.File("leela_value.zip");
+                    java.io.File policyFile = new java.io.File("state/leela_policy.zip");
+                    java.io.File valueFile = new java.io.File("state/leela_value.zip");
                     
                     if (policyFile.exists()) {
-                        java.io.File policyBackup = new java.io.File("leela_policy.zip.backup");
+                        java.io.File policyBackup = new java.io.File("state/leela_policy.zip.backup");
                         policyFile.renameTo(policyBackup);
                     }
                     if (valueFile.exists()) {
-                        java.io.File valueBackup = new java.io.File("leela_value.zip.backup");
+                        java.io.File valueBackup = new java.io.File("state/leela_value.zip.backup");
                         valueFile.renameTo(valueBackup);
                     }
                     
@@ -321,15 +321,15 @@ public class LeelaChessZeroAI {
                             policyFile.length(), valueFile.length());
                         
                         // Clean up backups on successful save
-                        java.io.File policyBackup = new java.io.File("leela_policy.zip.backup");
-                        java.io.File valueBackup = new java.io.File("leela_value.zip.backup");
+                        java.io.File policyBackup = new java.io.File("state/leela_policy.zip.backup");
+                        java.io.File valueBackup = new java.io.File("state/leela_value.zip.backup");
                         if (policyBackup.exists()) policyBackup.delete();
                         if (valueBackup.exists()) valueBackup.delete();
                     } else {
                         logger.error("*** LeelaZero: Model save verification failed - restoring backups ***");
                         // Restore backups
-                        java.io.File policyBackup = new java.io.File("leela_policy.zip.backup");
-                        java.io.File valueBackup = new java.io.File("leela_value.zip.backup");
+                        java.io.File policyBackup = new java.io.File("state/leela_policy.zip.backup");
+                        java.io.File valueBackup = new java.io.File("state/leela_value.zip.backup");
                         if (policyBackup.exists()) policyBackup.renameTo(policyFile);
                         if (valueBackup.exists()) valueBackup.renameTo(valueFile);
                     }
@@ -349,8 +349,8 @@ public class LeelaChessZeroAI {
         if (ioWrapper.isAsyncEnabled()) {
             try {
                 logger.info("*** ASYNC I/O: LeelaZero loading neural networks using NIO.2 async LOAD path ***");
-                Object policyData = ioWrapper.loadAIData("LeelaZero-Policy", "leela_policy.zip");
-                Object valueData = ioWrapper.loadAIData("LeelaZero-Value", "leela_value.zip");
+                Object policyData = ioWrapper.loadAIData("LeelaZero-Policy", "state/leela_policy.zip");
+                Object valueData = ioWrapper.loadAIData("LeelaZero-Value", "state/leela_value.zip");
                 
                 if (policyData instanceof org.deeplearning4j.nn.multilayer.MultiLayerNetwork &&
                     valueData instanceof org.deeplearning4j.nn.multilayer.MultiLayerNetwork) {
@@ -434,7 +434,7 @@ public class LeelaChessZeroAI {
     
     private void loadTrainingGames() {
         try {
-            java.io.File gamesFile = new java.io.File("leela_training_games.dat");
+            java.io.File gamesFile = new java.io.File("state/leela_training_games.dat");
             if (gamesFile.exists()) {
                 try (java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.FileReader(gamesFile))) {
                     String line = reader.readLine();
@@ -453,7 +453,7 @@ public class LeelaChessZeroAI {
     public void saveTrainingGames() {
         try {
             int games = neuralNetwork != null ? neuralNetwork.getTrainingGames() : 0;
-            java.io.File gamesFile = new java.io.File("leela_training_games.dat");
+            java.io.File gamesFile = new java.io.File("state/leela_training_games.dat");
             try (java.io.FileWriter writer = new java.io.FileWriter(gamesFile)) {
                 writer.write(String.valueOf(games));
             }

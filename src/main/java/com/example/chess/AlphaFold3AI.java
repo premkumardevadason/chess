@@ -52,7 +52,7 @@ public class AlphaFold3AI {
     private final ConcurrentHashMap<String, Double> positionEvaluations = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, List<int[]>> learnedTrajectories = new ConcurrentHashMap<>();
     private int trainingEpisodes = 0;
-    private static final String STATE_FILE = "alphafold3_state.dat";
+    private static final String STATE_FILE = "state/alphafold3_state.dat";
     
     // Phase 3: Async I/O capability
     private TrainingDataIOWrapper ioWrapper;

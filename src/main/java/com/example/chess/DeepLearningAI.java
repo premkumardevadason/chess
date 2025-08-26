@@ -55,7 +55,7 @@ public class DeepLearningAI {
     private volatile double currentLearningRate = INITIAL_LEARNING_RATE;
     private volatile double currentLoss = 0.0;
     private volatile String trainingStatus = "Not training";
-    private static final String MODEL_FILE = "chess_deeplearning_model.zip";
+    private static final String MODEL_FILE = "state/chess_deeplearning_model.zip";
     private QLearningAI qLearningAI; // Reference to Q-Learning for knowledge transfer
     private LeelaChessZeroOpeningBook openingBook; // Lc0 opening book for training
     
@@ -1144,7 +1144,7 @@ public class DeepLearningAI {
     
     private void saveTrainingIterations() {
         try {
-            java.io.File iterFile = new java.io.File("chess_deeplearning_iterations.dat");
+            java.io.File iterFile = new java.io.File("state/chess_deeplearning_iterations.dat");
             try (java.io.FileWriter writer = new java.io.FileWriter(iterFile)) {
                 writer.write(String.valueOf(trainingIterations));
             }
@@ -1155,7 +1155,7 @@ public class DeepLearningAI {
     
     private void loadTrainingIterations() {
         try {
-            java.io.File iterFile = new java.io.File("chess_deeplearning_iterations.dat");
+            java.io.File iterFile = new java.io.File("state/chess_deeplearning_iterations.dat");
             if (iterFile.exists()) {
                 try (java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.FileReader(iterFile))) {
                     String line = reader.readLine();

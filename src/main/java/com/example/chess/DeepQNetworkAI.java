@@ -71,9 +71,9 @@ public class DeepQNetworkAI {
     // Noisy Networks parameters (Rainbow component)
     private double noisyNetSigma = 0.5;
     
-    private static final String DQN_MODEL_FILE = "chess_dqn_model.zip";
-    private static final String DQN_TARGET_MODEL_FILE = "chess_dqn_target_model.zip";
-    private static final String DQN_EXPERIENCE_FILE = "chess_dqn_experiences.dat";
+    private static final String DQN_MODEL_FILE = "state/chess_dqn_model.zip";
+    private static final String DQN_TARGET_MODEL_FILE = "state/chess_dqn_target_model.zip";
+    private static final String DQN_EXPERIENCE_FILE = "state/chess_dqn_experiences.dat";
     
     // Phase 3: Async I/O capability
     private TrainingDataIOWrapper ioWrapper;

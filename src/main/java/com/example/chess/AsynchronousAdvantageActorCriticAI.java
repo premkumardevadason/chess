@@ -72,9 +72,9 @@ public class AsynchronousAdvantageActorCriticAI {
     private final AIMoveTranslator moveTranslator = new AIMoveTranslator();
     private final ChessTacticalDefense tacticalDefense = new ChessTacticalDefense();
     private final TrainingDataIOWrapper ioWrapper;
-    private static final String ACTOR_MODEL_FILE = "a3c_actor_model.zip";
-    private static final String CRITIC_MODEL_FILE = "a3c_critic_model.zip";
-    private static final String STATE_FILE = "a3c_state.dat";
+    private static final String ACTOR_MODEL_FILE = "state/a3c_actor_model.zip";
+    private static final String CRITIC_MODEL_FILE = "state/a3c_critic_model.zip";
+    private static final String STATE_FILE = "state/a3c_state.dat";
     
     // Performance tracking
     private final List<Double> recentRewards = Collections.synchronizedList(new ArrayList<>());

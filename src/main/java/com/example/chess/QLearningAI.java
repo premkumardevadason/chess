@@ -41,7 +41,7 @@ public class QLearningAI {
     private double discountFactor = 0.9;
     private double epsilon = 0.3;
     private Random random = new Random();
-    private static final String Q_TABLE_FILE = "chess_qtable.dat";
+    private String qTableFile = "state/chess_qtable.dat"; // Default path, will be updated from config
     private DeepQNetworkAI dqnAI; // Reference to DQN for experience sharing
     
     // Eligibility Traces (Q(λ))
@@ -93,6 +93,10 @@ public class QLearningAI {
         loadQTable();
         this.openingBook = new LeelaChessZeroOpeningBook(debugEnabled);
         initializeAdvancedQLearning();
+    }
+    
+    public void setStateFilePath(String filePath) {
+        this.qTableFile = filePath;
     }
     
     private void initializeAdvancedQLearning() {
@@ -834,11 +838,11 @@ public class QLearningAI {
         
         // Phase 3: Dual-path implementation
         if (ioWrapper.isAsyncEnabled()) {
-            ioWrapper.saveQTable(qTable, Q_TABLE_FILE);
+            ioWrapper.saveQTable(qTable, qTableFile);
         } else {
             // Fallback disabled - Q-table must use compressed format only
             logger.warn("Q-Learning: Async I/O disabled but Q-table requires compression - forcing async save");
-            ioWrapper.saveQTable(qTable, Q_TABLE_FILE);
+            ioWrapper.saveQTable(qTable, qTableFile);
             /*
             // REMOVED: Uncompressed fallback no longer supported
             synchronized (fileLock) {
@@ -860,7 +864,7 @@ public class QLearningAI {
         
         synchronized (fileLock) {
             try {
-                java.io.File file = new java.io.File(Q_TABLE_FILE);
+                java.io.File file = new java.io.File(qTableFile);
                 if (file.exists()) {
                     boolean deleted = file.delete();
                     if (deleted) {
@@ -882,7 +886,7 @@ public class QLearningAI {
         // Phase 3: Dual-path implementation for loading
         if (ioWrapper.isAsyncEnabled()) {
             logger.info("*** ASYNC I/O: QLearning loading Q-table using NIO.2 async LOAD path ***");
-            Object loadedData = ioWrapper.loadAIData("QLearning", Q_TABLE_FILE);
+            Object loadedData = ioWrapper.loadAIData("QLearning", qTableFile);
             if (loadedData == null) {
                 // Fallback to sync loading if async fails
                 loadQTableSync();
@@ -894,7 +898,7 @@ public class QLearningAI {
     
     private void loadQTableSync() {
         synchronized (fileLock) {
-            try (BufferedReader reader = new BufferedReader(new FileReader(Q_TABLE_FILE))) {
+            try (BufferedReader reader = new BufferedReader(new FileReader(qTableFile))) {
                 String line;
                 int loaded = 0;
                 while ((line = reader.readLine()) != null) {
@@ -2005,7 +2009,7 @@ public class QLearningAI {
         
         // Force final save Q-table (bypass shutdown check)
         synchronized (fileLock) {
-            try (PrintWriter writer = new PrintWriter(new FileWriter(Q_TABLE_FILE))) {
+            try (PrintWriter writer = new PrintWriter(new FileWriter(qTableFile))) {
                 for (Map.Entry<String, Double> entry : qTable.entrySet()) {
                     writer.println(entry.getKey() + "=" + entry.getValue());
                 }

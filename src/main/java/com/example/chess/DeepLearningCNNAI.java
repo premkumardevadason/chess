@@ -42,7 +42,7 @@ public class DeepLearningCNNAI {
     private volatile Thread trainingThread;
     private volatile int trainingIterations = 0;
     private volatile String trainingStatus = "Not training";
-    private static final String MODEL_FILE = "chess_cnn_model.zip";
+    private static final String MODEL_FILE = "state/chess_cnn_model.zip";
     private QLearningAI qLearningAI;
     private LeelaChessZeroOpeningBook openingBook;
     private ChessController controller;
@@ -1168,7 +1168,7 @@ public class DeepLearningCNNAI {
     
     private void saveTrainingIterations() {
         try {
-            java.io.File iterFile = new java.io.File("chess_cnn_iterations.dat");
+            java.io.File iterFile = new java.io.File("state/chess_cnn_iterations.dat");
             try (java.io.FileWriter writer = new java.io.FileWriter(iterFile)) {
                 writer.write(String.valueOf(trainingIterations));
             }
@@ -1179,7 +1179,7 @@ public class DeepLearningCNNAI {
     
     private void loadTrainingIterations() {
         try {
-            java.io.File iterFile = new java.io.File("chess_cnn_iterations.dat");
+            java.io.File iterFile = new java.io.File("state/chess_cnn_iterations.dat");
             if (iterFile.exists()) {
                 try (java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.FileReader(iterFile))) {
                     String line = reader.readLine();
