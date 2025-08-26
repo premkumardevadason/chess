@@ -609,7 +609,7 @@ public class AlphaZeroNeuralNetwork implements AlphaZeroInterfaces.NeuralNetwork
             // Phase 3: Dual-path implementation (same pattern as LeelaZero)
             if (ioWrapper.isAsyncEnabled()) {
                 logger.info("*** ASYNC I/O: AlphaZero loading cache using NIO.2 async LOAD path ***");
-                Object loadedData = ioWrapper.loadAIData("AlphaZero", "alphazero_cache.dat");
+                Object loadedData = ioWrapper.loadAIData("AlphaZero", "state/alphazero_cache.dat");
                 
                 if (loadedData instanceof AlphaZeroSaveData) {
                     // New format - AlphaZeroSaveData wrapper
@@ -630,7 +630,7 @@ public class AlphaZeroNeuralNetwork implements AlphaZeroInterfaces.NeuralNetwork
             }
             
             // Fallback to direct I/O for backward compatibility
-            java.io.File datFile = new java.io.File("alphazero_cache.dat");
+            java.io.File datFile = new java.io.File("state/alphazero_cache.dat");
             if (datFile.exists()) {
                 logger.info("*** AlphaZero: Loading from DAT file using sync I/O ***");
                 loadFromDatFile(datFile);
@@ -706,13 +706,13 @@ public class AlphaZeroNeuralNetwork implements AlphaZeroInterfaces.NeuralNetwork
                     trainingEpisodes
                 );
                 
-                ioWrapper.saveAIData("AlphaZero", saveData, "alphazero_cache.dat");
+                ioWrapper.saveAIData("AlphaZero", saveData, "state/alphazero_cache.dat");
                 logger.info("AlphaZero: Enhanced neural network saved via async I/O ({} positions, {} residuals, {} episodes)", 
                     positionCache.size(), residualCache.size(), trainingEpisodes);
             } else {
                 // Fallback to direct I/O
                 try (java.io.ObjectOutputStream oos = new java.io.ObjectOutputStream(
-                        new java.io.FileOutputStream("alphazero_cache.dat"))) {
+                        new java.io.FileOutputStream("state/alphazero_cache.dat"))) {
                     AlphaZeroSaveData saveData = new AlphaZeroSaveData(
                         new ConcurrentHashMap<>(positionCache),
                         new ConcurrentHashMap<>(residualCache),

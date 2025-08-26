@@ -547,7 +547,7 @@ public class GeneticAlgorithmAI {
     public void savePopulation() {
         // Phase 3: Dual-path implementation
         if (ioWrapper.isAsyncEnabled()) {
-            ioWrapper.saveAIData("GeneticAlgorithm", population, "ga_population.dat");
+            ioWrapper.saveAIData("GeneticAlgorithm", population, "state/ga_population.dat");
         } else {
             // SYNCHRONIZED: Prevent concurrent saves that corrupt data
             synchronized (savePopulationLock) {
@@ -595,7 +595,7 @@ public class GeneticAlgorithmAI {
         if (ioWrapper.isAsyncEnabled()) {
             try {
                 logger.info("*** ASYNC I/O: GeneticAlgorithm loading population using NIO.2 async LOAD path ***");
-                Object data = ioWrapper.loadAIData("GeneticAlgorithm", "ga_population.dat");
+                Object data = ioWrapper.loadAIData("GeneticAlgorithm", "state/ga_population.dat");
                 if (data != null) {
                     logger.info("*** GA AI: Loaded population using async I/O ***");
                     return;
