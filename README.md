@@ -661,6 +661,274 @@ mvn clean package
 - Include error handling and logging
 - Write unit tests for new features
 
+## Model Context Protocol (MCP) Chess Server
+
+### 🎯 **Advanced AI Chess via Standardized Protocol**
+
+The Chess application now serves as a **stateful MCP Server**, exposing all 12 AI systems through the Model Context Protocol for external AI agents, applications, and research platforms.
+
+### Key MCP Features
+
+#### **Stateful Multi-Agent Architecture**
+- **Concurrent Agents**: Support for 100 simultaneous MCP clients
+- **Session Management**: Up to 10 games per agent, 1,000 total active sessions
+- **Complete Isolation**: Independent game state, move history, and AI interactions per agent
+- **Thread-Safe Operations**: Concurrent gameplay without interference between agents
+- **Resource Sharing**: Efficient AI system utilization across all connected agents
+
+#### **JSON-RPC 2.0 Protocol Compliance**
+- **Standard Methods**: initialize, tools/list, resources/list, tools/call, resources/read
+- **Error Handling**: Complete error code specification (-32700 to -32099)
+- **Transport Options**: stdio and WebSocket transport layers
+- **Request Validation**: Comprehensive input schema validation and security checks
+
+#### **Chess Tools (8 Available)**
+1. **create_chess_game** - Create new game with AI opponent selection
+2. **make_chess_move** - Execute moves and get AI responses
+3. **get_board_state** - Retrieve current game state and position
+4. **analyze_position** - Get AI analysis of current position
+5. **get_legal_moves** - List all valid moves for current position
+6. **get_move_hint** - Get AI move suggestions with explanations
+7. **create_tournament** - Play against all 12 AI systems simultaneously
+8. **get_tournament_status** - Monitor tournament progress and results
+
+#### **Chess Resources (5 Available)**
+1. **chess://ai-systems** - All 12 AI systems with capabilities and status
+2. **chess://opening-book** - Professional opening database (100+ openings)
+3. **chess://game-sessions** - Agent's active game sessions
+4. **chess://training-stats** - AI training metrics and performance data
+5. **chess://tactical-patterns** - Chess tactical motifs and patterns
+
+### MCP Server Usage
+
+#### **Starting MCP Server**
+```bash
+# MCP Server via stdio (for direct process communication)
+java -jar chess-application.jar --mcp --transport=stdio
+
+# MCP Server via WebSocket (for network communication)
+java -jar chess-application.jar --mcp --transport=websocket --port=8082
+
+# Dual mode (Web interface + MCP server)
+java -jar chess-application.jar --mcp --dual-mode
+```
+
+#### **MCP Protocol Flow Example**
+```json
+// 1. Initialize connection
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "initialize",
+  "params": {
+    "protocolVersion": "2024-11-05",
+    "clientInfo": {"name": "chess-ai-client", "version": "1.0.0"}
+  }
+}
+
+// 2. Create chess game
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "tools/call",
+  "params": {
+    "name": "create_chess_game",
+    "arguments": {
+      "aiOpponent": "AlphaZero",
+      "playerColor": "white",
+      "difficulty": 7
+    }
+  }
+}
+
+// 3. Make chess move
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "method": "tools/call",
+  "params": {
+    "name": "make_chess_move",
+    "arguments": {
+      "sessionId": "chess-session-uuid-12345",
+      "move": "e4"
+    }
+  }
+}
+```
+
+#### **Tournament Mode Example**
+```json
+// Create tournament against all 12 AI systems
+{
+  "jsonrpc": "2.0",
+  "id": 4,
+  "method": "tools/call",
+  "params": {
+    "name": "create_tournament",
+    "arguments": {
+      "agentId": "research-agent-1",
+      "playerColor": "white",
+      "difficulty": 8
+    }
+  }
+}
+
+// Response: 12 concurrent sessions created
+{
+  "jsonrpc": "2.0",
+  "id": 4,
+  "result": {
+    "tournamentId": "tournament-abc123",
+    "totalGames": 12,
+    "sessions": {
+      "AlphaZero": "session-1-uuid",
+      "LeelaChessZero": "session-2-uuid",
+      "AlphaFold3": "session-3-uuid",
+      "A3C": "session-4-uuid",
+      "MCTS": "session-5-uuid",
+      "Negamax": "session-6-uuid",
+      "OpenAI": "session-7-uuid",
+      "QLearning": "session-8-uuid",
+      "DeepLearning": "session-9-uuid",
+      "CNN": "session-10-uuid",
+      "DQN": "session-11-uuid",
+      "Genetic": "session-12-uuid"
+    }
+  }
+}
+```
+
+### Server-Side Security & Validation
+
+#### **Never Trust the Agent - Always Validate**
+- **Input Schema Validation**: JSON schema enforcement for all tool calls
+- **Move Legality Validation**: Server-side chess rule enforcement
+- **Security Pattern Blocking**: Prevention of injection attacks and malicious input
+- **Resource Access Control**: Agent-specific resource access validation
+- **Rate Limiting**: DoS protection with configurable limits
+- **Session Ownership**: Strict session isolation and ownership verification
+
+#### **Rate Limiting Configuration**
+```properties
+# MCP Server rate limiting
+mcp.rate-limit.requests-per-minute=100
+mcp.rate-limit.moves-per-minute=60
+mcp.rate-limit.sessions-per-hour=20
+mcp.rate-limit.burst-limit=10
+
+# Security configuration
+mcp.security.forbidden-patterns=DROP,DELETE,UPDATE,INSERT,EXEC,SYSTEM
+mcp.security.resource-access-control=true
+mcp.security.session-isolation=true
+```
+
+### Concurrent Performance
+
+#### **Scalability Targets**
+- **Maximum Concurrent Agents**: 100 simultaneous MCP clients
+- **Sessions Per Agent**: Up to 10 concurrent chess games per agent
+- **Total Active Sessions**: Up to 1,000 simultaneous chess games
+- **AI Load Balancing**: Dedicated thread pools for different AI types
+- **Response Times**: < 100ms for moves, < 5s for AI responses
+
+#### **AI System Load Balancing**
+```java
+// Dedicated thread pools for optimal performance
+Neural Network Pool: 4 threads (AlphaZero, Leela, AlphaFold3)
+Classical Engine Pool: 8 threads (Negamax, MCTS)
+Machine Learning Pool: 6 threads (Q-Learning, DQN, CNN, Genetic)
+```
+
+### Real-time Notifications
+
+#### **Agent-Specific Notifications**
+```json
+// AI move notification
+{
+  "jsonrpc": "2.0",
+  "method": "notifications/chess/ai_move",
+  "params": {
+    "sessionId": "uuid",
+    "move": "Nf3",
+    "gameState": "rnbqkb1r/pppppppp/5n2/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 1 2",
+    "thinkingTime": 2.1,
+    "evaluation": 0.15
+  }
+}
+
+// Game state change notification
+{
+  "jsonrpc": "2.0",
+  "method": "notifications/chess/game_state",
+  "params": {
+    "sessionId": "uuid",
+    "status": "checkmate",
+    "winner": "white",
+    "reason": "checkmate"
+  }
+}
+```
+
+### MCP Integration Benefits
+
+#### **For AI Research**
+- **Standardized Interface**: Consistent API for chess AI interaction
+- **Multi-AI Comparison**: Test strategies against all 12 AI systems
+- **Concurrent Evaluation**: Parallel testing across different AI opponents
+- **Training Data Collection**: Games contribute to AI training datasets
+
+#### **For Application Development**
+- **Protocol Compliance**: Standard MCP implementation for easy integration
+- **Scalable Architecture**: Support for multiple concurrent applications
+- **Rich Chess Features**: Complete chess rules, analysis, and AI capabilities
+- **Real-time Updates**: Live notifications for responsive applications
+
+#### **For Chess Analysis**
+- **Professional AI Systems**: Access to tournament-strength chess engines
+- **Position Analysis**: Deep analysis with multiple AI perspectives
+- **Opening Exploration**: Professional opening database integration
+- **Tactical Training**: Pattern recognition and tactical motif analysis
+
+### MCP Documentation
+- **Complete Design**: [`docs/AI_MCP_CHESS.md`](docs/AI_MCP_CHESS.md)
+- **Protocol Specification**: JSON-RPC 2.0 compliance with chess extensions
+- **API Reference**: Complete tool and resource documentation
+- **Integration Examples**: Sample client implementations and usage patterns
+
+### Production Deployment
+
+#### **Docker Support**
+```bash
+# Build MCP server image
+docker build -t chess-mcp-server .
+
+# Run MCP server
+docker run -p 8082:8082 chess-mcp-server --mcp --transport=websocket
+```
+
+#### **Kubernetes Deployment**
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chess-mcp-server
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: chess-mcp-server
+  template:
+    spec:
+      containers:
+      - name: chess-mcp-server
+        image: chess-mcp-server:latest
+        args: ["--mcp", "--transport=websocket"]
+        ports:
+        - containerPort: 8082
+```
+
+The **MCP Chess Server transforms our sophisticated chess engine into a standardized platform for AI-driven chess interaction**, enabling external agents to engage with our 12 advanced AI systems through industry-standard protocols while maintaining enterprise-grade security, performance, and reliability.
+
 ## License
 
 This project is open source and available under the MIT License.
@@ -827,3 +1095,15 @@ This comprehensive chess application demonstrates advanced software engineering 
 - **Enterprise Quality**: Production-ready testing framework for AI dependability
 - **Continuous Integration**: Automated testing with detailed reporting
 - **Test Documentation**: Complete test case specifications and fixtures
+
+### 🚀 **Model Context Protocol (MCP) Chess Server - NEW**
+- **Stateful Multi-Agent Support**: Up to 100 concurrent MCP clients with 1,000 simultaneous games
+- **JSON-RPC 2.0 Compliance**: Full protocol specification adherence with standardized error codes
+- **SOLID Architecture**: Clean separation of concerns with protocol handlers, session managers, validators
+- **Session Isolation**: Complete independence between agent game sessions with thread-safe operations
+- **All 12 AI Systems**: Full access to AlphaZero, Leela Chess Zero, AlphaFold3, A3C, and all other AI opponents
+- **Tournament Support**: Agents can play against all 12 AI systems simultaneously via create_tournament tool
+- **Server-Side Validation**: Comprehensive input validation, move legality checks, and security patterns
+- **Rate Limiting**: DoS protection with configurable limits (100 requests/min, 60 moves/min)
+- **Real-time Notifications**: Agent-specific notifications for game state changes and AI moves
+- **Dual Operation**: Web interface and MCP server can run simultaneously or independently

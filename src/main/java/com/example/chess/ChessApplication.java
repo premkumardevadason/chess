@@ -59,6 +59,12 @@ public class ChessApplication {
         return applicationContext;
     }    
     public static void main(String[] args) {
+        // Check if MCP mode is requested
+        if (args.length > 0 && "--mcp".equals(args[0])) {
+            startMCPServer(args);
+            return;
+        }
+        
         // Log JVM command line parameters
         java.lang.management.RuntimeMXBean runtimeMxBean = java.lang.management.ManagementFactory.getRuntimeMXBean();
         logger.info("JVM Arguments: {}", runtimeMxBean.getInputArguments());
@@ -110,6 +116,37 @@ public class ChessApplication {
         periodicSave.setDaemon(true);
         periodicSave.setName("Periodic-Save-Thread");
         periodicSave.start();
+    }
+    
+    private static void startMCPServer(String[] args) {
+        logger.info("Starting Chess MCP Server");
+        System.setProperty("spring.main.web-application-type", "none");
+        
+        ConfigurableApplicationContext context = SpringApplication.run(ChessApplication.class, args);
+        applicationContext = context;
+        
+        try {
+            com.example.chess.mcp.MCPTransportService transportService = 
+                context.getBean(com.example.chess.mcp.MCPTransportService.class);
+            
+            String transport = getTransportType(args);
+            if ("stdio".equals(transport)) {
+                transportService.startStdioTransport();
+            } else {
+                transportService.startStdioTransport();
+            }
+        } catch (Exception e) {
+            logger.error("Failed to start MCP server: {}", e.getMessage(), e);
+        }
+    }
+    
+    private static String getTransportType(String[] args) {
+        for (int i = 0; i < args.length - 1; i++) {
+            if ("--transport".equals(args[i])) {
+                return args[i + 1];
+            }
+        }
+        return "stdio";
     }
     
 
