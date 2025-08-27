@@ -1,132 +1,100 @@
 package com.example.chess.mcp.validation;
 
+import com.example.chess.mcp.session.ChessGameSession;
+import com.example.chess.mcp.session.MCPSessionManager;
+import com.example.chess.mcp.ratelimit.MCPRateLimiter;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import java.util.Map;
-import java.util.Set;
 
 @Component
 public class MCPValidationOrchestrator {
     
     private static final Logger logger = LogManager.getLogger(MCPValidationOrchestrator.class);
     
-    private static final Set<String> VALID_AI_OPPONENTS = Set.of(
-        "AlphaZero", "LeelaChessZero", "AlphaFold3", "A3C", "MCTS", "Negamax",
-        "OpenAI", "QLearning", "DeepLearning", "CNN", "DQN", "Genetic"
-    );
+    @Autowired
+    private MCPSessionManager sessionManager;
     
-    private static final Set<String> FORBIDDEN_PATTERNS = Set.of(
-        "DROP", "DELETE", "UPDATE", "INSERT", "CREATE", "ALTER", "TRUNCATE",
-        "EXEC", "EXECUTE", "SYSTEM", "CMD", "SHELL", "SCRIPT", "EVAL"
-    );
+    @Autowired
+    private MCPInputValidator inputValidator;
+    
+    @Autowired
+    private ChessMoveValidator moveValidator;
+    
+    @Autowired
+    private ResourceScopeValidator resourceValidator;
+    
+    @Autowired
+    private MCPRateLimiter rateLimiter;
     
     public ValidationResult validateToolCall(String agentId, String toolName, Map<String, Object> arguments) {
         logger.debug("Validating tool call from agent {}: {}", agentId, toolName);
         
-        // Basic input validation
-        ValidationResult inputValidation = validateInputs(toolName, arguments);
+        // 1. Rate limiting check (simplified for now)
+        if (!rateLimiter.allowRequest(agentId, toolName)) {
+            logger.warn("Rate limit exceeded for agent {}", agentId);
+            return ValidationResult.rateLimited("Rate limit exceeded", java.time.Duration.ofMinutes(1));
+        }
+        
+        // 2. Input schema validation
+        ValidationResult inputValidation = inputValidator.validateToolCall(toolName, arguments);
         if (!inputValidation.isValid()) {
+            logger.warn("Input validation failed for agent {}: {}", agentId, inputValidation.getError());
             return inputValidation;
         }
         
-        // Tool-specific validation
-        switch (toolName) {
-            case "create_chess_game":
-            case "create_tournament":
-                return validateCreateGameInput(arguments);
-            case "make_chess_move":
-                return validateMakeMoveInput(arguments);
-            default:
-                return ValidationResult.valid();
-        }
-    }
-    
-    private ValidationResult validateInputs(String toolName, Map<String, Object> arguments) {
-        if (arguments == null) {
-            return ValidationResult.invalid("Arguments cannot be null");
-        }
-        
-        // Check for required fields based on tool
-        switch (toolName) {
-            case "create_chess_game":
-                if (!arguments.containsKey("agentId") || !arguments.containsKey("aiOpponent") || !arguments.containsKey("playerColor")) {
-                    return ValidationResult.invalid("Missing required fields: agentId, aiOpponent, playerColor");
-                }
-                break;
-            case "create_tournament":
-                if (!arguments.containsKey("agentId") || !arguments.containsKey("playerColor")) {
-                    return ValidationResult.invalid("Missing required fields: agentId, playerColor");
-                }
-                break;
-            case "make_chess_move":
-                if (!arguments.containsKey("sessionId") || !arguments.containsKey("move")) {
-                    return ValidationResult.invalid("Missing required fields: sessionId, move");
-                }
-                break;
+        // 3. Tool-specific validation
+        if ("make_chess_move".equals(toolName)) {
+            return validateMoveToolCall(agentId, arguments);
         }
         
         return ValidationResult.valid();
     }
     
-    private ValidationResult validateCreateGameInput(Map<String, Object> args) {
-        // Validate AI opponent (only for create_chess_game, not create_tournament)
-        String aiOpponent = (String) args.get("aiOpponent");
-        if (aiOpponent != null && !VALID_AI_OPPONENTS.contains(aiOpponent)) {
-            return ValidationResult.invalid("Invalid AI opponent: " + aiOpponent);
+    public ValidationResult validateResourceAccess(String agentId, String resourceUri) {
+        logger.debug("Validating resource access for agent {}: {}", agentId, resourceUri);
+        
+        // 1. Rate limiting check (simplified for now)
+        if (!rateLimiter.allowRequest(agentId, "resource_access")) {
+            return ValidationResult.rateLimited("Rate limit exceeded", java.time.Duration.ofMinutes(1));
         }
         
-        // Validate player color
-        String playerColor = (String) args.get("playerColor");
-        if (!"white".equals(playerColor) && !"black".equals(playerColor)) {
-            return ValidationResult.invalid("Invalid player color: " + playerColor);
-        }
-        
-        // Validate difficulty
-        Object difficultyObj = args.get("difficulty");
-        if (difficultyObj != null) {
-            Integer difficulty = (Integer) difficultyObj;
-            if (difficulty < 1 || difficulty > 10) {
-                return ValidationResult.invalid("Invalid difficulty: " + difficulty);
-            }
+        // 2. Resource scope validation
+        ResourceScopeValidator.AccessValidationResult accessValidation = resourceValidator.validateResourceAccess(agentId, resourceUri);
+        if (!accessValidation.isAllowed()) {
+            logger.warn("Resource access denied for agent {}: {}", agentId, accessValidation.getReason());
+            return ValidationResult.accessDenied(accessValidation.getReason());
         }
         
         return ValidationResult.valid();
     }
     
-    private ValidationResult validateMakeMoveInput(Map<String, Object> args) {
-        // Validate session ID format
-        String sessionId = (String) args.get("sessionId");
-        if (sessionId == null || sessionId.trim().isEmpty()) {
-            return ValidationResult.invalid("Session ID cannot be empty");
+    private ValidationResult validateMoveToolCall(String agentId, Map<String, Object> arguments) {
+        String sessionId = (String) arguments.get("sessionId");
+        String move = (String) arguments.get("move");
+        
+        // Get game session
+        ChessGameSession session = sessionManager.getSession(sessionId);
+        if (session == null) {
+            return ValidationResult.invalid("Session not found: " + sessionId);
         }
         
-        // Validate move format and security
-        String move = (String) args.get("move");
-        if (move == null || move.trim().isEmpty()) {
-            return ValidationResult.invalid("Move cannot be empty");
+        // Verify agent owns session
+        if (!session.getAgentId().equals(agentId)) {
+            logger.warn("Agent {} attempted to make move in session {} owned by {}", 
+                       agentId, sessionId, session.getAgentId());
+            return ValidationResult.accessDenied("Session belongs to different agent");
         }
         
-        // Security check - prevent injection attacks
-        String upperMove = move.toUpperCase();
-        for (String pattern : FORBIDDEN_PATTERNS) {
-            if (upperMove.contains(pattern)) {
-                logger.warn("Blocked potentially malicious move: {}", move);
-                return ValidationResult.invalid("Move contains forbidden patterns");
-            }
-        }
-        
-        // Basic chess notation validation
-        if (!isValidChessNotation(move)) {
-            return ValidationResult.invalid("Invalid chess notation: " + move);
+        // Chess move validation
+        ChessMoveValidator.MoveValidationResult moveValidation = moveValidator.validateMove(sessionId, move, session.getGame());
+        if (!moveValidation.isValid()) {
+            return ValidationResult.invalid(moveValidation.getError());
         }
         
         return ValidationResult.valid();
-    }
-    
-    private boolean isValidChessNotation(String move) {
-        // Basic algebraic notation validation
-        return move.matches("^[KQRBN]?[a-h]?[1-8]?x?[a-h][1-8](=[QRBN])?[+#]?$|^O-O(-O)?[+#]?$");
     }
 }
 

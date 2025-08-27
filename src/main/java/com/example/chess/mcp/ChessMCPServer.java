@@ -252,10 +252,16 @@ public class ChessMCPServer {
             arguments.put("agentId", agentId);
         }
         
-        // Validate request
+        // Advanced validation with rate limiting and security checks
         ValidationResult validation = validator.validateToolCall(agentId, toolName, arguments);
         if (!validation.isValid()) {
-            return JsonRpcResponse.error(request.getId(), -32602, validation.getError());
+            if (validation.isRateLimited()) {
+                return JsonRpcResponse.error(request.getId(), -32005, "Rate limit exceeded: " + validation.getError());
+            } else if (validation.isAccessDenied()) {
+                return JsonRpcResponse.error(request.getId(), -32006, "Access denied: " + validation.getError());
+            } else {
+                return JsonRpcResponse.error(request.getId(), -32602, "Invalid params: " + validation.getError());
+            }
         }
         
         // Execute tool (notifications now handled in ChessGameSession)
@@ -288,6 +294,18 @@ public class ChessMCPServer {
         try {
             Map<String, Object> params = request.getParams();
             String uri = (String) params.get("uri");
+            
+            // Validate resource access
+            ValidationResult validation = validator.validateResourceAccess(agentId, uri);
+            if (!validation.isValid()) {
+                if (validation.isRateLimited()) {
+                    return JsonRpcResponse.error(request.getId(), -32005, "Rate limit exceeded: " + validation.getError());
+                } else if (validation.isAccessDenied()) {
+                    return JsonRpcResponse.error(request.getId(), -32007, "Resource access denied: " + validation.getError());
+                } else {
+                    return JsonRpcResponse.error(request.getId(), -32001, "Invalid resource request: " + validation.getError());
+                }
+            }
             
             ChessResourceProvider.Resource resource = resourceProvider.getResource(agentId, uri);
             
