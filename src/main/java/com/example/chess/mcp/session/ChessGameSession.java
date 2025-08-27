@@ -2,9 +2,13 @@ package com.example.chess.mcp.session;
 
 import com.example.chess.ChessGame;
 import com.example.chess.ChessAI;
+import com.example.chess.mcp.ai.ConcurrentAIManager;
+import com.example.chess.mcp.notifications.MCPNotificationService;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.springframework.beans.factory.annotation.Autowired;
 import java.time.LocalDateTime;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.locks.ReentrantLock;
 
 public class ChessGameSession {
@@ -25,6 +29,19 @@ public class ChessGameSession {
     private int movesPlayed = 0;
     private double averageThinkingTime = 0.0;
     private String gameStatus = "active";
+    
+    private static ConcurrentAIManager concurrentAIManager;
+    private static MCPNotificationService notificationService;
+    
+    @Autowired
+    public static void setConcurrentAIManager(ConcurrentAIManager manager) {
+        concurrentAIManager = manager;
+    }
+    
+    @Autowired
+    public static void setNotificationService(MCPNotificationService service) {
+        notificationService = service;
+    }
     
     public ChessGameSession(String sessionId, String agentId, ChessGame game, 
                            ChessAI ai, String playerColor, int difficulty) {
@@ -57,8 +74,13 @@ public class ChessGameSession {
                 return MoveResult.gameOver(move, gameStatus, "mock-fen");
             }
             
+            // Use ConcurrentAIManager for async AI processing
             long startTime = System.currentTimeMillis();
-            String aiMove = ai.getMove(game);
+            CompletableFuture<String> aiMoveFuture = concurrentAIManager != null ? 
+                concurrentAIManager.getAIMoveAsync(ai, game, sessionId) : 
+                CompletableFuture.completedFuture(ai.getMove(game));
+            
+            String aiMove = aiMoveFuture.join(); // Wait for AI response
             long thinkingTime = System.currentTimeMillis() - startTime;
             
             // Mock AI move execution
@@ -66,8 +88,17 @@ public class ChessGameSession {
             
             updateThinkingTimeAverage(thinkingTime);
             
+            // Send notifications
+            if (notificationService != null) {
+                notificationService.notifyGameMove(agentId, sessionId, move, aiMove);
+                notificationService.notifyGameStateChange(agentId, sessionId, "active");
+            }
+            
             if (false) { // Mock - game never over
                 gameStatus = "checkmate";
+                if (notificationService != null) {
+                    notificationService.notifyGameStateChange(agentId, sessionId, gameStatus);
+                }
                 return MoveResult.gameOver(move, aiMove, gameStatus, "mock-fen", thinkingTime);
             }
             

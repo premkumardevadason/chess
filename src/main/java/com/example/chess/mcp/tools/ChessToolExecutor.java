@@ -2,6 +2,7 @@ package com.example.chess.mcp.tools;
 
 import com.example.chess.mcp.session.MCPSessionManager;
 import com.example.chess.mcp.session.ChessGameSession;
+import com.example.chess.mcp.notifications.MCPNotificationService;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.springframework.stereotype.Component;
@@ -15,6 +16,9 @@ public class ChessToolExecutor {
     
     @Autowired
     private MCPSessionManager sessionManager;
+    
+    @Autowired
+    private MCPNotificationService notificationService;
     
     private static final String[] ALL_AI_SYSTEMS = {
         "AlphaZero", "LeelaChessZero", "AlphaFold3", "A3C", "MCTS", "Negamax",
@@ -208,6 +212,15 @@ public class ChessToolExecutor {
         }
         
         String tournamentId = "tournament-" + UUID.randomUUID().toString().substring(0, 8);
+        
+        // Send tournament creation notification
+        if (notificationService != null) {
+            notificationService.notifyTournamentUpdate(agentId, tournamentId, Map.of(
+                "event", "tournament_created",
+                "totalGames", sessionIds.size(),
+                "activeGames", sessionIds.size()
+            ));
+        }
         
         return ToolResult.success(
             String.format("Tournament created! Agent %s now playing against all 12 AI systems.\nTournament ID: %s\nActive Sessions: %d\nUse get_tournament_status tool to monitor progress.", 

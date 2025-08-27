@@ -5,6 +5,11 @@ import com.example.chess.mcp.protocol.JsonRpcResponse;
 import com.example.chess.mcp.tools.ChessToolExecutor;
 import com.example.chess.mcp.validation.MCPValidationOrchestrator;
 import com.example.chess.mcp.validation.ValidationResult;
+import com.example.chess.mcp.agent.MCPAgentRegistry;
+import com.example.chess.mcp.resources.ChessResourceProvider;
+import com.example.chess.mcp.metrics.MCPMetricsService;
+import com.example.chess.mcp.notifications.MCPNotificationService;
+import com.example.chess.mcp.ratelimit.MCPRateLimiter;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -23,10 +28,35 @@ public class ChessMCPServer {
     @Autowired
     private MCPValidationOrchestrator validator;
     
+    @Autowired
+    private MCPAgentRegistry agentRegistry;
+    
+    @Autowired
+    private ChessResourceProvider resourceProvider;
+    
+    @Autowired
+    private MCPMetricsService metricsService;
+    
+    @Autowired
+    private MCPNotificationService notificationService;
+    
+    @Autowired
+    private MCPRateLimiter rateLimiter;
+    
     private final ObjectMapper objectMapper = new ObjectMapper();
     
     public JsonRpcResponse handleJsonRpcRequest(JsonRpcRequest request, String agentId) {
+        long startTime = System.currentTimeMillis();
+        
         try {
+            // Rate limiting
+            if (!rateLimiter.allowRequest(agentId, "general")) {
+                return JsonRpcResponse.error(request.getId(), -32099, "Rate limit exceeded");
+            }
+            
+            // Update agent activity
+            agentRegistry.updateAgentActivity(agentId);
+            
             logger.debug("Handling request from agent {}: {}", agentId, request.getMethod());
             
             switch (request.getMethod()) {
@@ -45,11 +75,23 @@ public class ChessMCPServer {
             }
         } catch (Exception e) {
             logger.error("Error handling request: {}", e.getMessage(), e);
+            metricsService.recordError(agentId, request.getMethod(), e.getClass().getSimpleName());
             return JsonRpcResponse.internalError(request.getId(), e.getMessage());
+        } finally {
+            long responseTime = System.currentTimeMillis() - startTime;
+            metricsService.recordRequest(agentId, request.getMethod(), responseTime);
         }
     }
     
     private JsonRpcResponse handleInitialize(JsonRpcRequest request) {
+        // Register agent if not already registered
+        String clientInfo = "unknown";
+        if (request.getParams() != null && request.getParams().containsKey("clientInfo")) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> clientInfoMap = (Map<String, Object>) request.getParams().get("clientInfo");
+            clientInfo = (String) clientInfoMap.getOrDefault("name", "unknown");
+        }
+        
         Map<String, Object> result = Map.of(
             "protocolVersion", "2024-11-05",
             "capabilities", Map.of(
@@ -216,7 +258,7 @@ public class ChessMCPServer {
             return JsonRpcResponse.error(request.getId(), -32602, validation.getError());
         }
         
-        // Execute tool
+        // Execute tool (notifications now handled in ChessGameSession)
         ChessToolExecutor.ToolResult result = toolExecutor.execute(toolName, arguments);
         
         if (result.isSuccess()) {
@@ -243,12 +285,25 @@ public class ChessMCPServer {
     }
     
     private JsonRpcResponse handleResourceRead(JsonRpcRequest request, String agentId) {
-        // Basic resource reading - can be enhanced
-        return JsonRpcResponse.success(request.getId(), Map.of(
-            "contents", Arrays.asList(
-                Map.of("uri", "chess://placeholder", "text", "{\"placeholder\": true}")
-            )
-        ));
+        try {
+            Map<String, Object> params = request.getParams();
+            String uri = (String) params.get("uri");
+            
+            ChessResourceProvider.Resource resource = resourceProvider.getResource(agentId, uri);
+            
+            return JsonRpcResponse.success(request.getId(), Map.of(
+                "contents", Arrays.asList(
+                    Map.of(
+                        "uri", resource.getUri(),
+                        "mimeType", resource.getMimeType(),
+                        "text", resource.getContent()
+                    )
+                )
+            ));
+        } catch (Exception e) {
+            logger.error("Error reading resource: {}", e.getMessage());
+            return JsonRpcResponse.error(request.getId(), -32001, "Resource not found: " + e.getMessage());
+        }
     }
     
     private Map<String, Object> createToolDefinition(String name, String description, Map<String, Object> inputSchema) {
@@ -257,5 +312,28 @@ public class ChessMCPServer {
             "description", description,
             "inputSchema", inputSchema
         );
+    }
+    
+    public Map<String, Object> getServerStatus() {
+        MCPMetricsService.MCPMetrics metrics = metricsService.getMetrics();
+        
+        return Map.of(
+            "activeAgents", agentRegistry.getActiveAgentCount(),
+            "totalRequests", metrics.getTotalRequests(),
+            "totalErrors", metrics.getTotalErrors(),
+            "uptime", java.time.Duration.between(metrics.getStartTime(), java.time.LocalDateTime.now()).toString(),
+            "toolCallCounts", metrics.getToolCallCounts(),
+            "agentRequestCounts", metrics.getAgentRequestCounts()
+        );
+    }
+    
+    public void registerAgent(String agentId, String clientInfo, String transport) {
+        agentRegistry.registerAgent(clientInfo, transport);
+        logger.info("Agent {} registered via MCP server", agentId);
+    }
+    
+    public void unregisterAgent(String agentId) {
+        agentRegistry.removeAgent(agentId);
+        logger.info("Agent {} unregistered from MCP server", agentId);
     }
 }

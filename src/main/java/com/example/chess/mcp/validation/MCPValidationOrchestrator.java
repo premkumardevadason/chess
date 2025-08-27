@@ -50,9 +50,13 @@ public class MCPValidationOrchestrator {
         // Check for required fields based on tool
         switch (toolName) {
             case "create_chess_game":
-            case "create_tournament":
                 if (!arguments.containsKey("agentId") || !arguments.containsKey("aiOpponent") || !arguments.containsKey("playerColor")) {
                     return ValidationResult.invalid("Missing required fields: agentId, aiOpponent, playerColor");
+                }
+                break;
+            case "create_tournament":
+                if (!arguments.containsKey("agentId") || !arguments.containsKey("playerColor")) {
+                    return ValidationResult.invalid("Missing required fields: agentId, playerColor");
                 }
                 break;
             case "make_chess_move":
@@ -66,9 +70,9 @@ public class MCPValidationOrchestrator {
     }
     
     private ValidationResult validateCreateGameInput(Map<String, Object> args) {
-        // Validate AI opponent
+        // Validate AI opponent (only for create_chess_game, not create_tournament)
         String aiOpponent = (String) args.get("aiOpponent");
-        if (!VALID_AI_OPPONENTS.contains(aiOpponent)) {
+        if (aiOpponent != null && !VALID_AI_OPPONENTS.contains(aiOpponent)) {
             return ValidationResult.invalid("Invalid AI opponent: " + aiOpponent);
         }
         
