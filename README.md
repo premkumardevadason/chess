@@ -4,14 +4,6 @@ A sophisticated browser-based Chess game and **Model Context Protocol (MCP) Serv
 
 ## Features
 
-### **🎯 Model Context Protocol (MCP) Server**
-- **Stateful Multi-Agent Architecture**: Support for 100 concurrent MCP clients with 1,000 total active sessions
-- **JSON-RPC 2.0 Compliance**: Complete protocol implementation with stdio and WebSocket transport
-- **8 Chess Tools**: create_chess_game, make_chess_move, get_board_state, analyze_position, get_legal_moves, get_move_hint, create_tournament, get_tournament_status
-- **5 Chess Resources**: AI systems, opening book, game sessions, training stats, tactical patterns
-- **Enterprise Security**: Input validation, rate limiting, session isolation, and DoS protection
-- **Tournament Mode**: Simultaneous gameplay against all 12 AI systems for research and analysis
-
 ### **🏆 Complete Chess Implementation**
 - **Full FIDE Rules**: Castling, en passant, pawn promotion, check/checkmate detection
 - **Professional Opening Book**: Leela Chess Zero database with 100+ grandmaster openings
@@ -32,6 +24,14 @@ A sophisticated browser-based Chess game and **Model Context Protocol (MCP) Serv
 - **Deep Q-Network (DQN)**: Deep reinforcement learning with experience replay
 - **Genetic Algorithm AI**: Evolutionary learning with population-based optimization
 - **OpenAI Chess AI**: GPT-4 powered chess analysis with strategic reasoning
+
+### **🎯 Model Context Protocol (MCP) Server**
+- **Stateful Multi-Agent Architecture**: Support for 100 concurrent MCP clients with 1,000 total active sessions
+- **JSON-RPC 2.0 Compliance**: Complete protocol implementation with stdio and WebSocket transport
+- **8 Chess Tools**: create_chess_game, make_chess_move, get_board_state, analyze_position, get_legal_moves, get_move_hint, create_tournament, get_tournament_status
+- **5 Chess Resources**: AI systems, opening book, game sessions, training stats, tactical patterns
+- **Enterprise Security**: Input validation, rate limiting, session isolation, and DoS protection
+- **Tournament Mode**: Simultaneous gameplay against all 12 AI systems for research and analysis
 
 ### **⚡ Advanced Infrastructure**
 - **NIO.2 Async I/O**: Complete asynchronous file operations with race condition protection
