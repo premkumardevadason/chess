@@ -1,20 +1,20 @@
 package com.example.chess.unit;
 
 import com.example.chess.ChessTacticalDefense;
-import com.example.chess.ChessGame;
+import com.example.chess.BaseTestClass;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
-public class ChessTacticalDefenseTest {
+public class ChessTacticalDefenseTest extends BaseTestClass {
     
     private ChessTacticalDefense tacticalDefense;
-    private ChessGame game;
+    
     
     @BeforeEach
     void setUp() {
         tacticalDefense = new ChessTacticalDefense();
-        game = new ChessGame();
+        super.baseSetUp();
     }
     
     @Test
@@ -79,3 +79,5 @@ public class ChessTacticalDefenseTest {
         assertFalse(game.getAllValidMoves(false).isEmpty());
     }
 }
+
+

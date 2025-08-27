@@ -1,20 +1,20 @@
 package com.example.chess.unit.ai;
 
 import com.example.chess.MonteCarloTreeSearchAI;
-import com.example.chess.ChessGame;
+import com.example.chess.BaseTestClass;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import static org.junit.jupiter.api.Assertions.*;
 
-public class MonteCarloTreeSearchAITest {
+public class MonteCarloTreeSearchAITest extends BaseTestClass {
     
     private MonteCarloTreeSearchAI mctsAI;
-    private ChessGame game;
+    
     
     @BeforeEach
     void setUp() {
-        game = new ChessGame();
+        super.baseSetUp();
         mctsAI = new MonteCarloTreeSearchAI(false);
     }
     
@@ -281,3 +281,5 @@ public class MonteCarloTreeSearchAITest {
         assertNotNull(freshAI, "Stateless MCTS should work without persistent state");
     }
 }
+
+

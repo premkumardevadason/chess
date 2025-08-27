@@ -11,8 +11,10 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import com.example.chess.mcp.BaseMCPTestClass;
+
 @SpringBootTest
-public class ChessMCPServerTest {
+public class ChessMCPServerTest extends BaseMCPTestClass {
     
     private static final Logger logger = LogManager.getLogger(ChessMCPServerTest.class);
     
@@ -101,3 +103,6 @@ public class ChessMCPServerTest {
         assertEquals(-32601, response.getError().getCode());
     }
 }
+
+
+

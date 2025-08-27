@@ -59,3 +59,6 @@ public class MCPAgentRegistryTest {
         assertEquals(2, registry.getActiveAgentCount());
     }
 }
+
+
+

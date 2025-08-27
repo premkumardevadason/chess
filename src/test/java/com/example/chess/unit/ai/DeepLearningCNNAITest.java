@@ -1,21 +1,21 @@
 package com.example.chess.unit.ai;
 
 import com.example.chess.DeepLearningCNNAI;
-import com.example.chess.ChessGame;
+import com.example.chess.BaseTestClass;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import java.io.File;
 import static org.junit.jupiter.api.Assertions.*;
 
-public class DeepLearningCNNAITest {
+public class DeepLearningCNNAITest extends BaseTestClass {
     
     private DeepLearningCNNAI cnnAI;
-    private ChessGame game;
+    
     
     @BeforeEach
     void setUp() {
-        game = new ChessGame();
+        super.baseSetUp();
         cnnAI = new DeepLearningCNNAI();
     }
     
@@ -314,3 +314,5 @@ public class DeepLearningCNNAITest {
         assertNotNull(cnnAI, "Game data learning system should be active");
     }
 }
+
+

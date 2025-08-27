@@ -1,21 +1,21 @@
 package com.example.chess.unit.ai;
 
 import com.example.chess.DeepQNetworkAI;
-import com.example.chess.ChessGame;
+import com.example.chess.BaseTestClass;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import java.io.File;
 import static org.junit.jupiter.api.Assertions.*;
 
-public class DeepQNetworkAITest {
+public class DeepQNetworkAITest extends BaseTestClass {
     
     private DeepQNetworkAI dqnAI;
-    private ChessGame game;
+    
     
     @BeforeEach
     void setUp() {
-        game = new ChessGame();
+        super.baseSetUp();
         dqnAI = new DeepQNetworkAI(false);
     }
     
@@ -318,3 +318,5 @@ public class DeepQNetworkAITest {
         assertTrue(afterTraining >= initialSize, "Experience buffer should optimize memory usage");
     }
 }
+
+

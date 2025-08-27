@@ -1,21 +1,21 @@
 package com.example.chess.unit.ai;
 
 import com.example.chess.GeneticAlgorithmAI;
-import com.example.chess.ChessGame;
+import com.example.chess.BaseTestClass;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import java.io.File;
 import static org.junit.jupiter.api.Assertions.*;
 
-public class GeneticAlgorithmAITest {
+public class GeneticAlgorithmAITest extends BaseTestClass {
     
     private GeneticAlgorithmAI geneticAI;
-    private ChessGame game;
+    
     
     @BeforeEach
     void setUp() {
-        game = new ChessGame();
+        super.baseSetUp();
         geneticAI = new GeneticAlgorithmAI(false);
     }
     
@@ -345,3 +345,5 @@ public class GeneticAlgorithmAITest {
         assertTrue(newAI.getGeneration() >= originalGeneration, "Population persistence should maintain evolutionary state");
     }
 }
+
+

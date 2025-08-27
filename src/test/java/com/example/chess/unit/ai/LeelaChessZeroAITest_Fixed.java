@@ -1,21 +1,21 @@
 package com.example.chess.unit.ai;
 
 import com.example.chess.LeelaChessZeroAI;
-import com.example.chess.ChessGame;
+import com.example.chess.BaseTestClass;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import java.io.File;
 import static org.junit.jupiter.api.Assertions.*;
 
-public class LeelaChessZeroAITest_Fixed {
+public class LeelaChessZeroAITest_Fixed extends BaseTestClass {
     
     private LeelaChessZeroAI leelaAI;
-    private ChessGame game;
+    
     
     @BeforeEach
     void setUp() {
-        game = new ChessGame();
+        super.baseSetUp();
         leelaAI = new LeelaChessZeroAI(false);
     }
     
@@ -67,3 +67,5 @@ public class LeelaChessZeroAITest_Fixed {
         }
     }
 }
+
+

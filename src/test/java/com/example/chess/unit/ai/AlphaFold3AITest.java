@@ -1,21 +1,21 @@
 package com.example.chess.unit.ai;
 
 import com.example.chess.AlphaFold3AI;
-import com.example.chess.ChessGame;
+import com.example.chess.BaseTestClass;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import java.io.File;
 import static org.junit.jupiter.api.Assertions.*;
 
-public class AlphaFold3AITest {
+public class AlphaFold3AITest extends BaseTestClass {
     
     private AlphaFold3AI alphaFold3AI;
-    private ChessGame game;
+    
     
     @BeforeEach
     void setUp() {
-        game = new ChessGame();
+        super.baseSetUp();
         alphaFold3AI = new AlphaFold3AI(false);
     }
     
@@ -222,3 +222,5 @@ public class AlphaFold3AITest {
         assertNotNull(alphaFold3AI, "Trajectory memory system should be active");
     }
 }
+
+

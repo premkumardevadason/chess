@@ -1,21 +1,21 @@
 package com.example.chess.unit.ai;
 
 import com.example.chess.AsynchronousAdvantageActorCriticAI;
-import com.example.chess.ChessGame;
+import com.example.chess.BaseTestClass;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import java.io.File;
 import static org.junit.jupiter.api.Assertions.*;
 
-public class AsynchronousAdvantageActorCriticAITest {
+public class AsynchronousAdvantageActorCriticAITest extends BaseTestClass {
     
     private AsynchronousAdvantageActorCriticAI a3cAI;
-    private ChessGame game;
+    
     
     @BeforeEach
     void setUp() {
-        game = new ChessGame();
+        super.baseSetUp();
         a3cAI = new AsynchronousAdvantageActorCriticAI();
     }
     
@@ -259,3 +259,5 @@ public class AsynchronousAdvantageActorCriticAITest {
         assertNotNull(a3cAI, "Independent A3C training should be functional");
     }
 }
+
+

@@ -22,6 +22,8 @@ import org.apache.logging.log4j.Logger;
     "chess.ai.a3c.enabled=false"
 })
 public class MCPIntegrationTest {
+    // Note: Extending BaseMCPTestClass causes circular dependency issues
+    // This test runs without the shared context for MCP-specific testing
     
     private static final Logger logger = LogManager.getLogger(MCPIntegrationTest.class);
     
@@ -39,3 +41,6 @@ public class MCPIntegrationTest {
         // Full MCP protocol testing would require running application in MCP mode
     }
 }
+
+
+

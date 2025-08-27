@@ -1,18 +1,19 @@
 package com.example.chess.performance;
 
+import com.example.chess.BaseTestClass;
 import com.example.chess.ChessGame;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import static org.junit.jupiter.api.Assertions.*;
 
-public class GamePerformanceTest {
+public class GamePerformanceTest extends BaseTestClass {
     
-    private ChessGame game;
+    
     
     @BeforeEach
     void setUp() {
-        game = new ChessGame();
+        super.baseSetUp();
     }
     
     @Test
@@ -149,3 +150,5 @@ public class GamePerformanceTest {
         assertTrue(avgTime < 1.0, "Game state access too slow: " + avgTime + "ms avg (target: < 1ms)");
     }
 }
+
+

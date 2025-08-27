@@ -15,3 +15,5 @@ public class TestRunner {
         System.out.println("Use 'mvn test -Dtest=**/performance/**/*Test' to run performance tests");
     }
 }
+
+

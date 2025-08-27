@@ -1,20 +1,19 @@
 package com.example.chess.unit.ai;
 
+import com.example.chess.BaseTestClass;
 import com.example.chess.AlphaZeroAI;
-import com.example.chess.ChessGame;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import static org.junit.jupiter.api.Assertions.*;
 
-public class AlphaZeroAITest {
+public class AlphaZeroAITest extends BaseTestClass {
     
     private AlphaZeroAI alphaZeroAI;
-    private ChessGame game;
     
     @BeforeEach
     void setUp() {
-        game = new ChessGame();
+        super.baseSetUp();
         alphaZeroAI = game.getAlphaZeroAI();
     }
     
@@ -135,3 +134,5 @@ public class AlphaZeroAITest {
         }
     }
 }
+
+

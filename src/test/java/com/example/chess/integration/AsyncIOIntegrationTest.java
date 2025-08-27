@@ -1,5 +1,6 @@
 package com.example.chess.integration;
 
+import com.example.chess.BaseTestClass;
 import com.example.chess.async.AsyncTrainingDataManager;
 import com.example.chess.async.AtomicFeatureCoordinator;
 import org.junit.jupiter.api.BeforeEach;
@@ -13,7 +14,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import static org.junit.jupiter.api.Assertions.*;
 
-public class AsyncIOIntegrationTest {
+public class AsyncIOIntegrationTest extends BaseTestClass {
     
     private AsyncTrainingDataManager asyncManager;
     private AtomicFeatureCoordinator coordinator;
@@ -57,3 +58,5 @@ public class AsyncIOIntegrationTest {
         assertTrue(true);
     }
 }
+
+

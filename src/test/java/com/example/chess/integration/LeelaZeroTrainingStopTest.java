@@ -8,7 +8,9 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * Integration test to verify that LeelaZero training can be properly stopped
  */
-public class LeelaZeroTrainingStopTest {
+import com.example.chess.BaseTestClass;
+
+public class LeelaZeroTrainingStopTest extends BaseTestClass {
     
     @Test
     @Timeout(10) // Test should complete within 10 seconds
@@ -58,3 +60,5 @@ public class LeelaZeroTrainingStopTest {
         leelaZero.shutdown();
     }
 }
+
+

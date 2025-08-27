@@ -1,20 +1,20 @@
 package com.example.chess.unit.ai;
 
 import com.example.chess.OpenAiChessAI;
-import com.example.chess.ChessGame;
+import com.example.chess.BaseTestClass;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import static org.junit.jupiter.api.Assertions.*;
 
-public class OpenAiChessAITest {
+public class OpenAiChessAITest extends BaseTestClass {
     
     private OpenAiChessAI openAiAI;
-    private ChessGame game;
+    
     
     @BeforeEach
     void setUp() {
-        game = new ChessGame();
+        super.baseSetUp();
         openAiAI = new OpenAiChessAI("test-key", false);
     }
     
@@ -247,3 +247,5 @@ public class OpenAiChessAITest {
         assertTrue(true, "API key validation should handle all scenarios");
     }
 }
+
+

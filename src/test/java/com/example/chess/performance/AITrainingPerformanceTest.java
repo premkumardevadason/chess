@@ -1,6 +1,6 @@
 package com.example.chess.performance;
 
-import com.example.chess.ChessGame;
+import com.example.chess.BaseTestClass;
 import com.example.chess.QLearningAI;
 import com.example.chess.DeepQNetworkAI;
 import org.junit.jupiter.api.BeforeEach;
@@ -8,15 +8,15 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import static org.junit.jupiter.api.Assertions.*;
 
-public class AITrainingPerformanceTest {
+public class AITrainingPerformanceTest extends BaseTestClass {
     
-    private ChessGame game;
+    
     private QLearningAI qLearningAI;
     private DeepQNetworkAI dqnAI;
     
     @BeforeEach
     void setUp() {
-        game = new ChessGame();
+        super.baseSetUp();
         qLearningAI = game.getQLearningAI();
         dqnAI = game.getDQNAI();
     }
@@ -85,11 +85,11 @@ public class AITrainingPerformanceTest {
     @Timeout(20)
     void testStartupTime() {
         long startTime = System.currentTimeMillis();
-        ChessGame newGame = new ChessGame();
+        super.baseSetUp();
         long duration = System.currentTimeMillis() - startTime;
         
         assertTrue(duration < 15000, "Startup too slow: " + duration + "ms (target: < 15s)");
-        assertNotNull(newGame.getQLearningAI());
+        assertNotNull(game.getQLearningAI());
     }
     
     @Test
@@ -106,3 +106,5 @@ public class AITrainingPerformanceTest {
         assertTrue(duration < 10000, "AI move selection too slow: " + duration + "ms");
     }
 }
+
+

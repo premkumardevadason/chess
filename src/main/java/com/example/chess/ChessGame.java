@@ -2012,7 +2012,19 @@ public class ChessGame {
             }
         }
         
-        return allValidMoves.get(0);
+        // CRITICAL FIX: Validate the fallback move before returning
+        if (!allValidMoves.isEmpty()) {
+            for (int[] move : allValidMoves) {
+                if (isValidMove(move[0], move[1], move[2], move[3])) {
+                    logger.info("*** FALLBACK MOVE SELECTED: {} [{},{}] to [{},{}] ***", 
+                        board[move[0]][move[1]], move[0], move[1], move[2], move[3]);
+                    return move;
+                }
+            }
+        }
+        
+        logger.error("*** CRITICAL ERROR: No valid moves found - this should not happen ***");
+        return null;
     }
     
     /**
@@ -4781,6 +4793,18 @@ public class ChessGame {
     }
     
     /**
+     * Check if a piece is pinned (cannot move without exposing King to check)
+     * 
+     * @param pieceRow Row of the piece to check
+     * @param pieceCol Column of the piece to check
+     * @return true if the piece is pinned, false otherwise
+     */
+    
+
+    
+
+    
+    /**
      * Check if a piece is pinned to the Queen (cannot move without exposing Queen to attack)
      * 
      * Similar to King pinning, but checks if moving the piece would expose the Queen
@@ -4817,8 +4841,6 @@ public class ChessGame {
         
         return queenInDanger;
     }
-    
-
     
     /**
      * Check if a move would create a flip-flop pattern
@@ -4899,6 +4921,9 @@ public class ChessGame {
      */
     private String formatMoveToAlgebraic(int[] move) {
         try {
+            if (move == null || move.length != 4) {
+                return "e2e4"; // Fallback for invalid move
+            }
             char fromFile = (char)('a' + move[1]);
             char toFile = (char)('a' + move[3]);
             int fromRank = 8 - move[0];

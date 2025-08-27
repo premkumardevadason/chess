@@ -1,21 +1,21 @@
 package com.example.chess.unit.ai;
 
 import com.example.chess.DeepLearningAI;
-import com.example.chess.ChessGame;
+import com.example.chess.BaseTestClass;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import java.io.File;
 import static org.junit.jupiter.api.Assertions.*;
 
-public class DeepLearningAITest {
+public class DeepLearningAITest extends BaseTestClass {
     
     private DeepLearningAI deepLearningAI;
-    private ChessGame game;
+    
     
     @BeforeEach
     void setUp() {
-        game = new ChessGame();
+        super.baseSetUp();
         deepLearningAI = new DeepLearningAI();
     }
     
@@ -76,17 +76,17 @@ public class DeepLearningAITest {
         
         // Generate training data through game play
         for (int i = 0; i < 10; i++) {
-            ChessGame trainingGame = new ChessGame();
+            super.baseSetUp();
             
             // Play a few moves to generate training scenarios
             for (int moves = 0; moves < 3; moves++) {
-                int[] move = deepLearningAI.selectMove(trainingGame.getBoard(), 
-                    trainingGame.getAllValidMoves(moves % 2 == 0));
-                if (move != null && trainingGame.isValidMove(move[0], move[1], move[2], move[3])) {
+                int[] move = deepLearningAI.selectMove(game.getBoard(), 
+                    game.getAllValidMoves(moves % 2 == 0));
+                if (move != null && game.isValidMove(move[0], move[1], move[2], move[3])) {
                     // Add to AI's learning through game data
-                    deepLearningAI.addHumanGameData(trainingGame.getBoard(), 
-                        trainingGame.getMoveHistory(), moves % 2 == 0);
-                    trainingGame.makeMove(move[0], move[1], move[2], move[3]);
+                    deepLearningAI.addHumanGameData(game.getBoard(), 
+                        game.getMoveHistory(), moves % 2 == 0);
+                    game.makeMove(move[0], move[1], move[2], move[3]);
                 }
             }
         }
@@ -121,3 +121,5 @@ public class DeepLearningAITest {
         assertNotNull(recoveredAI); // Should create new model
     }
 }
+
+

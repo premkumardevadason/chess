@@ -1,21 +1,21 @@
 package com.example.chess.unit;
 
 import com.example.chess.ChessRuleValidator;
-import com.example.chess.ChessGame;
+import com.example.chess.BaseTestClass;
 import com.example.chess.fixtures.ChessPositions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
-public class ChessRuleValidatorTest {
+public class ChessRuleValidatorTest extends BaseTestClass {
     
     private ChessRuleValidator validator;
-    private ChessGame game;
+    
     
     @BeforeEach
     void setUp() {
         validator = new ChessRuleValidator();
-        game = new ChessGame();
+        super.baseSetUp();
     }
     
     @Test
@@ -110,3 +110,5 @@ public class ChessRuleValidatorTest {
         assertFalse(validator.getAllValidMoves(board, true, true).isEmpty()); // White has legal moves
     }
 }
+
+

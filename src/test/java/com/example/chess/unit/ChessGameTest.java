@@ -1,18 +1,18 @@
 package com.example.chess.unit;
 
-import com.example.chess.ChessGame;
+import com.example.chess.BaseTestClass;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import static org.junit.jupiter.api.Assertions.*;
 
-public class ChessGameTest {
+public class ChessGameTest extends BaseTestClass {
     
-    private ChessGame game;
+    
     
     @BeforeEach
     void setUp() {
-        game = new ChessGame();
+        super.baseSetUp();
     }
     
     @Test
@@ -76,3 +76,5 @@ public class ChessGameTest {
         assertTrue(game.redoMove());
     }
 }
+
+

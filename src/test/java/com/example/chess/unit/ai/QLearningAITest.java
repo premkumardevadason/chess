@@ -1,21 +1,20 @@
 package com.example.chess.unit.ai;
 
+import com.example.chess.BaseTestClass;
 import com.example.chess.QLearningAI;
-import com.example.chess.ChessGame;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import java.io.File;
 import static org.junit.jupiter.api.Assertions.*;
 
-public class QLearningAITest {
+public class QLearningAITest extends BaseTestClass {
     
     private QLearningAI qLearningAI;
-    private ChessGame game;
     
     @BeforeEach
     void setUp() {
-        game = new ChessGame();
+        super.baseSetUp();
         qLearningAI = new QLearningAI(false);
     }
     
@@ -272,3 +271,5 @@ public class QLearningAITest {
         assertTrue(finalSize >= initialSize, "Q-table memory management should be optimized");
     }
 }
+
+

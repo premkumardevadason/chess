@@ -11,8 +11,10 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import static org.junit.jupiter.api.Assertions.*;
 
+import com.example.chess.BaseTestClass;
+
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-public class WebSocketIntegrationTest {
+public class WebSocketIntegrationTest extends BaseTestClass {
     
     @LocalServerPort
     private int port;
@@ -126,3 +128,5 @@ public class WebSocketIntegrationTest {
         session.close();
     }
 }
+
+
