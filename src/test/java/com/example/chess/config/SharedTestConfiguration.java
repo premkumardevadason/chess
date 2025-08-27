@@ -15,6 +15,14 @@ public class SharedTestConfiguration {
     public ChessGame sharedChessGame() {
         if (sharedGame == null) {
             sharedGame = new ChessGame();
+            // Ensure AI systems are initialized immediately
+            try {
+                sharedGame.ensureAISystemsInitialized();
+                // Give AI systems time to initialize
+                Thread.sleep(500);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
         }
         return sharedGame;
     }

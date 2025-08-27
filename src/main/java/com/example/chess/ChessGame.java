@@ -263,7 +263,7 @@ public class ChessGame {
     /**
      * Lazy initialization of AI systems when first needed
      */
-    private void ensureAISystemsInitialized() {
+    public void ensureAISystemsInitialized() {
         synchronized (aiInitLock) {
             if (!aiSystemsReady) {
                 initializeAISystems();
