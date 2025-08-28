@@ -41,6 +41,8 @@ public class MCPInputValidator {
                 return validateCreateTournamentInput(arguments);
             case "get_tournament_status":
                 return validateGetTournamentStatusInput(arguments);
+            case "fetch_current_board":
+                return validateFetchCurrentBoardInput(arguments);
             default:
                 return ValidationResult.invalid("Unknown tool: " + toolName);
         }
@@ -147,6 +149,14 @@ public class MCPInputValidator {
         String agentId = (String) args.get("agentId");
         if (agentId == null || agentId.trim().isEmpty()) {
             return ValidationResult.invalid("Agent ID is required");
+        }
+        return ValidationResult.valid();
+    }
+    
+    private ValidationResult validateFetchCurrentBoardInput(Map<String, Object> args) {
+        String sessionId = (String) args.get("sessionId");
+        if (!isValidSessionId(sessionId)) {
+            return ValidationResult.invalid("Invalid session ID format: " + sessionId);
         }
         return ValidationResult.valid();
     }

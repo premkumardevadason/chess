@@ -12,9 +12,20 @@ public class MCPRateLimiter {
     
     private static final Logger logger = LogManager.getLogger(MCPRateLimiter.class);
     
-    private final int requestsPerMinute = 100;
-    private final int movesPerMinute = 60;
-    private final int burstLimit = 10;
+    private final int requestsPerMinute;
+    private final int movesPerMinute;
+    private final int burstLimit;
+    
+    public MCPRateLimiter(
+            @org.springframework.beans.factory.annotation.Value("${mcp.rate-limit.requests-per-minute:50000}") int requestsPerMinute,
+            @org.springframework.beans.factory.annotation.Value("${mcp.rate-limit.moves-per-minute:30000}") int movesPerMinute,
+            @org.springframework.beans.factory.annotation.Value("${mcp.rate-limit.burst-limit:10000}") int burstLimit) {
+        this.requestsPerMinute = requestsPerMinute;
+        this.movesPerMinute = movesPerMinute;
+        this.burstLimit = burstLimit;
+        logger.info("MCPRateLimiter initialized: {} req/min, {} moves/min, {} burst", 
+                   requestsPerMinute, movesPerMinute, burstLimit);
+    }
     
     private final ConcurrentHashMap<String, RateLimitBucket> agentBuckets = new ConcurrentHashMap<>();
     

@@ -46,6 +46,8 @@ public class ChessToolExecutor {
                 return createTournament(arguments);
             case "get_tournament_status":
                 return getTournamentStatus(arguments);
+            case "fetch_current_board":
+                return fetchCurrentBoard(arguments);
             default:
                 throw new IllegalArgumentException("Unknown tool: " + toolName);
         }
@@ -56,8 +58,11 @@ public class ChessToolExecutor {
         String aiOpponent = (String) args.get("aiOpponent");
         String playerColor = (String) args.get("playerColor");
         Integer difficulty = (Integer) args.getOrDefault("difficulty", 5);
+        String sharedBoardId = (String) args.get("sharedBoardId"); // For dual-session mode
         
-        String sessionId = sessionManager.createSession(agentId, aiOpponent, playerColor, difficulty);
+        String sessionId = sharedBoardId != null ? 
+            sessionManager.createSharedSession(agentId, aiOpponent, playerColor, difficulty, sharedBoardId) :
+            sessionManager.createSession(agentId, aiOpponent, playerColor, difficulty);
         
         String turnMessage = "white".equals(playerColor) ? 
             "Your turn! Make your opening move in UCI format (e.g. e2e4)." :
@@ -318,6 +323,57 @@ public class ChessToolExecutor {
                          String.join(", ", gameResults.keySet())),
             tournamentStatus
         );
+    }
+    
+    private ToolResult fetchCurrentBoard(Map<String, Object> args) {
+        String sessionId = (String) args.get("sessionId");
+        
+        ChessGameSession session = sessionManager.getSession(sessionId);
+        if (session == null) {
+            return ToolResult.error("Session not found: " + sessionId, null);
+        }
+        
+        ChessGameSession.GameState gameState = session.getGameState();
+        String asciiBoard = generateASCIIBoard(gameState.getFEN());
+        
+        return ToolResult.success(
+            String.format("ASCII Board for session %s:\n%s", sessionId, asciiBoard),
+            Map.of(
+                "sessionId", sessionId,
+                "asciiBoard", asciiBoard,
+                "fen", gameState.getFEN()
+            )
+        );
+    }
+    
+    private String generateASCIIBoard(String fen) {
+        // Simple ASCII board generation from FEN
+        String[] fenParts = fen.split(" ");
+        String position = fenParts[0];
+        
+        StringBuilder board = new StringBuilder();
+        board.append("  a b c d e f g h\n");
+        
+        String[] ranks = position.split("/");
+        for (int rank = 0; rank < 8; rank++) {
+            board.append(8 - rank).append(" ");
+            String rankStr = ranks[rank];
+            
+            for (char c : rankStr.toCharArray()) {
+                if (Character.isDigit(c)) {
+                    int emptySquares = Character.getNumericValue(c);
+                    for (int i = 0; i < emptySquares; i++) {
+                        board.append(". ");
+                    }
+                } else {
+                    board.append(c).append(" ");
+                }
+            }
+            board.append(8 - rank).append("\n");
+        }
+        
+        board.append("  a b c d e f g h");
+        return board.toString();
     }
     
     public static class ToolResult {

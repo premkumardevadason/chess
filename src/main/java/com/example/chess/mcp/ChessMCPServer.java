@@ -197,6 +197,15 @@ public class ChessMCPServer {
                     ),
                     "required", Arrays.asList("agentId")
                 )
+            ),
+            createToolDefinition("fetch_current_board", "Get ASCII representation of current chess board",
+                Map.of(
+                    "type", "object",
+                    "properties", Map.of(
+                        "sessionId", Map.of("type", "string", "description", "Game session identifier")
+                    ),
+                    "required", Arrays.asList("sessionId")
+                )
             )
         );
         

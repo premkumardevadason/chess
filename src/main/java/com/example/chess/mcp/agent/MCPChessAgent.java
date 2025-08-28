@@ -53,6 +53,23 @@ public class MCPChessAgent {
         System.out.println("MCP Chess Agent initialized");
         System.out.println("Server: " + config.getServerHost() + ":" + config.getServerPort());
         System.out.println("Transport: " + config.getTransportType());
+        
+        // Display available MCP tools
+        displayMCPTools();
+    }
+    
+    private void displayMCPTools() {
+        System.out.println("\n=== REGISTERED MCP TOOLS ===");
+        System.out.println("create_chess_game - Create a new chess game with AI opponent selection");
+        System.out.println("make_chess_move - Execute a chess move and get AI response");
+        System.out.println("get_board_state - Get current chess board state and game information");
+        System.out.println("analyze_position - Get AI analysis of current chess position");
+        System.out.println("get_legal_moves - Get all legal moves for current position");
+        System.out.println("get_move_hint - Get AI move suggestion with explanation");
+        System.out.println("create_tournament - Create games against all 12 AI systems simultaneously");
+        System.out.println("get_tournament_status - Get status of all games in agent's tournament");
+        System.out.println("fetch_current_board - Get visual representation of current chess board");
+        System.out.println("Total tools: 9\n");
     }
     
     public void startDualSessionTraining() {
@@ -60,6 +77,7 @@ public class MCPChessAgent {
         
         threadPool.submit(() -> {
             try {
+                System.out.println("Dual-session training started");
                 orchestrator.initializeSessions();
                 orchestrator.startTrainingLoop();
             } catch (Exception e) {
@@ -72,8 +90,6 @@ public class MCPChessAgent {
                 }
             }
         });
-        
-        System.out.println("Dual-session training started");
     }
     
     public void shutdown() {

@@ -34,9 +34,17 @@ public class ChessSessionProxy {
         this.requestIdCounter = requestIdCounter;
     }
     
+    public void initializeConnection() throws Exception {
+        if (connection == null) {
+            // Create connection only once
+            connection = connectionManager.createConnection(sessionId);
+            System.out.println("Connection created for session: " + sessionId);
+        }
+    }
+    
     public void initializeGame(String aiOpponent, int difficulty) throws Exception {
-        // Create connection
-        connection = connectionManager.createConnection(sessionId);
+        // Ensure connection exists
+        initializeConnection();
         
         // Create chess game
         Map<String, Object> params = Map.of(
@@ -228,13 +236,101 @@ public class ChessSessionProxy {
         return objectMapper.createObjectNode();
     }
     
+    public String fetchCurrentBoard() throws Exception {
+        if (!gameActive) {
+            return "Game not active";
+        }
+        
+        Map<String, Object> params = Map.of(
+            "name", "fetch_current_board",
+            "arguments", Map.of(
+                "sessionId", gameSessionId
+            )
+        );
+        
+        JsonRpcRequest fetchBoardRequest = new JsonRpcRequest(
+            requestIdCounter.getAndIncrement(),
+            "tools/call",
+            params
+        );
+        
+        CompletableFuture<JsonNode> response = connectionManager.sendRequest(sessionId, fetchBoardRequest);
+        JsonNode result = response.get(config.getTimeoutSeconds(), TimeUnit.SECONDS);
+        
+        if (result.has("result") && result.get("result").has("content")) {
+            JsonNode content = result.get("result").get("content");
+            for (JsonNode item : content) {
+                if (item.has("resource") && item.get("resource").has("text")) {
+                    String resourceText = item.get("resource").get("text").asText();
+                    JsonNode resourceData = objectMapper.readTree(resourceText);
+                    if (resourceData.has("asciiBoard")) {
+                        return resourceData.get("asciiBoard").asText();
+                    }
+                }
+            }
+        }
+        
+        return "Board not available";
+    }
+    
+    public String getMoveHint() throws Exception {
+        if (!gameActive) {
+            return null;
+        }
+        
+        Map<String, Object> params = Map.of(
+            "name", "get_move_hint",
+            "arguments", Map.of(
+                "sessionId", gameSessionId,
+                "hintLevel", "intermediate"
+            )
+        );
+        
+        JsonRpcRequest hintRequest = new JsonRpcRequest(
+            requestIdCounter.getAndIncrement(),
+            "tools/call",
+            params
+        );
+        
+        CompletableFuture<JsonNode> response = connectionManager.sendRequest(sessionId, hintRequest);
+        JsonNode result = response.get(config.getTimeoutSeconds(), TimeUnit.SECONDS);
+        
+        if (result.has("result") && result.get("result").has("content")) {
+            JsonNode content = result.get("result").get("content");
+            for (JsonNode item : content) {
+                if (item.has("resource") && item.get("resource").has("text")) {
+                    String resourceText = item.get("resource").get("text").asText();
+                    JsonNode resourceData = objectMapper.readTree(resourceText);
+                    if (resourceData.has("suggestedMove")) {
+                        return resourceData.get("suggestedMove").asText();
+                    }
+                }
+            }
+        }
+        
+        return null;
+    }
+    
     public void resetGame() throws Exception {
-        if (gameSessionId != null) {
-            // Create new game session
+        // Only reset when game is over - create new game session with existing connection
+        if (!gameActive || isGameOver()) {
+            System.out.println("Game over - creating new game for session: " + sessionId + " (reusing connection)");
             initializeGame(
                 "white".equals(playerColor) ? config.getWhiteAI() : config.getBlackAI(),
                 config.getAiDifficulty()
             );
+        } else {
+            System.out.println("Game still active for session: " + sessionId + " - no reset needed");
+        }
+    }
+    
+    private boolean isGameOver() {
+        try {
+            JsonNode boardState = getBoardState();
+            String status = boardState.path("gameStatus").asText("active");
+            return !"active".equals(status);
+        } catch (Exception e) {
+            return false;
         }
     }
     
