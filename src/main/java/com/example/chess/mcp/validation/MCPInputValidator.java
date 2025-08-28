@@ -156,6 +156,9 @@ public class MCPInputValidator {
     }
     
     private boolean isValidMoveFormat(String move) {
-        return move != null && move.matches("^[KQRBN]?[a-h]?[1-8]?x?[a-h][1-8](=[QRBN])?[+#]?$|^O-O(-O)?[+#]?$");
+        if (move == null) return false;
+        // Accept both algebraic notation and UCI format
+        return move.matches("^[KQRBN]?[a-h]?[1-8]?x?[a-h][1-8](=[QRBN])?[+#]?$|^O-O(-O)?[+#]?$") || // Algebraic
+               move.matches("^[a-h][1-8][a-h][1-8][qrbn]?$"); // UCI format
     }
 }
