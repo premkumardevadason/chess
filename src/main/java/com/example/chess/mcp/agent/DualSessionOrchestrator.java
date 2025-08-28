@@ -84,38 +84,34 @@ public class DualSessionOrchestrator {
         blackSession.resetGame();
         
         boolean gameActive = true;
-        boolean whiteToMove = true;
         int moveCount = 0;
         
         while (gameActive && moveCount < 200) { // Max 200 moves per game
             try {
-                if (whiteToMove) {
-                    // White session makes move, relay to black session
-                    String move = whiteSession.getAIMove();
-                    if (move != null) {
-                        blackSession.makeMove(move);
-                        System.out.println("Move " + (moveCount + 1) + ": White plays " + move);
+                // White makes move and gets AI response
+                String whiteMove = whiteSession.getAIMove();
+                if (whiteMove != null) {
+                    System.out.println("Move " + (moveCount + 1) + ": White plays " + whiteMove);
+                    
+                    // Send White's move to Black, get Black's response
+                    String blackMove = blackSession.makeMove(whiteMove);
+                    if (blackMove != null) {
+                        System.out.println("Move " + (moveCount + 2) + ": Black plays " + blackMove);
+                        
+                        // Send Black's move to White for next iteration
+                        whiteSession.makeMove(blackMove);
+                        moveCount += 2;
                     } else {
                         gameActive = false;
                     }
                 } else {
-                    // Black session makes move, relay to white session
-                    String move = blackSession.getAIMove();
-                    if (move != null) {
-                        whiteSession.makeMove(move);
-                        System.out.println("Move " + (moveCount + 1) + ": Black plays " + move);
-                    } else {
-                        gameActive = false;
-                    }
+                    gameActive = false;
                 }
                 
                 // Check if game is over
                 if (!whiteSession.isGameActive() || !blackSession.isGameActive()) {
                     gameActive = false;
                 }
-                
-                whiteToMove = !whiteToMove;
-                moveCount++;
                 
             } catch (Exception e) {
                 System.err.println("Error during move " + (moveCount + 1) + ": " + e.getMessage());

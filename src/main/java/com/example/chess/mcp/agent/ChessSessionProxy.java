@@ -119,9 +119,9 @@ public class ChessSessionProxy {
         return null;
     }
     
-    public void makeMove(String uciMove) throws Exception {
+    public String makeMove(String uciMove) throws Exception {
         if (!gameActive) {
-            return;
+            return null;
         }
         
         Map<String, Object> params = Map.of(
@@ -141,14 +141,25 @@ public class ChessSessionProxy {
         CompletableFuture<JsonNode> response = connectionManager.sendRequest(sessionId, makeMoveRequest);
         JsonNode result = response.get(config.getTimeoutSeconds(), TimeUnit.SECONDS);
         
-        if (result.has("result")) {
-            JsonNode moveResult = result.get("result");
-            
-            // Check if game ended
-            if (moveResult.has("gameStatus") && !"active".equals(moveResult.get("gameStatus").asText())) {
-                gameActive = false;
+        if (result.has("result") && result.get("result").has("content")) {
+            JsonNode content = result.get("result").get("content");
+            // Look for AI move in resource content
+            for (JsonNode item : content) {
+                if (item.has("resource") && item.get("resource").has("text")) {
+                    String resourceText = item.get("resource").get("text").asText();
+                    JsonNode resourceData = objectMapper.readTree(resourceText);
+                    if (resourceData.has("aiMove")) {
+                        String aiMove = resourceData.get("aiMove").asText();
+                        // Check if game ended
+                        if (resourceData.has("gameStatus") && !"active".equals(resourceData.get("gameStatus").asText())) {
+                            gameActive = false;
+                        }
+                        return aiMove;
+                    }
+                }
             }
         }
+        return null;
     }
     
     public JsonNode getBoardState() throws Exception {

@@ -152,7 +152,7 @@ public class MCPInputValidator {
     }
     
     private boolean isValidSessionId(String sessionId) {
-        return sessionId != null && sessionId.matches("^[a-fA-F0-9-]{36}$");
+        return sessionId != null && sessionId.matches("^chess-session-[a-zA-Z0-9-]+$");
     }
     
     private boolean isValidMoveFormat(String move) {
