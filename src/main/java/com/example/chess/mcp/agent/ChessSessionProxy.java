@@ -196,7 +196,7 @@ public class ChessSessionProxy {
         if (!gameActive) {
             return objectMapper.createObjectNode()
                 .put("gameStatus", "inactive")
-                .put("fen", "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+                .put("movesPlayed", 0);
         }
         
         Map<String, Object> params = Map.of(
@@ -215,7 +215,17 @@ public class ChessSessionProxy {
         CompletableFuture<JsonNode> response = connectionManager.sendRequest(sessionId, getBoardRequest);
         JsonNode result = response.get(config.getTimeoutSeconds(), TimeUnit.SECONDS);
         
-        return result.has("result") ? result.get("result") : objectMapper.createObjectNode();
+        if (result.has("result") && result.get("result").has("content")) {
+            JsonNode content = result.get("result").get("content");
+            for (JsonNode item : content) {
+                if (item.has("resource") && item.get("resource").has("text")) {
+                    String resourceText = item.get("resource").get("text").asText();
+                    return objectMapper.readTree(resourceText);
+                }
+            }
+        }
+        
+        return objectMapper.createObjectNode();
     }
     
     public void resetGame() throws Exception {
