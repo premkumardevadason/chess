@@ -110,13 +110,47 @@ public class ChessSessionProxy {
                     String resourceText = item.get("resource").get("text").asText();
                     JsonNode resourceData = objectMapper.readTree(resourceText);
                     if (resourceData.has("suggestedMove")) {
-                        return resourceData.get("suggestedMove").asText();
+                        String move = resourceData.get("suggestedMove").asText();
+                        // Convert algebraic notation to UCI if needed
+                        return convertToUCI(move);
                     }
                 }
             }
         }
         
         return null;
+    }
+    
+    private String convertToUCI(String move) {
+        // Simple algebraic to UCI conversion for common moves
+        switch (move) {
+            case "e4": return "e2e4";
+            case "d4": return "d2d4";
+            case "c4": return "c2c4";
+            case "f4": return "f2f4";
+            case "g3": return "g2g3";
+            case "h3": return "h2h3";
+            case "a3": return "a2a3";
+            case "b3": return "b2b3";
+            case "Nf3": return "g1f3";
+            case "Nc3": return "b1c3";
+            case "Ne2": return "g1e2";
+            case "Nh3": return "g1h3";
+            case "Nf6": return "g8f6";
+            case "Nc6": return "b8c6";
+            case "Ne7": return "g8e7";
+            case "Nh6": return "g8h6";
+            case "Bc4": return "f1c4";
+            case "Bb5": return "f1b5";
+            case "Be2": return "f1e2";
+            case "Bd3": return "f1d3";
+            case "Bc5": return "f8c5";
+            case "Be7": return "f8e7";
+            case "Bd6": return "f8d6";
+            case "O-O": return "e1g1";
+            case "O-O-O": return "e1c1";
+            default: return move; // Return as-is if already UCI or unknown
+        }
     }
     
     public String makeMove(String uciMove) throws Exception {
