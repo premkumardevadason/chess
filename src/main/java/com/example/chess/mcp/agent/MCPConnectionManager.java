@@ -47,11 +47,9 @@ public class MCPConnectionManager {
             
             @Override
             public CompletionStage<?> onText(WebSocket webSocket, CharSequence data, boolean last) {
-                System.out.println("Agent onText called - data: " + data + ", last: " + last);
                 messageBuffer.append(data);
                 if (last) {
                     String message = messageBuffer.toString();
-                    System.out.println("Agent complete message received: " + message);
                     messageBuffer.setLength(0);
                     handleMessage(sessionId, message);
                 }
@@ -137,17 +135,14 @@ public class MCPConnectionManager {
     
     private void handleMessage(String sessionId, String message) {
         try {
-            System.out.println("Agent received message: " + message);
             JsonNode jsonMessage = objectMapper.readTree(message);
             MCPConnection connection = connections.get(sessionId);
             
             if (connection != null && jsonMessage.has("id")) {
                 long id = jsonMessage.get("id").asLong();
-                System.out.println("Looking for pending request with ID: " + id);
                 CompletableFuture<JsonNode> pendingRequest = connection.removePendingRequest(id);
                 
                 if (pendingRequest != null) {
-                    System.out.println("Found pending request, completing it");
                     if (jsonMessage.has("error")) {
                         pendingRequest.completeExceptionally(
                             new RuntimeException("MCP Error: " + jsonMessage.get("error").toString())
@@ -155,15 +150,10 @@ public class MCPConnectionManager {
                     } else {
                         pendingRequest.complete(jsonMessage);
                     }
-                } else {
-                    System.out.println("No pending request found for ID: " + id);
                 }
-            } else {
-                System.out.println("Message has no ID or no connection found");
             }
         } catch (Exception e) {
             System.err.println("Error handling message for session " + sessionId + ": " + e.getMessage());
-            e.printStackTrace();
         }
     }
     

@@ -84,35 +84,35 @@ public class ChessSessionProxy {
             return null;
         }
         
-        // Request AI move by getting board state (AI will make move automatically)
+        // Request AI move hint to get AI's suggested move
         Map<String, Object> params = Map.of(
-            "name", "get_board_state",
+            "name", "get_move_hint",
             "arguments", Map.of(
-                "sessionId", gameSessionId
+                "sessionId", gameSessionId,
+                "hintLevel", "master"
             )
         );
         
-        JsonRpcRequest getBoardRequest = new JsonRpcRequest(
+        JsonRpcRequest getMoveRequest = new JsonRpcRequest(
             requestIdCounter.getAndIncrement(),
             "tools/call",
             params
         );
         
-        CompletableFuture<JsonNode> response = connectionManager.sendRequest(sessionId, getBoardRequest);
+        CompletableFuture<JsonNode> response = connectionManager.sendRequest(sessionId, getMoveRequest);
         JsonNode result = response.get(config.getTimeoutSeconds(), TimeUnit.SECONDS);
         
-        if (result.has("result")) {
-            JsonNode gameState = result.get("result");
-            
-            // Check if game is over
-            if (gameState.has("gameStatus") && !"active".equals(gameState.get("gameStatus").asText())) {
-                gameActive = false;
-                return null;
-            }
-            
-            // Extract last move in UCI format if available
-            if (gameState.has("lastMove")) {
-                return gameState.get("lastMove").asText();
+        if (result.has("result") && result.get("result").has("content")) {
+            JsonNode content = result.get("result").get("content");
+            // Look for AI move in resource content
+            for (JsonNode item : content) {
+                if (item.has("resource") && item.get("resource").has("text")) {
+                    String resourceText = item.get("resource").get("text").asText();
+                    JsonNode resourceData = objectMapper.readTree(resourceText);
+                    if (resourceData.has("suggestedMove")) {
+                        return resourceData.get("suggestedMove").asText();
+                    }
+                }
             }
         }
         
