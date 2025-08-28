@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.WebSocket;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentHashMap;
@@ -90,14 +91,18 @@ public class MCPConnectionManager {
     
     private void initializeMCPProtocol(MCPConnection connection) throws Exception {
         // Send initialize request
+        Map<String, Object> params = Map.of(
+            "protocolVersion", "2024-11-05",
+            "clientInfo", Map.of(
+                "name", "mcp-chess-agent",
+                "version", "1.0.0"
+            )
+        );
+        
         JsonRpcRequest initRequest = new JsonRpcRequest(
             requestIdCounter.getAndIncrement(),
             "initialize",
-            objectMapper.createObjectNode()
-                .put("protocolVersion", "2024-11-05")
-                .set("clientInfo", objectMapper.createObjectNode()
-                    .put("name", "mcp-chess-agent")
-                    .put("version", "1.0.0"))
+            params
         );
         
         sendRequest(connection.getSessionId(), initRequest).get(config.getTimeoutSeconds(), TimeUnit.SECONDS);

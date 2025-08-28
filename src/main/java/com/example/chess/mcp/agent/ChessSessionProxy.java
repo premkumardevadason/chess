@@ -2,6 +2,7 @@ package com.example.chess.mcp.agent;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
@@ -38,15 +39,19 @@ public class ChessSessionProxy {
         connection = connectionManager.createConnection(sessionId);
         
         // Create chess game
+        Map<String, Object> params = Map.of(
+            "name", "create_chess_game",
+            "arguments", Map.of(
+                "aiOpponent", aiOpponent,
+                "playerColor", playerColor,
+                "difficulty", difficulty
+            )
+        );
+        
         JsonRpcRequest createGameRequest = new JsonRpcRequest(
             requestIdCounter.getAndIncrement(),
             "tools/call",
-            objectMapper.createObjectNode()
-                .put("name", "create_chess_game")
-                .set("arguments", objectMapper.createObjectNode()
-                    .put("aiOpponent", aiOpponent)
-                    .put("playerColor", playerColor)
-                    .put("difficulty", difficulty))
+            params
         );
         
         CompletableFuture<JsonNode> response = connectionManager.sendRequest(sessionId, createGameRequest);
@@ -67,13 +72,17 @@ public class ChessSessionProxy {
         }
         
         // Request AI move by getting board state (AI will make move automatically)
+        Map<String, Object> params = Map.of(
+            "name", "get_board_state",
+            "arguments", Map.of(
+                "sessionId", gameSessionId
+            )
+        );
+        
         JsonRpcRequest getBoardRequest = new JsonRpcRequest(
             requestIdCounter.getAndIncrement(),
             "tools/call",
-            objectMapper.createObjectNode()
-                .put("name", "get_board_state")
-                .set("arguments", objectMapper.createObjectNode()
-                    .put("sessionId", gameSessionId))
+            params
         );
         
         CompletableFuture<JsonNode> response = connectionManager.sendRequest(sessionId, getBoardRequest);
@@ -102,14 +111,18 @@ public class ChessSessionProxy {
             return;
         }
         
+        Map<String, Object> params = Map.of(
+            "name", "make_chess_move",
+            "arguments", Map.of(
+                "sessionId", gameSessionId,
+                "move", uciMove
+            )
+        );
+        
         JsonRpcRequest makeMoveRequest = new JsonRpcRequest(
             requestIdCounter.getAndIncrement(),
             "tools/call",
-            objectMapper.createObjectNode()
-                .put("name", "make_chess_move")
-                .set("arguments", objectMapper.createObjectNode()
-                    .put("sessionId", gameSessionId)
-                    .put("move", uciMove))
+            params
         );
         
         CompletableFuture<JsonNode> response = connectionManager.sendRequest(sessionId, makeMoveRequest);
@@ -132,13 +145,17 @@ public class ChessSessionProxy {
                 .put("fen", "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
         }
         
+        Map<String, Object> params = Map.of(
+            "name", "get_board_state",
+            "arguments", Map.of(
+                "sessionId", gameSessionId
+            )
+        );
+        
         JsonRpcRequest getBoardRequest = new JsonRpcRequest(
             requestIdCounter.getAndIncrement(),
             "tools/call",
-            objectMapper.createObjectNode()
-                .put("name", "get_board_state")
-                .set("arguments", objectMapper.createObjectNode()
-                    .put("sessionId", gameSessionId))
+            params
         );
         
         CompletableFuture<JsonNode> response = connectionManager.sendRequest(sessionId, getBoardRequest);
