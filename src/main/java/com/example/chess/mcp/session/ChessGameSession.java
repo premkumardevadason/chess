@@ -162,6 +162,28 @@ public class ChessGameSession {
         return uciMoves;
     }
     
+    public void makeAIOpeningMove() {
+        gameLock.lock();
+        try {
+            if (movesPlayed > 0 || !game.isWhiteTurn()) {
+                return; // Game already started or not White's turn
+            }
+            
+            // Get AI's opening move (White)
+            int[] aiBestMove = game.findBestMoveForTesting();
+            if (aiBestMove != null && aiBestMove.length == 4) {
+                game.makeMove(aiBestMove[0], aiBestMove[1], aiBestMove[2], aiBestMove[3]);
+                movesPlayed++;
+                lastActivity = LocalDateTime.now();
+                logger.info("AI opening move: {} [{},{}] to [{},{}]", 
+                    game.getBoard()[aiBestMove[2]][aiBestMove[3]], 
+                    aiBestMove[0], aiBestMove[1], aiBestMove[2], aiBestMove[3]);
+            }
+        } finally {
+            gameLock.unlock();
+        }
+    }
+    
     public static class MoveResult {
         private final boolean valid;
         private final String move;

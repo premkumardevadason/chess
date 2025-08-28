@@ -59,9 +59,13 @@ public class ChessToolExecutor {
         
         String sessionId = sessionManager.createSession(agentId, aiOpponent, playerColor, difficulty);
         
+        String turnMessage = "white".equals(playerColor) ? 
+            "Your turn! Make your opening move in UCI format (e.g. e2e4)." :
+            "AI will make the opening move. Wait for AI response.";
+            
         return ToolResult.success(
-            String.format("Chess game created successfully! You are playing as %s against %s AI (difficulty %d).\n\nSession ID: %s\nStarting Position (FEN): rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1\n\nYour turn! Make your opening move in UCI format (e.g. e2e4).",
-                playerColor, aiOpponent, difficulty, sessionId),
+            String.format("Chess game created successfully! You are playing as %s against %s AI (difficulty %d).\n\nSession ID: %s\nStarting Position (FEN): rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1\n\n%s",
+                playerColor, aiOpponent, difficulty, sessionId, turnMessage),
             Map.of(
                 "sessionId", sessionId,
                 "fen", "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",

@@ -42,6 +42,16 @@ public class MCPSessionManager {
             activeSessions.put(sessionId, session);
             agentSessions.computeIfAbsent(agentId, k -> ConcurrentHashMap.newKeySet()).add(sessionId);
             
+            // If agent is Black, AI (White) should make the opening move immediately
+            if ("black".equals(playerColor)) {
+                try {
+                    session.makeAIOpeningMove();
+                    logger.info("AI made opening move for Black agent session {}", sessionId);
+                } catch (Exception e) {
+                    logger.error("Failed to make AI opening move for session {}: {}", sessionId, e.getMessage());
+                }
+            }
+            
             logger.info("Created session {} for agent {} with AI {}", sessionId, agentId, aiOpponent);
             return sessionId;
             
