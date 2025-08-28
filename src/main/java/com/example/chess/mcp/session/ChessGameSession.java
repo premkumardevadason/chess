@@ -59,7 +59,7 @@ public class ChessGameSession {
     public synchronized MoveResult makeMove(String uciMove) {
         gameLock.lock();
         try {
-            logger.debug("Agent {} making move {} in session {}", agentId, uciMove, sessionId);
+            logger.debug("Agent {} making UCI move {} in session {}", agentId, uciMove, sessionId);
             
             // Convert UCI move to coordinates
             int[] coords = UCITranslator.parseUCIMove(uciMove);
@@ -151,7 +151,7 @@ public class ChessGameSession {
     public String getGameStatus() { return gameStatus; }
     
     public java.util.List<String> getLegalMoves() {
-        java.util.List<int[]> coordMoves = game.getAllValidMoves(!game.isWhiteTurn());
+        java.util.List<int[]> coordMoves = game.getAllValidMoves(game.isWhiteTurn());
         java.util.List<String> uciMoves = new java.util.ArrayList<>();
         for (int[] move : coordMoves) {
             String uciMove = UCITranslator.formatMoveToUCI(move);

@@ -84,39 +84,69 @@ public class ChessSessionProxy {
             return null;
         }
         
-        // Request AI move hint to get AI's suggested move
-        Map<String, Object> params = Map.of(
-            "name", "get_move_hint",
-            "arguments", Map.of(
-                "sessionId", gameSessionId,
-                "hintLevel", "master"
-            )
+        // Get legal moves first to ensure UCI format
+        Map<String, Object> legalMovesParams = Map.of(
+            "name", "get_legal_moves",
+            "arguments", Map.of("sessionId", gameSessionId)
         );
         
-        JsonRpcRequest getMoveRequest = new JsonRpcRequest(
+        JsonRpcRequest legalMovesRequest = new JsonRpcRequest(
             requestIdCounter.getAndIncrement(),
             "tools/call",
-            params
+            legalMovesParams
         );
         
-        CompletableFuture<JsonNode> response = connectionManager.sendRequest(sessionId, getMoveRequest);
-        JsonNode result = response.get(config.getTimeoutSeconds(), TimeUnit.SECONDS);
+        CompletableFuture<JsonNode> legalMovesResponse = connectionManager.sendRequest(sessionId, legalMovesRequest);
+        JsonNode legalResult = legalMovesResponse.get(config.getTimeoutSeconds(), TimeUnit.SECONDS);
         
-        if (result.has("result") && result.get("result").has("content")) {
-            JsonNode content = result.get("result").get("content");
-            // Look for AI move in resource content
+        java.util.List<String> legalMoves = new java.util.ArrayList<>();
+        if (legalResult.has("result") && legalResult.get("result").has("content")) {
+            JsonNode content = legalResult.get("result").get("content");
             for (JsonNode item : content) {
                 if (item.has("resource") && item.get("resource").has("text")) {
                     String resourceText = item.get("resource").get("text").asText();
                     JsonNode resourceData = objectMapper.readTree(resourceText);
-                    if (resourceData.has("suggestedMove")) {
-                        return resourceData.get("suggestedMove").asText();
+                    if (resourceData.has("legalMoves")) {
+                        JsonNode movesArray = resourceData.get("legalMoves");
+                        if (movesArray.isArray()) {
+                            for (JsonNode moveNode : movesArray) {
+                                legalMoves.add(moveNode.asText());
+                            }
+                        }
                     }
                 }
             }
         }
         
-        return null;
+        if (legalMoves.isEmpty()) {
+            return null;
+        }
+        
+        // For White's opening move, use aggressive gambits
+        if (isWhiteOpeningMove()) {
+            String[] openingGambits = {"e2e4", "d2d4", "g1f3", "b1c3"};
+            for (String gambit : openingGambits) {
+                if (legalMoves.contains(gambit)) {
+                    return gambit;
+                }
+            }
+        }
+        
+        // Return first legal move as fallback (all moves are in UCI format)
+        return legalMoves.get(0);
+    }
+    
+    private boolean isWhiteOpeningMove() {
+        try {
+            JsonNode boardState = getBoardState();
+            if (boardState.has("movesPlayed")) {
+                int movesPlayed = boardState.get("movesPlayed").asInt();
+                return movesPlayed == 0 && "white".equals(playerColor);
+            }
+            return false;
+        } catch (Exception e) {
+            return false;
+        }
     }
     
     public String makeMove(String uciMove) throws Exception {

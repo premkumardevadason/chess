@@ -157,8 +157,7 @@ public class MCPInputValidator {
     
     private boolean isValidMoveFormat(String move) {
         if (move == null) return false;
-        // Accept both algebraic notation and UCI format
-        return move.matches("^[KQRBN]?[a-h]?[1-8]?x?[a-h][1-8](=[QRBN])?[+#]?$|^O-O(-O)?[+#]?$") || // Algebraic
-               move.matches("^[a-h][1-8][a-h][1-8][qrbn]?$"); // UCI format
+        // Accept only UCI format (e.g., e2e4, g1f3, e7e8q for promotion)
+        return move.matches("^[a-h][1-8][a-h][1-8][qrbn]?$");
     }
 }

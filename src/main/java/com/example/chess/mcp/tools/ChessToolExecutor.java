@@ -144,16 +144,21 @@ public class ChessToolExecutor {
             return ToolResult.error("Session not found: " + sessionId, null);
         }
         
-        // Use actual AI for position analysis
-        String bestMove = session.getAI().getMove(session.getGame());
+        // Get AI move in coordinate format and convert to UCI
+        int[] aiBestMove = session.getGame().findBestMoveForTesting();
+        String bestMoveUCI = null;
+        if (aiBestMove != null && aiBestMove.length == 4) {
+            bestMoveUCI = UCITranslator.formatMoveToUCI(aiBestMove);
+        }
+        
         double evaluation = session.getGame().evaluatePosition();
         
         return ToolResult.success(
             String.format("Position analysis for session %s: Best move %s (eval: %.2f)", 
-                         sessionId, bestMove, evaluation),
+                         sessionId, bestMoveUCI != null ? bestMoveUCI : "none", evaluation),
             Map.of(
                 "evaluation", evaluation,
-                "bestMove", bestMove,
+                "bestMove", bestMoveUCI != null ? bestMoveUCI : "none",
                 "depth", depth,
                 "analysis", "AI position analysis"
             )
@@ -185,14 +190,23 @@ public class ChessToolExecutor {
             return ToolResult.error("Session not found: " + sessionId, null);
         }
         
-        // Use actual AI for move hint
-        String suggestedMove = session.getAI().getMove(session.getGame());
+        // Get AI move in coordinate format and convert to UCI
+        int[] aiBestMove = session.getGame().findBestMoveForTesting();
+        String suggestedMoveUCI = null;
+        if (aiBestMove != null && aiBestMove.length == 4) {
+            suggestedMoveUCI = UCITranslator.formatMoveToUCI(aiBestMove);
+        }
+        
+        if (suggestedMoveUCI == null) {
+            return ToolResult.error("No valid move found", null);
+        }
+        
         String explanation = "AI suggests this move based on position analysis";
         
         return ToolResult.success(
-            String.format("Move hint for session %s: %s - %s", sessionId, suggestedMove, explanation),
+            String.format("Move hint for session %s: %s - %s", sessionId, suggestedMoveUCI, explanation),
             Map.of(
-                "suggestedMove", suggestedMove,
+                "suggestedMove", suggestedMoveUCI,
                 "explanation", explanation,
                 "hintLevel", hintLevel
             )
