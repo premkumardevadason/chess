@@ -48,22 +48,35 @@ public class ChessSessionProxy {
             )
         );
         
+        long createGameRequestId = requestIdCounter.getAndIncrement();
         JsonRpcRequest createGameRequest = new JsonRpcRequest(
-            requestIdCounter.getAndIncrement(),
+            createGameRequestId,
             "tools/call",
             params
         );
         
+        System.out.println("Sending create_chess_game request with ID: " + createGameRequestId);
+        
         CompletableFuture<JsonNode> response = connectionManager.sendRequest(sessionId, createGameRequest);
         JsonNode result = response.get(config.getTimeoutSeconds(), TimeUnit.SECONDS);
         
-        if (result.has("result") && result.get("result").has("sessionId")) {
-            gameSessionId = result.get("result").get("sessionId").asText();
-            gameActive = true;
-            System.out.println("Game initialized for " + sessionId + " with session ID: " + gameSessionId);
-        } else {
-            throw new RuntimeException("Failed to create chess game: " + result.toString());
+        if (result.has("result") && result.get("result").has("content")) {
+            JsonNode content = result.get("result").get("content");
+            // Look for resource content with sessionId
+            for (JsonNode item : content) {
+                if (item.has("resource") && item.get("resource").has("text")) {
+                    String resourceText = item.get("resource").get("text").asText();
+                    JsonNode resourceData = objectMapper.readTree(resourceText);
+                    if (resourceData.has("sessionId")) {
+                        gameSessionId = resourceData.get("sessionId").asText();
+                        gameActive = true;
+                        System.out.println("Game initialized for " + sessionId + " with session ID: " + gameSessionId);
+                        return;
+                    }
+                }
+            }
         }
+        throw new RuntimeException("Failed to create chess game: " + result.toString());
     }
     
     public String getAIMove() throws Exception {
