@@ -59,16 +59,28 @@ public class ChessApplication {
         return applicationContext;
     }    
     public static void main(String[] args) {
-        // Check if MCP mode is requested
-        if (args.length > 0 && "--mcp".equals(args[0])) {
-            startMCPServer(args);
-            return;
-        }
-        
-        // Log JVM command line parameters
+        // Log command line arguments and JVM parameters
+        logger.info("Command Line Arguments: {}", java.util.Arrays.toString(args));
         java.lang.management.RuntimeMXBean runtimeMxBean = java.lang.management.ManagementFactory.getRuntimeMXBean();
         logger.info("JVM Arguments: {}", runtimeMxBean.getInputArguments());
         
+        // Check for MCP mode (--mcp or --dual-mode)
+        boolean mcpMode = containsArg(args, "--mcp");
+        boolean dualMode = containsArg(args, "--dual-mode");
+        
+        if (mcpMode || dualMode) {
+            if (dualMode || (mcpMode && dualMode)) {
+                logger.info("Starting in DUAL MODE (Web interface + MCP server)");
+                startDualMode(args);
+            } else {
+                logger.info("Starting in MCP-only mode");
+                startMCPServer(args);
+            }
+            return;
+        }
+        
+        // Default: Web-only mode
+        logger.info("Starting in Web-only mode (default)");
         ConfigurableApplicationContext context = SpringApplication.run(ChessApplication.class, args);
         applicationContext = context;
         
@@ -119,25 +131,54 @@ public class ChessApplication {
     }
     
     private static void startMCPServer(String[] args) {
-        logger.info("Starting Chess MCP Server");
+        logger.info("Starting Chess MCP Server (MCP-only mode)");
         System.setProperty("spring.main.web-application-type", "none");
         
         ConfigurableApplicationContext context = SpringApplication.run(ChessApplication.class, args);
         applicationContext = context;
         
+        startMCPTransport(context, args);
+    }
+    
+    private static void startDualMode(String[] args) {
+        logger.info("Starting Chess Application in Dual Mode (Web + MCP)");
+        // Keep web application enabled for dual mode
+        
+        ConfigurableApplicationContext context = SpringApplication.run(ChessApplication.class, args);
+        applicationContext = context;
+        
+        // Start MCP transport in addition to web interface
+        startMCPTransport(context, args);
+    }
+    
+    private static void startMCPTransport(ConfigurableApplicationContext context, String[] args) {
         try {
             com.example.chess.mcp.MCPTransportService transportService = 
                 context.getBean(com.example.chess.mcp.MCPTransportService.class);
             
             String transport = getTransportType(args);
-            if ("stdio".equals(transport)) {
-                transportService.startStdioTransport();
+            int port = getPortNumber(args);
+            
+            logger.info("MCP Transport: {}", transport);
+            if ("websocket".equals(transport)) {
+                logger.info("MCP WebSocket Port: {}", port);
+                transportService.startWebSocketTransport(port);
             } else {
+                logger.info("MCP using stdio transport");
                 transportService.startStdioTransport();
             }
         } catch (Exception e) {
-            logger.error("Failed to start MCP server: {}", e.getMessage(), e);
+            logger.error("Failed to start MCP transport: {}", e.getMessage(), e);
         }
+    }
+    
+    private static boolean containsArg(String[] args, String arg) {
+        for (String a : args) {
+            if (arg.equals(a)) {
+                return true;
+            }
+        }
+        return false;
     }
     
     private static String getTransportType(String[] args) {
@@ -146,7 +187,21 @@ public class ChessApplication {
                 return args[i + 1];
             }
         }
-        return "stdio";
+        // Default to websocket for dual mode, stdio for MCP-only
+        return containsArg(args, "--dual-mode") ? "websocket" : "stdio";
+    }
+    
+    private static int getPortNumber(String[] args) {
+        for (int i = 0; i < args.length - 1; i++) {
+            if ("--port".equals(args[i])) {
+                try {
+                    return Integer.parseInt(args[i + 1]);
+                } catch (NumberFormatException e) {
+                    logger.warn("Invalid port number: {}, using default 8082", args[i + 1]);
+                }
+            }
+        }
+        return 8082;
     }
     
 

@@ -2991,6 +2991,120 @@ public class ChessGame {
     public boolean isGameOver() { return gameOver; }
     public List<String> getMoveHistory() { return new ArrayList<>(moveHistory); }
     public String getLastMove() { return moveHistory.isEmpty() ? "No moves yet" : moveHistory.get(moveHistory.size() - 1); }
+    
+
+    
+    /**
+     * Get current position in FEN notation
+     */
+    public String getFEN() {
+        StringBuilder fen = new StringBuilder();
+        
+        // Board position
+        for (int row = 0; row < 8; row++) {
+            int emptyCount = 0;
+            for (int col = 0; col < 8; col++) {
+                String piece = board[row][col];
+                if (piece.isEmpty()) {
+                    emptyCount++;
+                } else {
+                    if (emptyCount > 0) {
+                        fen.append(emptyCount);
+                        emptyCount = 0;
+                    }
+                    fen.append(unicodeToFEN(piece));
+                }
+            }
+            if (emptyCount > 0) {
+                fen.append(emptyCount);
+            }
+            if (row < 7) fen.append("/");
+        }
+        
+        // Active color
+        fen.append(" ").append(whiteTurn ? "w" : "b");
+        
+        // Castling rights
+        fen.append(" ");
+        StringBuilder castling = new StringBuilder();
+        if (!whiteKingMoved && !whiteRookKingSideMoved) castling.append("K");
+        if (!whiteKingMoved && !whiteRookQueenSideMoved) castling.append("Q");
+        if (!blackKingMoved && !blackRookKingSideMoved) castling.append("k");
+        if (!blackKingMoved && !blackRookQueenSideMoved) castling.append("q");
+        fen.append(castling.length() > 0 ? castling.toString() : "-");
+        
+        // En passant and move counters (simplified)
+        fen.append(" - 0 ").append((moveHistory.size() / 2) + 1);
+        
+        return fen.toString();
+    }
+    
+    /**
+     * Get current turn as string
+     */
+    public String getCurrentTurn() {
+        return whiteTurn ? "white" : "black";
+    }
+    
+    /**
+     * Get game status
+     */
+    public String getGameStatus() {
+        if (gameOver) {
+            if (isKingInDanger(whiteTurn)) {
+                return whiteTurn ? "black_wins" : "white_wins";
+            } else {
+                return "draw";
+            }
+        }
+        return "active";
+    }
+    
+    /**
+     * Evaluate current position (simple material count)
+     */
+    public double evaluatePosition() {
+        double score = 0;
+        for (int i = 0; i < 8; i++) {
+            for (int j = 0; j < 8; j++) {
+                String piece = board[i][j];
+                if (!piece.isEmpty()) {
+                    double value = getChessPieceValue(piece);
+                    if ("♔♕♖♗♘♙".contains(piece)) {
+                        score += value;
+                    } else {
+                        score -= value;
+                    }
+                }
+            }
+        }
+        return score;
+    }
+    
+
+    
+
+    
+    /**
+     * Convert Unicode chess piece to FEN notation
+     */
+    private String unicodeToFEN(String piece) {
+        switch (piece) {
+            case "♔": return "K";
+            case "♕": return "Q";
+            case "♖": return "R";
+            case "♗": return "B";
+            case "♘": return "N";
+            case "♙": return "P";
+            case "♚": return "k";
+            case "♛": return "q";
+            case "♜": return "r";
+            case "♝": return "b";
+            case "♞": return "n";
+            case "♟": return "p";
+            default: return "";
+        }
+    }
     public int getMoveCount() { return moveHistory.size(); }
     public boolean canUndo() { return !undoStack.isEmpty(); }
     public boolean canRedo() { return !redoStack.isEmpty(); }

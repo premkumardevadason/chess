@@ -3,6 +3,7 @@ package com.example.chess.mcp.tools;
 import com.example.chess.mcp.session.MCPSessionManager;
 import com.example.chess.mcp.session.ChessGameSession;
 import com.example.chess.mcp.notifications.MCPNotificationService;
+import com.example.chess.mcp.utils.UCITranslator;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.springframework.stereotype.Component;
@@ -59,14 +60,14 @@ public class ChessToolExecutor {
         String sessionId = sessionManager.createSession(agentId, aiOpponent, playerColor, difficulty);
         
         return ToolResult.success(
-            String.format("Chess game created successfully! You are playing as %s against %s AI (difficulty %d).\n\nSession ID: %s\nStarting Position: rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1\n\nYour turn! Make your opening move.",
+            String.format("Chess game created successfully! You are playing as %s against %s AI (difficulty %d).\n\nSession ID: %s\nStarting Position (FEN): rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1\n\nYour turn! Make your opening move in UCI format (e.g. e2e4).",
                 playerColor, aiOpponent, difficulty, sessionId),
             Map.of(
                 "sessionId", sessionId,
-                "gameState", "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+                "fen", "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
                 "aiOpponent", aiOpponent,
                 "playerColor", playerColor,
-                "status", "active",
+                "gameStatus", "active",
                 "difficulty", difficulty
             )
         );
@@ -74,7 +75,7 @@ public class ChessToolExecutor {
     
     private ToolResult makeChessMove(Map<String, Object> args) {
         String sessionId = (String) args.get("sessionId");
-        String move = (String) args.get("move");
+        String uciMove = (String) args.get("move");
         
         ChessGameSession session = sessionManager.getSession(sessionId);
         if (session == null) {
@@ -82,28 +83,31 @@ public class ChessToolExecutor {
                 Map.of("sessionId", sessionId));
         }
         
-        ChessGameSession.MoveResult moveResult = session.makeMove(move);
+        ChessGameSession.MoveResult moveResult = session.makeMove(uciMove);
         
         if (!moveResult.isValid()) {
-            return ToolResult.error("Invalid move: " + move, 
+            return ToolResult.error("Invalid move: " + uciMove, 
                 Map.of("legalMoves", moveResult.getLegalMoves()));
         }
         
-        String responseText = "Move executed: " + move;
+        String responseText = "Move executed: " + uciMove;
         if (moveResult.getAiMove() != null) {
             responseText += "\nAI responds: " + moveResult.getAiMove();
         }
-        responseText += "\n\nCurrent position: " + moveResult.getGameState();
+        responseText += "\n\nCurrent position (FEN): " + moveResult.getFEN();
         responseText += "\nGame Status: " + moveResult.getStatus();
         if ("active".equals(moveResult.getStatus())) {
-            responseText += "\nYour turn!";
+            responseText += "\nYour turn! Use UCI notation (e.g. e2e4).";
         }
         
+        String aiMoveUCI = moveResult.getAiMove();
+        
         return ToolResult.success(responseText, Map.of(
-            "gameState", moveResult.getGameState(),
-            "aiResponse", moveResult.getAiMove(),
+            "fen", moveResult.getFEN(),
+            "aiMove", aiMoveUCI,
             "gameStatus", moveResult.getStatus(),
-            "moveTime", moveResult.getThinkingTime()
+            "thinkingTime", moveResult.getThinkingTime(),
+            "lastMove", uciMove
         ));
     }
     
@@ -133,20 +137,25 @@ public class ChessToolExecutor {
     
     private ToolResult analyzePosition(Map<String, Object> args) {
         String sessionId = (String) args.get("sessionId");
+        Integer depth = (Integer) args.getOrDefault("depth", 5);
         
         ChessGameSession session = sessionManager.getSession(sessionId);
         if (session == null) {
             return ToolResult.error("Session not found: " + sessionId, null);
         }
         
-        // Basic analysis - can be enhanced with actual AI analysis
+        // Use actual AI for position analysis
+        String bestMove = session.getAI().getMove(session.getGame());
+        double evaluation = session.getGame().evaluatePosition();
+        
         return ToolResult.success(
-            "Position analysis for session " + sessionId,
+            String.format("Position analysis for session %s: Best move %s (eval: %.2f)", 
+                         sessionId, bestMove, evaluation),
             Map.of(
-                "evaluation", 0.0,
-                "bestMove", "e4",
-                "depth", 1,
-                "analysis", "Basic position analysis"
+                "evaluation", evaluation,
+                "bestMove", bestMove,
+                "depth", depth,
+                "analysis", "AI position analysis"
             )
         );
     }
@@ -159,7 +168,7 @@ public class ChessToolExecutor {
             return ToolResult.error("Session not found: " + sessionId, null);
         }
         
-        List<String> legalMoves = java.util.Arrays.asList("e4", "d4", "Nf3", "Nc3"); // Mock legal moves
+        List<String> legalMoves = session.getLegalMoves();
         
         return ToolResult.success(
             String.format("Legal moves for session %s: %s", sessionId, String.join(", ", legalMoves)),
@@ -176,12 +185,15 @@ public class ChessToolExecutor {
             return ToolResult.error("Session not found: " + sessionId, null);
         }
         
-        // Basic hint - can be enhanced with actual AI analysis
+        // Use actual AI for move hint
+        String suggestedMove = session.getAI().getMove(session.getGame());
+        String explanation = "AI suggests this move based on position analysis";
+        
         return ToolResult.success(
-            "Move hint for session " + sessionId,
+            String.format("Move hint for session %s: %s - %s", sessionId, suggestedMove, explanation),
             Map.of(
-                "suggestedMove", "e4",
-                "explanation", "Control the center with pawn to e4",
+                "suggestedMove", suggestedMove,
+                "explanation", explanation,
                 "hintLevel", hintLevel
             )
         );

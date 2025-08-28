@@ -10,19 +10,23 @@ The Chess MCP Server transforms our comprehensive chess engine into a **stateful
 
 ## 🚀 Quick Start
 
-### MCP Server Modes
+### Application Modes
 ```bash
-# MCP Server via stdio (direct process communication)
-java -jar chess-application.jar --mcp --transport=stdio
-
-# MCP Server via WebSocket (network communication)
-java -jar chess-application.jar --mcp --transport=websocket --port=8082
-
-# Dual mode (Web interface + MCP server)
-java -jar chess-application.jar --mcp --dual-mode
-
 # Web Application only (default)
 mvn spring-boot:run
+# OR
+java -jar chess-application.jar
+
+# Dual mode (Web interface + MCP server) - RECOMMENDED
+java -jar chess-application.jar --dual-mode
+# Default: WebSocket transport on port 8082
+
+# Dual mode with custom port
+java -jar chess-application.jar --dual-mode --port=8083
+
+# MCP Server only (no web interface)
+java -jar chess-application.jar --mcp --transport=websocket --port=8082
+java -jar chess-application.jar --mcp --transport=stdio
 ```
 
 ### From Eclipse STS
@@ -109,7 +113,7 @@ Right-click `ChessApplication.java` → Run As → Spring Boot App
 }
 ```
 
-### Make Chess Move
+### Make Chess Move (UCI Format)
 ```json
 {
   "jsonrpc": "2.0",
@@ -119,8 +123,22 @@ Right-click `ChessApplication.java` → Run As → Spring Boot App
     "name": "make_chess_move",
     "arguments": {
       "sessionId": "chess-session-uuid-12345",
-      "move": "e4"
+      "move": "e2e4"
     }
+  }
+}
+```
+
+**Response with FEN:**
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "result": {
+    "fen": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1",
+    "aiMove": "e7e5",
+    "gameStatus": "active",
+    "lastMove": "e2e4"
   }
 }
 ```

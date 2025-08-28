@@ -83,12 +83,12 @@ public class ChessSessionProxy {
             JsonNode gameState = result.get("result");
             
             // Check if game is over
-            if (gameState.has("gameOver") && gameState.get("gameOver").asBoolean()) {
+            if (gameState.has("gameStatus") && !"active".equals(gameState.get("gameStatus").asText())) {
                 gameActive = false;
                 return null;
             }
             
-            // Extract last move if available
+            // Extract last move in UCI format if available
             if (gameState.has("lastMove")) {
                 return gameState.get("lastMove").asText();
             }
@@ -97,7 +97,7 @@ public class ChessSessionProxy {
         return null;
     }
     
-    public void makeMove(String move) throws Exception {
+    public void makeMove(String uciMove) throws Exception {
         if (!gameActive) {
             return;
         }
@@ -109,7 +109,7 @@ public class ChessSessionProxy {
                 .put("name", "make_chess_move")
                 .set("arguments", objectMapper.createObjectNode()
                     .put("sessionId", gameSessionId)
-                    .put("move", move))
+                    .put("move", uciMove))
         );
         
         CompletableFuture<JsonNode> response = connectionManager.sendRequest(sessionId, makeMoveRequest);
@@ -119,7 +119,7 @@ public class ChessSessionProxy {
             JsonNode moveResult = result.get("result");
             
             // Check if game ended
-            if (moveResult.has("gameOver") && moveResult.get("gameOver").asBoolean()) {
+            if (moveResult.has("gameStatus") && !"active".equals(moveResult.get("gameStatus").asText())) {
                 gameActive = false;
             }
         }
@@ -127,7 +127,9 @@ public class ChessSessionProxy {
     
     public JsonNode getBoardState() throws Exception {
         if (!gameActive) {
-            return objectMapper.createObjectNode().put("gameOver", true);
+            return objectMapper.createObjectNode()
+                .put("gameStatus", "inactive")
+                .put("fen", "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
         }
         
         JsonRpcRequest getBoardRequest = new JsonRpcRequest(

@@ -53,7 +53,7 @@ public class AgentConfiguration {
     
     public String getServerUrl() {
         if ("websocket".equals(transportType)) {
-            return "ws://" + serverHost + ":" + serverPort + "/mcp";
+            return "ws://" + serverHost + ":" + serverPort + "/";
         }
         return serverHost + ":" + serverPort;
     }

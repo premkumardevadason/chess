@@ -4,6 +4,7 @@ import com.example.chess.ChessGame;
 import com.example.chess.ChessAI;
 import com.example.chess.mcp.ai.ConcurrentAIManager;
 import com.example.chess.mcp.notifications.MCPNotificationService;
+import com.example.chess.mcp.utils.UCITranslator;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -55,54 +56,66 @@ public class ChessGameSession {
         this.lastActivity = LocalDateTime.now();
     }
     
-    public synchronized MoveResult makeMove(String move) {
+    public synchronized MoveResult makeMove(String uciMove) {
         gameLock.lock();
         try {
-            logger.debug("Agent {} making move {} in session {}", agentId, move, sessionId);
+            logger.debug("Agent {} making move {} in session {}", agentId, uciMove, sessionId);
             
-            // Mock move validation for now
-            boolean moveValid = true; // Assume all moves are valid for testing
-            if (!moveValid) {
-                return MoveResult.invalid(move, java.util.Arrays.asList("e4", "d4", "Nf3"));
+            // Convert UCI move to coordinates
+            int[] coords = UCITranslator.parseUCIMove(uciMove);
+            if (coords == null) {
+                java.util.List<String> legalMoves = getLegalMoves();
+                return MoveResult.invalid(uciMove, legalMoves);
             }
             
+            // Validate move using actual ChessGame
+            if (!game.isValidMove(coords[0], coords[1], coords[2], coords[3])) {
+                java.util.List<String> legalMoves = getLegalMoves();
+                return MoveResult.invalid(uciMove, legalMoves);
+            }
+            
+            // Make the move in the actual game
+            game.makeMove(coords[0], coords[1], coords[2], coords[3]);
             movesPlayed++;
             lastActivity = LocalDateTime.now();
             
-            if (false) { // Mock - game never over for testing
-                gameStatus = "checkmate";
-                return MoveResult.gameOver(move, gameStatus, "mock-fen");
+            // Check if game is over
+            if (game.isGameOver()) {
+                gameStatus = game.getGameStatus();
+                return MoveResult.gameOver(uciMove, gameStatus, game.getFEN());
             }
             
-            // Use ConcurrentAIManager for async AI processing
+            // Get AI response using actual AI system
             long startTime = System.currentTimeMillis();
-            CompletableFuture<String> aiMoveFuture = concurrentAIManager != null ? 
-                concurrentAIManager.getAIMoveAsync(ai, game, sessionId) : 
-                CompletableFuture.completedFuture(ai.getMove(game));
-            
-            String aiMove = aiMoveFuture.join(); // Wait for AI response
+            int[] aiBestMove = game.findBestMoveForTesting();
             long thinkingTime = System.currentTimeMillis() - startTime;
             
-            // Mock AI move execution
-            movesPlayed++;
+            String aiMoveUCI = null;
+            // Make AI move in the actual game
+            if (aiBestMove != null && aiBestMove.length == 4) {
+                game.makeMove(aiBestMove[0], aiBestMove[1], aiBestMove[2], aiBestMove[3]);
+                aiMoveUCI = UCITranslator.formatMoveToUCI(aiBestMove);
+                movesPlayed++;
+            }
             
             updateThinkingTimeAverage(thinkingTime);
             
             // Send notifications
             if (notificationService != null) {
-                notificationService.notifyGameMove(agentId, sessionId, move, aiMove);
+                notificationService.notifyGameMove(agentId, sessionId, uciMove, aiMoveUCI);
                 notificationService.notifyGameStateChange(agentId, sessionId, "active");
             }
             
-            if (false) { // Mock - game never over
-                gameStatus = "checkmate";
+            // Check if game is over after AI move
+            if (game.isGameOver()) {
+                gameStatus = game.getGameStatus();
                 if (notificationService != null) {
                     notificationService.notifyGameStateChange(agentId, sessionId, gameStatus);
                 }
-                return MoveResult.gameOver(move, aiMove, gameStatus, "mock-fen", thinkingTime);
+                return MoveResult.gameOver(uciMove, aiMoveUCI, gameStatus, game.getFEN(), thinkingTime);
             }
             
-            return MoveResult.success(move, aiMove, "mock-fen-updated", thinkingTime);
+            return MoveResult.success(uciMove, aiMoveUCI, game.getFEN(), thinkingTime);
             
         } finally {
             gameLock.unlock();
@@ -113,8 +126,8 @@ public class ChessGameSession {
         gameLock.lock();
         try {
             return new GameState(
-                sessionId, agentId, "mock-fen", java.util.Arrays.asList("e4", "e5"),
-                "white", gameStatus, movesPlayed, averageThinkingTime
+                sessionId, agentId, game.getFEN(), game.getMoveHistory(),
+                game.getCurrentTurn(), gameStatus, movesPlayed, averageThinkingTime
             );
         } finally {
             gameLock.unlock();
@@ -137,6 +150,18 @@ public class ChessGameSession {
     public int getMovesPlayed() { return movesPlayed; }
     public String getGameStatus() { return gameStatus; }
     
+    public java.util.List<String> getLegalMoves() {
+        java.util.List<int[]> coordMoves = game.getAllValidMoves(!game.isWhiteTurn());
+        java.util.List<String> uciMoves = new java.util.ArrayList<>();
+        for (int[] move : coordMoves) {
+            String uciMove = UCITranslator.formatMoveToUCI(move);
+            if (uciMove != null) {
+                uciMoves.add(uciMove);
+            }
+        }
+        return uciMoves;
+    }
+    
     public static class MoveResult {
         private final boolean valid;
         private final String move;
@@ -157,9 +182,11 @@ public class ChessGameSession {
             this.legalMoves = legalMoves;
         }
         
-        public static MoveResult success(String move, String aiMove, String gameState, long thinkingTime) {
-            return new MoveResult(true, move, aiMove, gameState, "active", thinkingTime, null);
+        public static MoveResult success(String move, String aiMove, String fen, long thinkingTime) {
+            return new MoveResult(true, move, aiMove, fen, "active", thinkingTime, null);
         }
+        
+        public String getFEN() { return gameState; }
         
         public static MoveResult invalid(String move, java.util.List<String> legalMoves) {
             return new MoveResult(false, move, null, null, null, 0, legalMoves);
