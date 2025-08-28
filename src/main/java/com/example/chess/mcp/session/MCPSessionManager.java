@@ -32,11 +32,9 @@ public class MCPSessionManager {
             validateSessionLimits(agentId);
             
             String sessionId = generateSessionId(agentId);
-            ChessGame game = new ChessGame();
-            ChessAI ai = selectAI(aiOpponent, difficulty);
             
             ChessGameSession session = new ChessGameSession(
-                sessionId, agentId, game, ai, playerColor, difficulty
+                sessionId, agentId, aiOpponent, playerColor, difficulty
             );
             
             activeSessions.put(sessionId, session);
@@ -127,11 +125,16 @@ public class MCPSessionManager {
         return "chess-session-" + agentId + "-" + UUID.randomUUID().toString().substring(0, 8);
     }
     
-    private ChessAI selectAI(String aiOpponent, int difficulty) {
-        ChessAI ai = aiSystems.get(aiOpponent);
-        if (ai == null) {
-            throw new IllegalArgumentException("Unknown AI opponent: " + aiOpponent);
+    private void validateAIOpponent(String aiOpponent) {
+        // Just validate that the AI opponent name is valid
+        // The actual AI will be accessed through SharedAIService
+        String[] validAIs = {"AlphaZero", "LeelaChessZero", "AlphaFold3", "A3C", "MCTS", 
+                            "Negamax", "OpenAI", "QLearning", "DeepLearning", "CNN", "DQN", "Genetic"};
+        for (String validAI : validAIs) {
+            if (validAI.equals(aiOpponent)) {
+                return;
+            }
         }
-        return ai;
+        throw new IllegalArgumentException("Unknown AI opponent: " + aiOpponent);
     }
 }

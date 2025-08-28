@@ -133,6 +133,7 @@ public class ChessApplication {
     private static void startMCPServer(String[] args) {
         logger.info("Starting Chess MCP Server (MCP-only mode)");
         System.setProperty("spring.main.web-application-type", "none");
+        System.setProperty("spring.profiles.active", "mcp");
         
         ConfigurableApplicationContext context = SpringApplication.run(ChessApplication.class, args);
         applicationContext = context;
@@ -143,6 +144,7 @@ public class ChessApplication {
     private static void startDualMode(String[] args) {
         logger.info("Starting Chess Application in Dual Mode (Web + MCP)");
         // Keep web application enabled for dual mode
+        System.setProperty("spring.profiles.active", "dev,mcp");
         
         ConfigurableApplicationContext context = SpringApplication.run(ChessApplication.class, args);
         applicationContext = context;

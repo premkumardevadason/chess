@@ -1,15 +1,14 @@
 package com.example.chess.mcp.session;
 
-import com.example.chess.ChessGame;
 import com.example.chess.ChessAI;
-import com.example.chess.mcp.ai.ConcurrentAIManager;
+import com.example.chess.mcp.ai.SharedAIService;
+import com.example.chess.mcp.game.MCPGameState;
 import com.example.chess.mcp.notifications.MCPNotificationService;
 import com.example.chess.mcp.utils.UCITranslator;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
 import java.time.LocalDateTime;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.locks.ReentrantLock;
 
 public class ChessGameSession {
@@ -18,8 +17,8 @@ public class ChessGameSession {
     
     private final String sessionId;
     private final String agentId;
-    private final ChessGame game;
-    private final ChessAI ai;
+    private final MCPGameState gameState;
+    private final String aiOpponent;
     private final String playerColor;
     private final int difficulty;
     private final LocalDateTime createdAt;
@@ -31,12 +30,12 @@ public class ChessGameSession {
     private double averageThinkingTime = 0.0;
     private String gameStatus = "active";
     
-    private static ConcurrentAIManager concurrentAIManager;
+    private static SharedAIService sharedAIService;
     private static MCPNotificationService notificationService;
     
     @Autowired
-    public static void setConcurrentAIManager(ConcurrentAIManager manager) {
-        concurrentAIManager = manager;
+    public static void setSharedAIService(SharedAIService service) {
+        sharedAIService = service;
     }
     
     @Autowired
@@ -44,12 +43,12 @@ public class ChessGameSession {
         notificationService = service;
     }
     
-    public ChessGameSession(String sessionId, String agentId, ChessGame game, 
-                           ChessAI ai, String playerColor, int difficulty) {
+    public ChessGameSession(String sessionId, String agentId, String aiOpponent, 
+                           String playerColor, int difficulty) {
         this.sessionId = sessionId;
         this.agentId = agentId;
-        this.game = game;
-        this.ai = ai;
+        this.gameState = new MCPGameState();
+        this.aiOpponent = aiOpponent;
         this.playerColor = playerColor;
         this.difficulty = difficulty;
         this.createdAt = LocalDateTime.now();
@@ -68,32 +67,32 @@ public class ChessGameSession {
                 return MoveResult.invalid(uciMove, legalMoves);
             }
             
-            // Validate move using actual ChessGame
-            if (!game.isValidMove(coords[0], coords[1], coords[2], coords[3])) {
+            // Validate move using shared AI service
+            if (!sharedAIService.isValidMove(gameState.getBoard(), coords[0], coords[1], coords[2], coords[3], gameState.isWhiteTurn())) {
                 java.util.List<String> legalMoves = getLegalMoves();
                 return MoveResult.invalid(uciMove, legalMoves);
             }
             
-            // Make the move in the actual game
-            game.makeMove(coords[0], coords[1], coords[2], coords[3]);
+            // Make the move in the game state
+            gameState.makeMove(coords[0], coords[1], coords[2], coords[3]);
             movesPlayed++;
             lastActivity = LocalDateTime.now();
             
             // Check if game is over
-            if (game.isGameOver()) {
-                gameStatus = game.getGameStatus();
-                return MoveResult.gameOver(uciMove, gameStatus, game.getFEN());
+            if (gameState.isGameOver()) {
+                gameStatus = gameState.getGameStatus();
+                return MoveResult.gameOver(uciMove, gameStatus, gameState.getFEN());
             }
             
-            // Get AI response using actual AI system
+            // Get AI response using shared AI service
             long startTime = System.currentTimeMillis();
-            int[] aiBestMove = game.findBestMoveForTesting();
+            int[] aiBestMove = sharedAIService.findBestMove(gameState.getBoard(), gameState.isWhiteTurn());
             long thinkingTime = System.currentTimeMillis() - startTime;
             
             String aiMoveUCI = null;
-            // Make AI move in the actual game
+            // Make AI move in the game state
             if (aiBestMove != null && aiBestMove.length == 4) {
-                game.makeMove(aiBestMove[0], aiBestMove[1], aiBestMove[2], aiBestMove[3]);
+                gameState.makeMove(aiBestMove[0], aiBestMove[1], aiBestMove[2], aiBestMove[3]);
                 aiMoveUCI = UCITranslator.formatMoveToUCI(aiBestMove);
                 movesPlayed++;
             }
@@ -107,15 +106,15 @@ public class ChessGameSession {
             }
             
             // Check if game is over after AI move
-            if (game.isGameOver()) {
-                gameStatus = game.getGameStatus();
+            if (gameState.isGameOver()) {
+                gameStatus = gameState.getGameStatus();
                 if (notificationService != null) {
                     notificationService.notifyGameStateChange(agentId, sessionId, gameStatus);
                 }
-                return MoveResult.gameOver(uciMove, aiMoveUCI, gameStatus, game.getFEN(), thinkingTime);
+                return MoveResult.gameOver(uciMove, aiMoveUCI, gameStatus, gameState.getFEN(), thinkingTime);
             }
             
-            return MoveResult.success(uciMove, aiMoveUCI, game.getFEN(), thinkingTime);
+            return MoveResult.success(uciMove, aiMoveUCI, gameState.getFEN(), thinkingTime);
             
         } finally {
             gameLock.unlock();
@@ -126,8 +125,8 @@ public class ChessGameSession {
         gameLock.lock();
         try {
             return new GameState(
-                sessionId, agentId, game.getFEN(), game.getMoveHistory(),
-                game.getCurrentTurn(), gameStatus, movesPlayed, averageThinkingTime
+                sessionId, agentId, gameState.getFEN(), gameState.getMoveHistory(),
+                gameState.getCurrentTurn(), gameStatus, movesPlayed, averageThinkingTime
             );
         } finally {
             gameLock.unlock();
@@ -141,8 +140,8 @@ public class ChessGameSession {
     // Getters
     public String getSessionId() { return sessionId; }
     public String getAgentId() { return agentId; }
-    public ChessGame getGame() { return game; }
-    public ChessAI getAI() { return ai; }
+    public MCPGameState getGameStateObject() { return gameState; }
+    public String getAIOpponent() { return aiOpponent; }
     public String getPlayerColor() { return playerColor; }
     public int getDifficulty() { return difficulty; }
     public LocalDateTime getCreatedAt() { return createdAt; }
@@ -151,7 +150,7 @@ public class ChessGameSession {
     public String getGameStatus() { return gameStatus; }
     
     public java.util.List<String> getLegalMoves() {
-        java.util.List<int[]> coordMoves = game.getAllValidMoves(game.isWhiteTurn());
+        java.util.List<int[]> coordMoves = sharedAIService.getAllValidMoves(gameState.getBoard(), gameState.isWhiteTurn());
         java.util.List<String> uciMoves = new java.util.ArrayList<>();
         for (int[] move : coordMoves) {
             String uciMove = UCITranslator.formatMoveToUCI(move);
@@ -165,18 +164,18 @@ public class ChessGameSession {
     public void makeAIOpeningMove() {
         gameLock.lock();
         try {
-            if (movesPlayed > 0 || !game.isWhiteTurn()) {
+            if (movesPlayed > 0 || !gameState.isWhiteTurn()) {
                 return; // Game already started or not White's turn
             }
             
             // Get AI's opening move (White)
-            int[] aiBestMove = game.findBestMoveForTesting();
+            int[] aiBestMove = sharedAIService.findBestMove(gameState.getBoard(), gameState.isWhiteTurn());
             if (aiBestMove != null && aiBestMove.length == 4) {
-                game.makeMove(aiBestMove[0], aiBestMove[1], aiBestMove[2], aiBestMove[3]);
+                gameState.makeMove(aiBestMove[0], aiBestMove[1], aiBestMove[2], aiBestMove[3]);
                 movesPlayed++;
                 lastActivity = LocalDateTime.now();
                 logger.info("AI opening move: {} [{},{}] to [{},{}]", 
-                    game.getBoard()[aiBestMove[2]][aiBestMove[3]], 
+                    gameState.getBoard()[aiBestMove[2]][aiBestMove[3]], 
                     aiBestMove[0], aiBestMove[1], aiBestMove[2], aiBestMove[3]);
             }
         } finally {

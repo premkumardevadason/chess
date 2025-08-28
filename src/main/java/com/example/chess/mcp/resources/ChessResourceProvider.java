@@ -53,7 +53,7 @@ public class ChessResourceProvider {
                 ChessGameSession::getSessionId,
                 session -> Map.of(
                     "sessionId", session.getSessionId(),
-                    "aiOpponent", session.getAI().getClass().getSimpleName(),
+                    "aiOpponent", session.getAIOpponent(),
                     "playerColor", session.getPlayerColor(),
                     "gameStatus", session.getGameStatus(),
                     "movesPlayed", session.getMovesPlayed(),

@@ -1,6 +1,6 @@
 package com.example.chess.mcp.validation;
 
-import com.example.chess.ChessGame;
+import com.example.chess.mcp.game.MCPGameState;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.springframework.stereotype.Component;
@@ -17,7 +17,7 @@ public class ChessMoveValidator {
         "EXEC", "EXECUTE", "SYSTEM", "CMD", "SHELL", "SCRIPT", "EVAL"
     );
     
-    public MoveValidationResult validateMove(String sessionId, String move, ChessGame game) {
+    public MoveValidationResult validateMove(String sessionId, String move, MCPGameState gameState) {
         logger.debug("Validating move '{}' for session {}", move, sessionId);
         
         // 1. Security validation - prevent injection attacks
@@ -32,7 +32,7 @@ public class ChessMoveValidator {
         }
         
         // 3. Game state validation
-        if (game.isGameOver()) {
+        if (gameState.isGameOver()) {
             return MoveValidationResult.invalid("Game is already finished");
         }
         
@@ -43,7 +43,7 @@ public class ChessMoveValidator {
         }
         
         // 5. Additional chess-specific validations
-        if (!validateChessSpecificRules(move, game)) {
+        if (!validateChessSpecificRules(move, gameState)) {
             return MoveValidationResult.invalid("Move violates chess rules");
         }
         
@@ -59,8 +59,8 @@ public class ChessMoveValidator {
         return move.matches("^[KQRBN]?[a-h]?[1-8]?x?[a-h][1-8](=[QRBN])?[+#]?$|^O-O(-O)?[+#]?$");
     }
     
-    private boolean validateChessSpecificRules(String move, ChessGame game) {
-        // Additional chess rule validations handled by existing ChessRuleValidator
+    private boolean validateChessSpecificRules(String move, MCPGameState gameState) {
+        // Additional chess rule validations - simplified for MCP
         return true;
     }
     

@@ -1,6 +1,6 @@
 package com.example.chess.mcp.config;
 
-import com.example.chess.mcp.ai.ConcurrentAIManager;
+import com.example.chess.mcp.ai.SharedAIService;
 import com.example.chess.mcp.notifications.MCPNotificationService;
 import com.example.chess.mcp.session.ChessGameSession;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -11,14 +11,14 @@ import javax.annotation.PostConstruct;
 public class MCPEnhancedConfiguration {
     
     @Autowired
-    private ConcurrentAIManager concurrentAIManager;
+    private SharedAIService sharedAIService;
     
     @Autowired
     private MCPNotificationService notificationService;
     
     @PostConstruct
     public void configureDependencies() {
-        ChessGameSession.setConcurrentAIManager(concurrentAIManager);
+        ChessGameSession.setSharedAIService(sharedAIService);
         ChessGameSession.setNotificationService(notificationService);
     }
 }

@@ -89,7 +89,7 @@ public class MCPValidationOrchestrator {
         }
         
         // Chess move validation
-        ChessMoveValidator.MoveValidationResult moveValidation = moveValidator.validateMove(sessionId, move, session.getGame());
+        ChessMoveValidator.MoveValidationResult moveValidation = moveValidator.validateMove(sessionId, move, session.getGameStateObject());
         if (!moveValidation.isValid()) {
             return ValidationResult.invalid(moveValidation.getError());
         }
