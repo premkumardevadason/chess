@@ -87,6 +87,8 @@ public class ChessSessionProxy {
         throw new RuntimeException("Failed to create chess game: " + result.toString());
     }
     
+
+    
     public String getAIMove() throws Exception {
         if (!gameActive) {
             return null;

@@ -1,11 +1,11 @@
 package com.example.chess.mcp.ratelimit;
 
+import java.time.LocalDateTime;
+import java.util.concurrent.ConcurrentHashMap;
+
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.springframework.stereotype.Service;
-import java.time.LocalDateTime;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
 
 @Service
 public class MCPRateLimiter {
@@ -27,9 +27,20 @@ public class MCPRateLimiter {
                    requestsPerMinute, movesPerMinute, burstLimit);
     }
     
-    private final ConcurrentHashMap<String, RateLimitBucket> agentBuckets = new ConcurrentHashMap<>();
+    public MCPRateLimiter() {
+		this.requestsPerMinute = 0;
+		this.movesPerMinute = 0;
+		this.burstLimit = 0;
+		// TODO Auto-generated constructor stub
+	}
+
+	private final ConcurrentHashMap<String, RateLimitBucket> agentBuckets = new ConcurrentHashMap<>();
     
     public boolean allowRequest(String agentId, String requestType) {
+        // Temporarily disable rate limiting for AI vs AI training
+        return true;
+        
+        /*
         RateLimitBucket bucket = agentBuckets.computeIfAbsent(agentId, k -> new RateLimitBucket());
         
         LocalDateTime now = LocalDateTime.now();
@@ -50,6 +61,7 @@ public class MCPRateLimiter {
         
         bucket.addRequest(now);
         return true;
+        */
     }
     
     public RateLimitStatus getStatus(String agentId) {

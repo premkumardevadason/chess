@@ -58,11 +58,7 @@ public class ChessToolExecutor {
         String aiOpponent = (String) args.get("aiOpponent");
         String playerColor = (String) args.get("playerColor");
         Integer difficulty = (Integer) args.getOrDefault("difficulty", 5);
-        String sharedBoardId = (String) args.get("sharedBoardId"); // For dual-session mode
-        
-        String sessionId = sharedBoardId != null ? 
-            sessionManager.createSharedSession(agentId, aiOpponent, playerColor, difficulty, sharedBoardId) :
-            sessionManager.createSession(agentId, aiOpponent, playerColor, difficulty);
+        String sessionId = sessionManager.createSession(agentId, aiOpponent, playerColor, difficulty);
         
         String turnMessage = "white".equals(playerColor) ? 
             "Your turn! Make your opening move in UCI format (e.g. e2e4)." :

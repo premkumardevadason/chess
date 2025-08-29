@@ -39,6 +39,7 @@ public class SharedAIService {
             mainChessGame.setWhiteTurn(isWhiteTurn);
             
             // Use the main game's AI systems to find the best move
+            // Each AI system should handle opening book internally
             int[] bestMove = mainChessGame.findBestMoveForTesting();
             
             logger.debug("SharedAIService found move: {}", 
