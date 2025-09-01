@@ -7,8 +7,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 /**
  * Orchestrates dual chess sessions for AI vs AI training
  * 
- * BLACK Session: BLACK MCP Client + WHITE Server AI (Leela)
- * WHITE Session: WHITE MCP Client + BLACK Server AI (AlphaZero)
+ * WHITE Session: MCP Client (White) vs Server AI (Black)
+ * BLACK Session: MCP Client (Black) vs Server AI (White)
+ * 
+ * Creates an AI vs AI training environment where moves are relayed between sessions
  */
 public class DualSessionOrchestrator {
     
@@ -16,12 +18,14 @@ public class DualSessionOrchestrator {
     private final AgentConfiguration config;
     private final AtomicLong requestIdCounter = new AtomicLong(1);
     
-    private ChessSessionProxy whiteSession; // WHITE MCP Client + BLACK Server AI
-    private ChessSessionProxy blackSession; // BLACK MCP Client + WHITE Server AI
+    // WHITE SESSION: MCP Client plays White pieces, Server AI plays Black pieces
+    private ChessSessionProxy whiteSession;
+    
+    // BLACK SESSION: MCP Client plays Black pieces, Server AI plays White pieces
+    private ChessSessionProxy blackSession;
+    
     private volatile boolean running = false;
     private int gamesCompleted = 0;
-    
-    // Removed FIFO queues - using direct move chaining
     
     public DualSessionOrchestrator(MCPConnectionManager connectionManager, AgentConfiguration config) {
         this.connectionManager = connectionManager;
@@ -29,35 +33,33 @@ public class DualSessionOrchestrator {
     }
     
     public void initializeSessions() throws Exception {
-        System.out.println("Initializing dual chess sessions...");
+        System.out.println("Initializing dual chess sessions for AI vs AI training...");
         
-        // Using direct move chaining - no queues needed
-        
-        // WHITE Session: WHITE MCP Client + BLACK Server AI
+        // WHITE SESSION: MCP Client (White) vs Server AI (Black)
         whiteSession = new ChessSessionProxy(
             "white-session", 
-            "white", 
+            "white",  // MCP Client plays White pieces
             connectionManager,
             config,
             requestIdCounter
         );
+        // Server AI opponent will be Black pieces
+        whiteSession.initializeGame(config.getBlackAI(), config.getAiDifficulty());
         
-        // BLACK Session: BLACK MCP Client + WHITE Server AI
+        // BLACK SESSION: MCP Client (Black) vs Server AI (White)
         blackSession = new ChessSessionProxy(
             "black-session",
-            "black",
+            "black",  // MCP Client plays Black pieces
             connectionManager,
             config,
             requestIdCounter
         );
-        
-        // Initialize sessions
-        whiteSession.initializeGame(config.getBlackAI(), config.getAiDifficulty()); // BLACK Server AI
-        blackSession.initializeGame(config.getWhiteAI(), config.getAiDifficulty()); // WHITE Server AI
+        // Server AI opponent will be White pieces
+        blackSession.initializeGame(config.getWhiteAI(), config.getAiDifficulty());
         
         System.out.println("Sessions initialized:");
-        System.out.println("  WHITE Session (BLACK Server AI): " + config.getBlackAI());
-        System.out.println("  BLACK Session (WHITE Server AI): " + config.getWhiteAI());
+        System.out.println("  WHITE Session: MCP Client (White) vs Server AI " + config.getBlackAI() + " (Black)");
+        System.out.println("  BLACK Session: MCP Client (Black) vs Server AI " + config.getWhiteAI() + " (White)");
     }
     
     public void startTrainingLoop() {
@@ -84,15 +86,27 @@ public class DualSessionOrchestrator {
         boolean gameActive = true;
         int moveCount = 0;
         
-        // Start with opening WHITE move
-        String currentMove = blackSession.getAIMove(); // Get opening WHITE move
+        // Start with WHITE's opening move (from WHITE session)
+        System.out.println("Getting opening WHITE move from WHITE session...");
+        String currentMove = whiteSession.getAIMove(); // MCP Client (White) generates opening move
         
-        // Apply opening WHITE move to BLACK session
         if (currentMove != null) {
+            System.out.println("WHITE opening move received: " + currentMove);
+            
+            // Apply WHITE's opening move to BLACK session
             String blackResponse = blackSession.makeMove(currentMove);
-            System.out.println("Opening WHITE move: " + currentMove + " -> BLACK responds: " + blackResponse);
-            currentMove = blackResponse; // Next move is BLACK's response
-            moveCount++;
+            System.out.println("WHITE opening move: " + currentMove + " -> BLACK responds: " + blackResponse);
+            
+            if (blackResponse != null) {
+                currentMove = blackResponse; // Next move is BLACK's response
+                moveCount++;
+            } else {
+                System.err.println("BLACK session failed to respond to opening move");
+                gameActive = false;
+            }
+        } else {
+            System.err.println("Failed to get opening WHITE move");
+            gameActive = false;
         }
         
         while (gameActive && moveCount < 200 && currentMove != null) {
@@ -100,25 +114,47 @@ public class DualSessionOrchestrator {
                 displayBoardStates(moveCount);
                 
                 if (moveCount % 2 == 1) {
-                    // BLACK move: Apply to WHITE session, get WHITE response
-                    String aiResponse = whiteSession.makeMove(currentMove);
-                    System.out.println("BLACK move: " + currentMove + " -> WHITE responds: " + aiResponse);
-                    currentMove = aiResponse; // Next move is WHITE's response
+                    // Odd moves (1, 3, 5...): BLACK's turn
+                    System.out.println("BLACK move: " + currentMove);
+                    
+                    // Apply BLACK move to WHITE session, get WHITE's response
+                    String whiteResponse = whiteSession.makeMove(currentMove);
+                    System.out.println("WHITE responds: " + whiteResponse);
+                    
+                    if (whiteResponse != null) {
+                        currentMove = whiteResponse; // Next move is WHITE's response
+                    } else {
+                        System.err.println("WHITE session failed to respond");
+                        gameActive = false;
+                    }
+                    
                 } else {
-                    // WHITE move: Apply to BLACK session, get BLACK response  
-                    String aiResponse = blackSession.makeMove(currentMove);
-                    System.out.println("WHITE move: " + currentMove + " -> BLACK responds: " + aiResponse);
-                    currentMove = aiResponse; // Next move is BLACK's response
+                    // Even moves (2, 4, 6...): WHITE's turn
+                    System.out.println("WHITE move: " + currentMove);
+                    
+                    // Apply WHITE move to BLACK session, get BLACK's response
+                    String blackResponse = blackSession.makeMove(currentMove);
+                    System.out.println("BLACK responds: " + blackResponse);
+                    
+                    if (blackResponse != null) {
+                        currentMove = blackResponse; // Next move is BLACK's response
+                    } else {
+                        System.err.println("BLACK session failed to respond");
+                        gameActive = false;
+                    }
                 }
                 
                 moveCount++;
                 
+                // Check if either session ended
                 if (!whiteSession.isGameActive() || !blackSession.isGameActive()) {
+                    System.out.println("One or both sessions ended - stopping game");
                     gameActive = false;
                 }
                 
             } catch (Exception e) {
-                System.err.println("Error during move: " + e.getMessage());
+                System.err.println("Error during move " + moveCount + ": " + e.getMessage());
+                e.printStackTrace();
                 gameActive = false;
             }
         }
@@ -127,6 +163,7 @@ public class DualSessionOrchestrator {
         System.out.println("Game result: " + result + " (moves: " + moveCount + ")");
         
         if (gamesCompleted + 1 < config.getGamesPerSession()) {
+            System.out.println("Resetting games for next round...");
             whiteSession.resetGame();
             blackSession.resetGame();
         }
@@ -136,13 +173,13 @@ public class DualSessionOrchestrator {
         try {
             System.out.println("\n=== Board States (Move " + moveCount + ") ===");
             
-            System.out.println("\nBlack Session Board:");
-            String blackBoard = blackSession.fetchCurrentBoard();
-            System.out.println(blackBoard);
-            
-            System.out.println("White Session Board:");
+            System.out.println("\nWHITE Session Board (MCP Client White vs Server AI Black):");
             String whiteBoard = whiteSession.fetchCurrentBoard();
             System.out.println(whiteBoard);
+            
+            System.out.println("\nBLACK Session Board (MCP Client Black vs Server AI White):");
+            String blackBoard = blackSession.fetchCurrentBoard();
+            System.out.println(blackBoard);
             
             System.out.println("================================\n");
         } catch (Exception e) {
@@ -169,6 +206,7 @@ public class DualSessionOrchestrator {
             
             return "Draw";
         } catch (Exception e) {
+            System.err.println("Error determining game result: " + e.getMessage());
             return "Unknown";
         }
     }
