@@ -1,7 +1,7 @@
-# ChessGame.java Sequence Diagram
+# ChessGame.java Sequence Diagram - REFACTORED VERSION
 
 ## Overview
-This sequence diagram illustrates the main interactions and flow within the ChessGame.java class, showing how user moves, AI moves, and game state management work together.
+This sequence diagram illustrates the main interactions and flow within the refactored ChessGame.java class, showing how user moves, AI moves, and game state management work together in the enhanced architecture.
 
 ## Main Game Flow Sequence
 
@@ -14,21 +14,32 @@ sequenceDiagram
     participant OpeningBook as Leela_Opening_Book
     participant WebSocket
     participant GameState as Game_State_Manager
+    participant RuleValidator as Chess_Rule_Validator
+    participant TacticalDefense as Chess_Tactical_Defense
 
     Note over ChessGame: Game Initialization
     ChessGame->>ChessGame: initializeAfterInjection
     ChessGame->>ChessGame: detectAndConfigureOpenCL
     ChessGame->>OpeningBook: new LeelaChessZeroOpeningBook
     ChessGame->>ChessGame: initializeAISystems
-    loop For each enabled AI
+    loop For each enabled AI (12 total systems)
         ChessGame->>AISystem: initialize AI system
+        Note over AISystem: Q-Learning, Deep Learning, CNN, DQN, MCTS, AlphaZero, Negamax, OpenAI, Leela Zero, Genetic, AlphaFold3, A3C
     end
     ChessGame->>ChessGame: aiSystemsReady = true
 
     Note over User,GameState: User Move Flow
     User->>ChessController: makeMove
     ChessController->>ChessGame: makeMove
-    ChessGame->>ChessGame: isValidMove 9-step validation
+    ChessGame->>RuleValidator: isValidMove 9-step validation
+    RuleValidator->>RuleValidator: Check coordinate bounds
+    RuleValidator->>RuleValidator: Check piece ownership
+    RuleValidator->>RuleValidator: Check piece movement rules
+    RuleValidator->>RuleValidator: Check path blocking
+    RuleValidator->>RuleValidator: Check king safety
+    RuleValidator->>RuleValidator: Check tactical defense
+    RuleValidator-->>ChessGame: Move validity result
+    
     alt Move is valid
         ChessGame->>GameState: saveGameState()
         ChessGame->>ChessGame: execute move on board
@@ -45,11 +56,11 @@ sequenceDiagram
     ChessGame->>ChessGame: makeComputerMove()
     ChessGame->>ChessGame: findBestMove()
     
-    alt Opening phase moves 1-10
+    alt Opening phase moves 1-12
         ChessGame->>OpeningBook: getOpeningMove()
         OpeningBook-->>ChessGame: return opening move
     else Mid/End game
-        ChessGame->>ChessGame: Check for critical threats
+        ChessGame->>TacticalDefense: Check for critical threats
         alt King in check
             ChessGame->>ChessGame: findLegalCheckResponse()
             ChessGame->>ChessGame: getAllValidMoves(false)
@@ -57,10 +68,10 @@ sequenceDiagram
                 ChessGame->>ChessGame: actuallyResolvesCheck()
             end
         else Queen under attack
-            ChessGame->>ChessGame: findProtectionMove()
-            ChessGame->>ChessGame: findAttackersOfSquare()
+            ChessGame->>TacticalDefense: findProtectionMove()
+            ChessGame->>TacticalDefense: findAttackersOfSquare()
         else Strategic move selection
-            Note over ChessGame,AISystem: Parallel AI Execution
+            Note over ChessGame,AISystem: Parallel AI Execution (12 Systems)
             par Q-Learning AI
                 ChessGame->>AISystem: qLearningAI selectMove
             and Deep Learning AI
@@ -81,6 +92,10 @@ sequenceDiagram
                 ChessGame->>AISystem: leelaZeroAI selectMove
             and Genetic Algorithm AI
                 ChessGame->>AISystem: geneticAI selectMove
+            and AlphaFold3 AI
+                ChessGame->>AISystem: alphaFold3AI selectMove
+            and A3C AI
+                ChessGame->>AISystem: a3cAI selectMove
             end
             
             loop For each AI move
@@ -91,7 +106,7 @@ sequenceDiagram
     end
 
     ChessGame->>ChessGame: executeBestMove()
-    ChessGame->>ChessGame: isValidMove final validation
+    ChessGame->>RuleValidator: isValidMove final validation
     ChessGame->>ChessGame: execute AI move on board
     ChessGame->>ChessGame: handlePawnPromotion()
     ChessGame->>GameState: update move history
@@ -117,6 +132,10 @@ sequenceDiagram
         ChessGame->>AISystem: leelaZeroAI startSelfPlayTraining
     and Genetic Training
         ChessGame->>AISystem: geneticAI startTraining
+    and AlphaFold3 Training
+        ChessGame->>AISystem: alphaFold3AI startTraining
+    and A3C Training
+        ChessGame->>AISystem: a3cAI startTraining
     end
 
     Note over ChessGame,GameState: Game State Management
@@ -136,50 +155,60 @@ sequenceDiagram
     ChessGame->>WebSocket: broadcastGameState()
 ```
 
-## Key Method Interactions
+## Enhanced Move Validation Flow
 
-### Move Validation Flow
 ```mermaid
 sequenceDiagram
     participant ChessGame
-    participant Validator as Move Validator
-    participant KingSafety as King Safety Checker
+    participant RuleValidator as Chess_Rule_Validator
+    participant TacticalDefense as Chess_Tactical_Defense
+    participant KingSafety as King_Safety_Checker
 
-    ChessGame->>Validator: isValidMove
-    Validator->>Validator: Check coordinate bounds
-    Validator->>Validator: Check piece ownership
-    Validator->>Validator: Check piece movement rules
-    Validator->>Validator: Check path blocking
-    Validator->>KingSafety: Simulate move
+    ChessGame->>RuleValidator: isValidMove
+    RuleValidator->>RuleValidator: Check coordinate bounds
+    RuleValidator->>RuleValidator: Check piece ownership
+    RuleValidator->>RuleValidator: Check piece movement rules
+    RuleValidator->>RuleValidator: Check path blocking
+    RuleValidator->>KingSafety: Simulate move
     KingSafety->>KingSafety: Check if King exposed to check
-    KingSafety-->>Validator: King safety result
-    Validator-->>ChessGame: Move validity result
+    KingSafety-->>RuleValidator: King safety result
+    RuleValidator->>TacticalDefense: Check tactical defense
+    TacticalDefense->>TacticalDefense: Validate move against tactical threats
+    TacticalDefense-->>RuleValidator: Tactical validation result
+    RuleValidator-->>ChessGame: Move validity result
 ```
 
-### AI Move Selection Flow
+## AI Move Selection Flow (12 Systems)
+
 ```mermaid
 sequenceDiagram
     participant ChessGame
     participant AIValidator as AI Move Validator
     participant Comparator as Move Comparator
+    participant AISystems as 12_AI_Systems
 
-    ChessGame->>ChessGame: Get moves from all 10 AI systems
-    loop For each AI move
+    ChessGame->>ChessGame: Get moves from all 12 AI systems
+    loop For each AI system
+        ChessGame->>AISystems: selectMove (parallel execution)
+        AISystems-->>ChessGame: AI move suggestion
         ChessGame->>AIValidator: validateAIMove
         AIValidator->>AIValidator: 10-step validation process
         AIValidator-->>ChessGame: Validated move or null
     end
     ChessGame->>Comparator: compareMoves
     Comparator->>Comparator: evaluateMoveQuality for each move
+    Comparator->>Comparator: Apply AI-specific scoring weights
     Comparator-->>ChessGame: Best move selected
 ```
 
-### Checkmate Detection Flow
+## Enhanced Checkmate Detection Flow
+
 ```mermaid
 sequenceDiagram
     participant ChessGame
     participant CheckDetector as Check Detector
     participant MoveGenerator as Move Generator
+    participant TacticalDefense as Tactical Defense
 
     ChessGame->>CheckDetector: isPlayerInCheckmate
     CheckDetector->>CheckDetector: isKingInDanger
@@ -189,6 +218,7 @@ sequenceDiagram
         CheckDetector->>MoveGenerator: getAllValidMoves
         loop For each valid move
             CheckDetector->>CheckDetector: Simulate move
+            CheckDetector->>TacticalDefense: Check tactical implications
             CheckDetector->>CheckDetector: Check if King still in danger
             alt King safe after move
                 CheckDetector-->>ChessGame: false (not checkmate)
@@ -198,16 +228,18 @@ sequenceDiagram
     end
 ```
 
-## Class Relationships and Dependencies
+## Class Relationships and Dependencies (Refactored)
 
 ### Core Dependencies
 - **Spring Framework**: `@Component`, `@PostConstruct`, `@Value` annotations
 - **Logging**: Apache Log4j2 for comprehensive logging
-- **AI Systems**: 10 different AI implementations
-- **Opening Book**: Leela Chess Zero professional opening database
+- **AI Systems**: 12 different AI implementations (increased from 10)
+- **Opening Book**: Leela Chess Zero professional opening database (extended to 6 moves)
 - **WebSocket**: Real-time communication with frontend
+- **Rule Validation**: Dedicated `ChessRuleValidator` class
+- **Tactical Defense**: Dedicated `ChessTacticalDefense` class
 
-### AI System Integration
+### AI System Integration (Updated)
 1. **Q-Learning AI**: Reinforcement learning with experience replay
 2. **Deep Learning AI**: Neural network with GPU acceleration
 3. **CNN Deep Learning AI**: Convolutional neural network for spatial patterns
@@ -218,6 +250,16 @@ sequenceDiagram
 8. **OpenAI Chess AI**: GPT-4 powered chess analysis
 9. **Leela Chess Zero AI**: Human game knowledge with transformer architecture
 10. **Genetic Algorithm AI**: Evolutionary learning approach
+11. **AlphaFold3 AI**: Protein structure prediction adapted for chess
+12. **A3C AI**: Asynchronous Advantage Actor-Critic reinforcement learning
+
+### New Architectural Components
+- **ChessRuleValidator**: Dedicated move validation logic
+- **ChessTacticalDefense**: Advanced tactical analysis and defense
+- **Enhanced Opening Book**: Extended from 4 to 6 moves depth
+- **Improved Move Validation**: 9-step comprehensive checking process
+- **Better Error Handling**: Comprehensive exception management
+- **Performance Optimization**: Parallel AI execution and caching
 
 ## File Storage Location
 
@@ -230,26 +272,18 @@ CHESS/docs/ChessGame_Sequence_Diagram.md
 
 For more detailed information about specific components:
 - **AI Systems**: See individual AI class documentation
-- **Opening Book**: LeelaChessZeroOpeningBook.java
-- **WebSocket Communication**: WebSocketController.java
-- **Game Rules**: Chess rule validation methods in ChessGame.java
-- **Training System**: AI training coordination methods
-
-## Notes
-
-- The diagram shows the main flow for a typical game session
-- Error handling and edge cases are simplified for clarity
-- Parallel AI execution is a key feature for move selection
-- All AI systems can be individually enabled/disabled via configuration
-- The system supports both human vs AI and AI vs AI training modespeningBook.java`
+- **Opening Book**: `LeelaChessZeroOpeningBook.java`
 - **WebSocket Communication**: `WebSocketController.java`
-- **Game Rules**: Chess rule validation methods in `ChessGame.java`
-- **Training System**: AI training coordination methods
+- **Game Rules**: `ChessRuleValidator.java` and `ChessTacticalDefense.java`
+- **Training System**: `TrainingManager.java` and AI training coordination methods
+- **MCP Integration**: See `MCP_Sequence_Diagram.md`
 
-## Notes
+## Refactoring Notes
 
-- The diagram shows the main flow for a typical game session
-- Error handling and edge cases are simplified for clarity
-- Parallel AI execution is a key feature for move selection
-- All AI systems can be individually enabled/disabled via configuration
-- The system supports both human vs AI and AI vs AI training modes
+- **AI Systems**: Increased from 10 to 12 systems with AlphaFold3 and A3C
+- **Architecture**: Separated concerns into dedicated validator and tactical defense classes
+- **Performance**: Enhanced parallel execution and caching mechanisms
+- **Validation**: Improved move validation from 9-step to 10-step process
+- **Opening Book**: Extended depth from 4 to 6 moves for better opening play
+- **Error Handling**: Comprehensive exception management and logging
+- **Code Organization**: Better separation of concerns and modularity
