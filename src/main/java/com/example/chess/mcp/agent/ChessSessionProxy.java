@@ -94,75 +94,45 @@ public class ChessSessionProxy {
             return null;
         }
         
-        // Get legal moves first to ensure UCI format
-        Map<String, Object> legalMovesParams = Map.of(
-            "name", "get_legal_moves",
+        // Use get_move_hint to get AI-generated move with opening book logic
+        Map<String, Object> hintParams = Map.of(
+            "name", "get_move_hint",
             "arguments", Map.of("sessionId", gameSessionId)
         );
         
-        JsonRpcRequest legalMovesRequest = new JsonRpcRequest(
+        JsonRpcRequest hintRequest = new JsonRpcRequest(
             requestIdCounter.getAndIncrement(),
             "tools/call",
-            legalMovesParams
+            hintParams
         );
         
-        CompletableFuture<JsonNode> legalMovesResponse = connectionManager.sendRequest(sessionId, legalMovesRequest);
-        JsonNode legalResult = legalMovesResponse.get(config.getTimeoutSeconds(), TimeUnit.SECONDS);
+        CompletableFuture<JsonNode> hintResponse = connectionManager.sendRequest(sessionId, hintRequest);
+        JsonNode hintResult = hintResponse.get(config.getTimeoutSeconds(), TimeUnit.SECONDS);
         
-        java.util.List<String> legalMoves = new java.util.ArrayList<>();
-        if (legalResult.has("result") && legalResult.get("result").has("content")) {
-            JsonNode content = legalResult.get("result").get("content");
+        if (hintResult.has("result") && hintResult.get("result").has("content")) {
+            JsonNode content = hintResult.get("result").get("content");
             for (JsonNode item : content) {
                 if (item.has("resource") && item.get("resource").has("text")) {
                     String resourceText = item.get("resource").get("text").asText();
                     JsonNode resourceData = objectMapper.readTree(resourceText);
-                    if (resourceData.has("legalMoves")) {
-                        JsonNode movesArray = resourceData.get("legalMoves");
-                        if (movesArray.isArray()) {
-                            for (JsonNode moveNode : movesArray) {
-                                legalMoves.add(moveNode.asText());
-                            }
-                        }
+                    if (resourceData.has("suggestedMove")) {
+                        return resourceData.get("suggestedMove").asText();
                     }
                 }
             }
         }
         
-        if (legalMoves.isEmpty()) {
-            return null;
-        }
-        
-        // For White's opening move, use aggressive gambits
-        if (isWhiteOpeningMove()) {
-            String[] openingGambits = {"e2e4", "d2d4", "g1f3", "b1c3"};
-            for (String gambit : openingGambits) {
-                if (legalMoves.contains(gambit)) {
-                    return gambit;
-                }
-            }
-        }
-        
-        // Return first legal move as fallback (all moves are in UCI format)
-        return legalMoves.get(0);
+        return null;
     }
     
-    private boolean isWhiteOpeningMove() {
-        try {
-            JsonNode boardState = getBoardState();
-            if (boardState.has("movesPlayed")) {
-                int movesPlayed = boardState.get("movesPlayed").asInt();
-                return movesPlayed == 0 && "white".equals(playerColor);
-            }
-            return false;
-        } catch (Exception e) {
-            return false;
-        }
-    }
+
     
     public String makeMove(String uciMove) throws Exception {
         if (!gameActive) {
             return null;
         }
+        
+        
         
         Map<String, Object> params = Map.of(
             "name", "make_chess_move",
@@ -171,6 +141,8 @@ public class ChessSessionProxy {
                 "move", uciMove
             )
         );
+        
+        System.out.println(">>> " + uciMove + " >>>> "+ params.toString());
         
         JsonRpcRequest makeMoveRequest = new JsonRpcRequest(
             requestIdCounter.getAndIncrement(),

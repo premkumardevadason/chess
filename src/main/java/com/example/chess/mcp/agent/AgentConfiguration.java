@@ -11,7 +11,7 @@ public class AgentConfiguration {
     private int concurrentLimit = 2;
     private int timeoutSeconds = 30;
     private int retryAttempts = 3;
-    private int gamesPerSession = 100;
+    private int gamesPerSession = 1;
     private int aiDifficulty = 8;
     private boolean tournamentMode = false;
     private String whiteAI = "AlphaZero";

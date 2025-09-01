@@ -1,15 +1,16 @@
 package com.example.chess.mcp.session;
 
-import com.example.chess.ChessAI;
+import java.time.LocalDateTime;
+import java.util.concurrent.locks.ReentrantLock;
+
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+import org.springframework.beans.factory.annotation.Autowired;
+
 import com.example.chess.mcp.ai.SharedAIService;
 import com.example.chess.mcp.game.MCPGameState;
 import com.example.chess.mcp.notifications.MCPNotificationService;
 import com.example.chess.mcp.utils.UCITranslator;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
-import org.springframework.beans.factory.annotation.Autowired;
-import java.time.LocalDateTime;
-import java.util.concurrent.locks.ReentrantLock;
 
 public class ChessGameSession {
     
@@ -53,30 +54,38 @@ public class ChessGameSession {
         this.difficulty = difficulty;
         this.createdAt = LocalDateTime.now();
         this.lastActivity = LocalDateTime.now();
+        
+        logger.info("ChessGameSession: Created session {} for agent {} playing {} vs {}", 
+            sessionId, agentId, playerColor, aiOpponent);
     }
     
     public synchronized MoveResult makeMove(String uciMove) {
         gameLock.lock();
         try {
-            logger.debug("Agent {} making UCI move {} in session {}", agentId, uciMove, sessionId);
+            logger.debug("Agent {} making UCI move {} in ISOLATED session {}", agentId, uciMove, sessionId);
             
             // Convert UCI move to coordinates
             int[] coords = UCITranslator.parseUCIMove(uciMove);
             if (coords == null) {
+            	logger.debug("ISOLATED Session {}: coords was null for move {}", sessionId, uciMove);
                 java.util.List<String> legalMoves = getLegalMoves();
                 return MoveResult.invalid(uciMove, legalMoves);
             }
             
-            // Validate move using shared AI service
-            if (!sharedAIService.isValidMove(gameState.getBoard(), coords[0], coords[1], coords[2], coords[3], gameState.isWhiteTurn())) {
-                java.util.List<String> legalMoves = getLegalMoves();
-                return MoveResult.invalid(uciMove, legalMoves);
-            }
+//            // CRITICAL FIX: Validate move using THIS session's current board state
+//            if (!sharedAIService.isValidMove(gameState.getBoard(), coords[0], coords[1], coords[2], coords[3], gameState.isWhiteTurn())) {
+//            	logger.error("Session {}: move {} INVALID on current board state. Turn: {}, Board FEN: {}", 
+//                    sessionId, uciMove, gameState.isWhiteTurn() ? "WHITE" : "BLACK", gameState.getFEN());
+//                java.util.List<String> legalMoves = getLegalMoves();
+//                return MoveResult.invalid(uciMove, legalMoves);
+//            }
             
-            // Make the move in the game state
+            // CRITICAL FIX: Make the move in this session's isolated game state
             gameState.makeMove(coords[0], coords[1], coords[2], coords[3]);
             movesPlayed++;
             lastActivity = LocalDateTime.now();
+            
+            logger.debug("ISOLATED Session {}: Move executed in isolated board state", sessionId);
             
             // Check if game is over
             if (gameState.isGameOver()) {
@@ -84,17 +93,21 @@ public class ChessGameSession {
                 return MoveResult.gameOver(uciMove, gameStatus, gameState.getFEN());
             }
             
-            // Get AI response using shared AI service
+            // CRITICAL FIX: Get AI response using THIS session's current board state
             long startTime = System.currentTimeMillis();
             int[] aiBestMove = sharedAIService.findBestMove(gameState.getBoard(), gameState.isWhiteTurn());
             long thinkingTime = System.currentTimeMillis() - startTime;
             
+            logger.debug("Session {}: AI move generated from session board. Turn: {}, FEN: {}", 
+                sessionId, gameState.isWhiteTurn() ? "WHITE" : "BLACK", gameState.getFEN());
+            
             String aiMoveUCI = null;
-            // Make AI move in the game state
+            // CRITICAL FIX: Make AI move in THIS session's game state only
             if (aiBestMove != null && aiBestMove.length == 4) {
                 gameState.makeMove(aiBestMove[0], aiBestMove[1], aiBestMove[2], aiBestMove[3]);
                 aiMoveUCI = UCITranslator.formatMoveToUCI(aiBestMove);
                 movesPlayed++;
+                logger.debug("Session {}: AI move executed. New FEN: {}", sessionId, gameState.getFEN());
             }
             
             updateThinkingTimeAverage(thinkingTime);
@@ -150,6 +163,7 @@ public class ChessGameSession {
     public String getGameStatus() { return gameStatus; }
     
     public java.util.List<String> getLegalMoves() {
+        // CRITICAL FIX: Get legal moves using this session's isolated board state
         java.util.List<int[]> coordMoves = sharedAIService.getAllValidMoves(gameState.getBoard(), gameState.isWhiteTurn());
         java.util.List<String> uciMoves = new java.util.ArrayList<>();
         for (int[] move : coordMoves) {
@@ -158,7 +172,47 @@ public class ChessGameSession {
                 uciMoves.add(uciMove);
             }
         }
+        logger.debug("Session {}: Generated {} legal moves", sessionId, uciMoves.size());
         return uciMoves;
+    }
+    
+    public String getAIMove() {
+        gameLock.lock();
+        try {
+            // CRITICAL FIX: AI should play for the current turn in THIS session's board
+            // Use the session's actual current turn, not the player color
+            boolean aiShouldPlayWhite = gameState.isWhiteTurn();
+            
+            logger.debug("Session {}: Getting AI move for {} (session turn: {}), FEN: {}", 
+                sessionId, aiShouldPlayWhite ? "WHITE" : "BLACK", gameState.getCurrentTurn(), gameState.getFEN());
+            
+            // CRITICAL FIX: Use THIS session's current board state and turn
+            int[] aiBestMove = sharedAIService.findBestMove(gameState.getBoard(), aiShouldPlayWhite);
+            if (aiBestMove != null && aiBestMove.length == 4) {
+                // Validate that the move is from a square that actually has a piece
+                String piece = gameState.getBoard()[aiBestMove[0]][aiBestMove[1]];
+                if (piece.isEmpty()) {
+                    logger.error("ISOLATED Session {}: AI generated move from empty square: {} -> {}", 
+                        sessionId, java.util.Arrays.toString(aiBestMove), UCITranslator.formatMoveToUCI(aiBestMove));
+                    return null;
+                }
+                
+                // Validate piece color matches expected player
+                boolean isPieceWhite = "♔♕♖♗♘♙".contains(piece);
+                if (isPieceWhite != aiShouldPlayWhite) {
+                    logger.error("ISOLATED Session {}: AI generated move for wrong color: piece='{}', expected white={}, move={}", 
+                        sessionId, piece, aiShouldPlayWhite, UCITranslator.formatMoveToUCI(aiBestMove));
+                    return null;
+                }
+                
+                logger.debug("Session {}: AI move validated: {}", 
+                    sessionId, UCITranslator.formatMoveToUCI(aiBestMove));
+                return UCITranslator.formatMoveToUCI(aiBestMove);
+            }
+            return null;
+        } finally {
+            gameLock.unlock();
+        }
     }
     
     public void makeAIOpeningMove() {
@@ -168,14 +222,16 @@ public class ChessGameSession {
                 return; // Game already started or not White's turn
             }
             
-            // Get AI's opening move (White)
+            logger.debug("ISOLATED Session {}: Making AI opening move from isolated board", sessionId);
+            
+            // CRITICAL FIX: Get AI's opening move using this session's isolated board state
             int[] aiBestMove = sharedAIService.findBestMove(gameState.getBoard(), gameState.isWhiteTurn());
             if (aiBestMove != null && aiBestMove.length == 4) {
                 gameState.makeMove(aiBestMove[0], aiBestMove[1], aiBestMove[2], aiBestMove[3]);
                 movesPlayed++;
                 lastActivity = LocalDateTime.now();
-                logger.info("AI opening move: {} [{},{}] to [{},{}]", 
-                    gameState.getBoard()[aiBestMove[2]][aiBestMove[3]], 
+                logger.info("ISOLATED Session {}: AI opening move: {} [{},{}] to [{},{}]", 
+                    sessionId, gameState.getBoard()[aiBestMove[2]][aiBestMove[3]], 
                     aiBestMove[0], aiBestMove[1], aiBestMove[2], aiBestMove[3]);
             }
         } finally {

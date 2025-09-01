@@ -12,7 +12,7 @@ public class MCPGameState {
     private String[][] board = new String[8][8];
     private boolean whiteTurn = true;
     private boolean gameOver = false;
-    private List<String> moveHistory = new ArrayList<>();
+    // Move history removed
     
     // Castling rights
     private boolean whiteKingMoved = false;
@@ -90,8 +90,7 @@ public class MCPGameState {
         }
         board[fromRow][fromCol] = "";
         
-        // Update move history
-        moveHistory.add(fromRow + "," + fromCol + "," + toRow + "," + toCol);
+        // Move history tracking removed
         
         // Update castling rights
         updateCastlingRights(piece, fromRow, fromCol);
@@ -159,7 +158,7 @@ public class MCPGameState {
         fen.append(castling.length() > 0 ? castling.toString() : "-");
         
         // En passant and move counters (simplified)
-        fen.append(" - 0 ").append((moveHistory.size() / 2) + 1);
+        fen.append(" - 0 1");
         
         return fen.toString();
     }
@@ -186,7 +185,7 @@ public class MCPGameState {
     public String[][] getBoard() { return board; }
     public boolean isWhiteTurn() { return whiteTurn; }
     public boolean isGameOver() { return gameOver; }
-    public List<String> getMoveHistory() { return new ArrayList<>(moveHistory); }
+    public List<String> getMoveHistory() { return new ArrayList<>(); }
     public String getCurrentTurn() { return whiteTurn ? "white" : "black"; }
     public String getGameStatus() {
         if (gameOver) {

@@ -946,6 +946,113 @@ public class ChessGame {
         return findBestMove();
     }
     
+    /**
+     * Find best move for either WHITE or BLACK (for MCP server)
+     * @param forWhite true for white moves, false for black moves
+     * @return best move as [fromRow, fromCol, toRow, toCol] or null if no valid move
+     */
+    public int[] findBestMoveForColor(boolean forWhite) {
+        // Get all valid moves for the specified color
+        List<int[]> validMoves = getAllValidMoves(forWhite);
+        
+        if (validMoves.isEmpty()) {
+            logger.error("No valid moves found for {}", forWhite ? "WHITE" : "BLACK");
+            return null;
+        }
+        
+        logger.debug("Found {} valid moves for {}", validMoves.size(), forWhite ? "WHITE" : "BLACK");
+        
+        // For opening moves, try to use opening book
+        if (moveHistory.size() < 10 && leelaOpeningBook != null) {
+            try {
+                var result = leelaOpeningBook.getOpeningMove(board, validMoves, ruleValidator, forWhite);
+                if (result != null && result.move != null) {
+                    logger.info("Opening book move for {}: {} - {}", 
+                        forWhite ? "WHITE" : "BLACK", 
+                        java.util.Arrays.toString(result.move), 
+                        result.openingName);
+                    return result.move;
+                }
+            } catch (Exception e) {
+                logger.error("Opening book error for {}: {}", forWhite ? "WHITE" : "BLACK", e.getMessage());
+            }
+        }
+        
+        // Fallback to simple move selection
+        return validMoves.get(0); // Return first valid move as fallback
+    }
+    
+    /**
+     * Find best move for color using isolated board state (for MCP server)
+     * @param isolatedBoard isolated board state to prevent contamination
+     * @param forWhite true for white moves, false for black moves
+     * @return best move as [fromRow, fromCol, toRow, toCol] or null if no valid move
+     */
+    public int[] findBestMoveForColorIsolated(String[][] isolatedBoard, boolean forWhite) {
+        // Get all valid moves for the specified color using isolated board
+        List<int[]> validMoves = getAllValidMovesIsolated(isolatedBoard, forWhite);
+        
+        if (validMoves.isEmpty()) {
+            logger.error("No valid moves found for {} with isolated board", forWhite ? "WHITE" : "BLACK");
+            return null;
+        }
+        
+        logger.debug("Found {} valid moves for {} with isolated board", validMoves.size(), forWhite ? "WHITE" : "BLACK");
+        
+        // For opening moves, try to use opening book with isolated board
+        if (leelaOpeningBook != null) {
+            try {
+                var result = leelaOpeningBook.getOpeningMove(isolatedBoard, validMoves, ruleValidator, forWhite);
+                if (result != null && result.move != null) {
+                    logger.info("Opening book move for {} (isolated): {} - {}", 
+                        forWhite ? "WHITE" : "BLACK", 
+                        java.util.Arrays.toString(result.move), 
+                        result.openingName);
+                    return result.move;
+                }
+            } catch (Exception e) {
+                logger.error("Opening book error for {} (isolated): {}", forWhite ? "WHITE" : "BLACK", e.getMessage());
+            }
+        }
+        
+        // Fallback to simple move selection
+        return validMoves.get(0); // Return first valid move as fallback
+    }
+    
+    /**
+     * Get all valid moves using isolated board state
+     * @param isolatedBoard isolated board state
+     * @param forWhite true for white pieces, false for black pieces
+     * @return List of valid moves as int arrays [fromRow, fromCol, toRow, toCol]
+     */
+    public List<int[]> getAllValidMovesIsolated(String[][] isolatedBoard, boolean forWhite) {
+        try {
+            return ruleValidator.getAllValidMoves(isolatedBoard, forWhite, forWhite);
+        } catch (Exception e) {
+            logger.error("Error in getAllValidMovesIsolated: {}", e.getMessage(), e);
+            return new java.util.ArrayList<>();
+        }
+    }
+    
+    /**
+     * Check if a move is valid using isolated board state
+     * @param isolatedBoard isolated board state
+     * @param fromRow source row
+     * @param fromCol source column
+     * @param toRow destination row
+     * @param toCol destination column
+     * @param isWhiteTurn current turn
+     * @return true if move is valid
+     */
+    public boolean isValidMoveIsolated(String[][] isolatedBoard, int fromRow, int fromCol, int toRow, int toCol, boolean isWhiteTurn) {
+        try {
+            return ruleValidator.isValidMove(isolatedBoard, fromRow, fromCol, toRow, toCol, isWhiteTurn);
+        } catch (Exception e) {
+            logger.error("Error in isValidMoveIsolated: {}", e.getMessage(), e);
+            return false;
+        }
+    }
+    
     private int[] findBestMove() {
         ensureAISystemsInitialized(); // Initialize AIs if not done yet
         saveGameState();
@@ -1218,9 +1325,15 @@ public class ChessGame {
         
         // PRIORITY 3: STRATEGIC - Let AI choose from safe moves
         logger.debug("=== PRIORITY 3: STRATEGIC MOVE SELECTION ===");
-        logger.debug("PRIORITY 3: Reached strategic move selection phase");
+        logger.debug("PRIORITY 3: Reached strategic move selection phase for turn: {}", whiteTurn ? "WHITE" : "BLACK");
         List<int[]> safeMoves = filterSafeMoves(allValidMoves);
         logger.debug("PRIORITY 3: Found {} total valid moves, {} safe moves", allValidMoves.size(), safeMoves.size());
+        
+        // CRITICAL FIX: If this is WHITE's turn and we have no moves, the AI system is not designed for WHITE
+        if (whiteTurn && allValidMoves.isEmpty()) {
+            logger.error("CRITICAL: No valid moves found for WHITE - AI system designed for BLACK only");
+            return null;
+        }
         
         // Delegate to AI for strategic decision - use filtered moves that don't remove critical defenses
         List<int[]> movesToEvaluate = safeValidMoves.isEmpty() ? (safeMoves.isEmpty() ? allValidMoves : safeMoves) : safeValidMoves;

@@ -59,7 +59,50 @@ public class MCPChessAgent {
     }
     
     private void displayMCPTools() {
-        System.out.println("\n=== REGISTERED MCP TOOLS ===");
+        try {
+            // Create temporary connection to fetch tools
+            MCPConnection tempConnection = connectionManager.createConnection("temp-tools-fetch");
+            
+            // Send tools/list request
+            JsonRpcRequest toolsRequest = new JsonRpcRequest(
+                1L,
+                "tools/list",
+                java.util.Map.of()
+            );
+            
+            com.fasterxml.jackson.databind.JsonNode response = connectionManager
+                .sendRequest("temp-tools-fetch", toolsRequest)
+                .get(10, java.util.concurrent.TimeUnit.SECONDS);
+            
+            System.out.println("\n=== REGISTERED MCP TOOLS ===");
+            
+            if (response.has("result") && response.get("result").has("tools")) {
+                com.fasterxml.jackson.databind.JsonNode tools = response.get("result").get("tools");
+                int toolCount = 0;
+                
+                for (com.fasterxml.jackson.databind.JsonNode tool : tools) {
+                    String name = tool.get("name").asText();
+                    String description = tool.has("description") ? tool.get("description").asText() : "No description";
+                    System.out.println(name + " - " + description);
+                    toolCount++;
+                }
+                
+                System.out.println("Total tools: " + toolCount + "\n");
+            } else {
+                System.out.println("No tools found in server response\n");
+            }
+            
+            // Close temporary connection
+            connectionManager.closeConnection("temp-tools-fetch");
+            
+        } catch (Exception e) {
+            System.err.println("Failed to fetch MCP tools dynamically, using fallback: " + e.getMessage());
+            displayFallbackTools();
+        }
+    }
+    
+    private void displayFallbackTools() {
+        System.out.println("\n=== MCP TOOLS (FALLBACK) ===");
         System.out.println("create_chess_game - Create a new chess game with AI opponent selection");
         System.out.println("make_chess_move - Execute a chess move and get AI response");
         System.out.println("get_board_state - Get current chess board state and game information");
@@ -69,7 +112,7 @@ public class MCPChessAgent {
         System.out.println("create_tournament - Create games against all 12 AI systems simultaneously");
         System.out.println("get_tournament_status - Get status of all games in agent's tournament");
         System.out.println("fetch_current_board - Get visual representation of current chess board");
-        System.out.println("Total tools: 9\n");
+        System.out.println("Total tools: 9 (fallback)\n");
     }
     
     public void startDualSessionTraining() {
@@ -78,8 +121,17 @@ public class MCPChessAgent {
         threadPool.submit(() -> {
             try {
                 System.out.println("Dual-session training started");
+                System.out.println("Attempting to connect to MCP server at: " + config.getServerUrl());
                 orchestrator.initializeSessions();
                 orchestrator.startTrainingLoop();
+            } catch (java.net.ConnectException e) {
+                System.err.println("\n❌ CONNECTION FAILED: Cannot connect to MCP server");
+                System.err.println("Server URL: " + config.getServerUrl());
+                System.err.println("\n💡 SOLUTION: Start the MCP server first:");
+                System.err.println("   java -jar chess-application.jar --mcp --transport=websocket --port=8082");
+                System.err.println("   OR");
+                System.err.println("   mvn spring-boot:run -Dspring-boot.run.arguments=\"--mcp --transport=websocket --port=8082\"");
+                System.err.println("\nError details: " + e.getMessage());
             } catch (Exception e) {
                 System.err.println("Training loop failed: " + e.getMessage());
                 e.printStackTrace();

@@ -198,19 +198,15 @@ public class ChessToolExecutor {
             return ToolResult.error("Session not found: " + sessionId, null);
         }
         
-        // Get suggested move from legal moves
-        List<String> legalMoves = session.getLegalMoves();
-        String suggestedMoveUCI = null;
-        if (!legalMoves.isEmpty()) {
-            // For now, suggest the first legal move as a hint
-            suggestedMoveUCI = legalMoves.get(0);
-        }
+        // Get AI-generated move using the session's AI system
+        String suggestedMoveUCI = session.getAIMove();
         
         if (suggestedMoveUCI == null) {
             return ToolResult.error("No valid move found", null);
         }
         
-        String explanation = "AI suggests this move based on position analysis";
+        String explanation = String.format("%s AI suggests this move using opening book and position analysis", 
+                                          session.getAIOpponent());
         
         return ToolResult.success(
             String.format("Move hint for session %s: %s - %s", sessionId, suggestedMoveUCI, explanation),

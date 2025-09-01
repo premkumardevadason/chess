@@ -14,7 +14,6 @@ public class DualSessionOrchestrator {
     
     private final MCPConnectionManager connectionManager;
     private final AgentConfiguration config;
-    private final ObjectMapper objectMapper = new ObjectMapper();
     private final AtomicLong requestIdCounter = new AtomicLong(1);
     
     private ChessSessionProxy whiteSession; // WHITE MCP Client + BLACK Server AI
@@ -22,9 +21,7 @@ public class DualSessionOrchestrator {
     private volatile boolean running = false;
     private int gamesCompleted = 0;
     
-    // FIFO queues per requirement
-    private SessionMoveQueue whiteSessionQueue; // For WHITE session
-    private SessionMoveQueue blackSessionQueue; // For BLACK session
+    // Removed FIFO queues - using direct move chaining
     
     public DualSessionOrchestrator(MCPConnectionManager connectionManager, AgentConfiguration config) {
         this.connectionManager = connectionManager;
@@ -34,9 +31,7 @@ public class DualSessionOrchestrator {
     public void initializeSessions() throws Exception {
         System.out.println("Initializing dual chess sessions...");
         
-        // Initialize FIFO queues
-        whiteSessionQueue = new SessionMoveQueue("WHITE-SESSION");
-        blackSessionQueue = new SessionMoveQueue("BLACK-SESSION");
+        // Using direct move chaining - no queues needed
         
         // WHITE Session: WHITE MCP Client + BLACK Server AI
         whiteSession = new ChessSessionProxy(
@@ -57,12 +52,12 @@ public class DualSessionOrchestrator {
         );
         
         // Initialize sessions
-        whiteSession.initializeGame(config.getWhiteAI(), config.getAiDifficulty()); // BLACK Server AI
-        blackSession.initializeGame(config.getBlackAI(), config.getAiDifficulty()); // WHITE Server AI
+        whiteSession.initializeGame(config.getBlackAI(), config.getAiDifficulty()); // BLACK Server AI
+        blackSession.initializeGame(config.getWhiteAI(), config.getAiDifficulty()); // WHITE Server AI
         
         System.out.println("Sessions initialized:");
-        System.out.println("  WHITE Session (BLACK Server AI): " + config.getWhiteAI());
-        System.out.println("  BLACK Session (WHITE Server AI): " + config.getBlackAI());
+        System.out.println("  WHITE Session (BLACK Server AI): " + config.getBlackAI());
+        System.out.println("  BLACK Session (WHITE Server AI): " + config.getWhiteAI());
     }
     
     public void startTrainingLoop() {
@@ -89,37 +84,31 @@ public class DualSessionOrchestrator {
         boolean gameActive = true;
         int moveCount = 0;
         
-        while (gameActive && moveCount < 200) {
+        // Start with opening WHITE move
+        String currentMove = blackSession.getAIMove(); // Get opening WHITE move
+        
+        // Apply opening WHITE move to BLACK session
+        if (currentMove != null) {
+            String blackResponse = blackSession.makeMove(currentMove);
+            System.out.println("Opening WHITE move: " + currentMove + " -> BLACK responds: " + blackResponse);
+            currentMove = blackResponse; // Next move is BLACK's response
+            moveCount++;
+        }
+        
+        while (gameActive && moveCount < 200 && currentMove != null) {
             try {
                 displayBoardStates(moveCount);
                 
-                // BLACK Session fetches WHITE move from server AI
-                String whiteMove = blackSession.getAIMove();
-                if (whiteMove != null) {
-                    System.out.println("BLACK Session (" + config.getBlackAI() + " WHITE Server AI) generates: " + whiteMove);
-                    // Insert into WHITE Session queue per requirement
-                    whiteSessionQueue.enqueue(whiteMove);
-                }
-                
-                // WHITE Session fetches BLACK move from server AI  
-                String blackMove = whiteSession.getAIMove();
-                if (blackMove != null) {
-                    System.out.println("WHITE Session (" + config.getWhiteAI() + " BLACK Server AI) generates: " + blackMove);
-                    // Insert into BLACK Session queue per requirement
-                    blackSessionQueue.enqueue(blackMove);
-                }
-                
-                // Process queued moves
-                if (whiteSessionQueue.hasMove()) {
-                    String move = whiteSessionQueue.dequeue();
-                    whiteSession.makeMove(move);
-                    System.out.println("WHITE Session processes: " + move);
-                }
-                
-                if (blackSessionQueue.hasMove()) {
-                    String move = blackSessionQueue.dequeue();
-                    blackSession.makeMove(move);
-                    System.out.println("BLACK Session processes: " + move);
+                if (moveCount % 2 == 1) {
+                    // BLACK move: Apply to WHITE session, get WHITE response
+                    String aiResponse = whiteSession.makeMove(currentMove);
+                    System.out.println("BLACK move: " + currentMove + " -> WHITE responds: " + aiResponse);
+                    currentMove = aiResponse; // Next move is WHITE's response
+                } else {
+                    // WHITE move: Apply to BLACK session, get BLACK response  
+                    String aiResponse = blackSession.makeMove(currentMove);
+                    System.out.println("WHITE move: " + currentMove + " -> BLACK responds: " + aiResponse);
+                    currentMove = aiResponse; // Next move is BLACK's response
                 }
                 
                 moveCount++;
@@ -140,8 +129,6 @@ public class DualSessionOrchestrator {
         if (gamesCompleted + 1 < config.getGamesPerSession()) {
             whiteSession.resetGame();
             blackSession.resetGame();
-            whiteSessionQueue.clear();
-            blackSessionQueue.clear();
         }
     }
     
@@ -149,13 +136,13 @@ public class DualSessionOrchestrator {
         try {
             System.out.println("\n=== Board States (Move " + moveCount + ") ===");
             
-            System.out.println("White Session Board:");
-            String whiteBoard = whiteSession.fetchCurrentBoard();
-            System.out.println(whiteBoard);
-            
             System.out.println("\nBlack Session Board:");
             String blackBoard = blackSession.fetchCurrentBoard();
             System.out.println(blackBoard);
+            
+            System.out.println("White Session Board:");
+            String whiteBoard = whiteSession.fetchCurrentBoard();
+            System.out.println(whiteBoard);
             
             System.out.println("================================\n");
         } catch (Exception e) {
@@ -171,6 +158,12 @@ public class DualSessionOrchestrator {
             if (whiteState.has("gameOver") && whiteState.get("gameOver").asBoolean()) {
                 if (whiteState.has("winner")) {
                     return whiteState.get("winner").asText();
+                }
+            }
+            
+            if (blackState.has("gameOver") && blackState.get("gameOver").asBoolean()) {
+                if (blackState.has("winner")) {
+                    return blackState.get("winner").asText();
                 }
             }
             
