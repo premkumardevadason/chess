@@ -12,9 +12,19 @@ public class ChessRuleValidator {
      * Validates if a chess move is legal according to FIDE rules
      */
     public boolean isValidMove(String[][] board, int fromRow, int fromCol, int toRow, int toCol, boolean whiteTurn) {
+        // Null safety check for board
+        if (board == null) {
+            return false;
+        }
+        
         // Basic bounds check
         if (fromRow < 0 || fromRow > 7 || fromCol < 0 || fromCol > 7 ||
             toRow < 0 || toRow > 7 || toCol < 0 || toCol > 7) {
+            return false;
+        }
+        
+        // Null safety check for board rows
+        if (board[fromRow] == null || board[toRow] == null) {
             return false;
         }
         
@@ -31,6 +41,9 @@ public class ChessRuleValidator {
         
         // Can't capture own piece
         String targetPiece = board[toRow][toCol];
+        if (targetPiece == null) {
+            targetPiece = "";
+        }
         if (!targetPiece.isEmpty()) {
             boolean isTargetWhite = "♔♕♖♗♘♙".contains(targetPiece);
             if (isPieceWhite == isTargetWhite) {
@@ -81,30 +94,65 @@ public class ChessRuleValidator {
     }
     
     private boolean isValidPawnMove(String[][] board, int fromRow, int fromCol, int toRow, int toCol, boolean isWhite) {
+        // Null safety check for board
+        if (board == null) {
+            return false;
+        }
+        
+        // Bounds check
+        if (fromRow < 0 || fromRow >= 8 || fromCol < 0 || fromCol >= 8 ||
+            toRow < 0 || toRow >= 8 || toCol < 0 || toCol >= 8) {
+            return false;
+        }
+        
+        // Null safety check for board rows
+        if (board[fromRow] == null || board[toRow] == null) {
+            return false;
+        }
+        
         int direction = isWhite ? -1 : 1; // White moves up (negative), black moves down (positive)
         int rowDiff = toRow - fromRow;
         int colDiff = Math.abs(toCol - fromCol);
         
         // Forward move
         if (colDiff == 0) {
-            if (rowDiff == direction && board[toRow][toCol].isEmpty()) {
+            String toSquare = board[toRow][toCol];
+            if (toSquare == null) toSquare = "";
+            
+            if (rowDiff == direction && toSquare.isEmpty()) {
                 return true; // One square forward
             }
-            if (rowDiff == 2 * direction && board[toRow][toCol].isEmpty() && board[fromRow + direction][fromCol].isEmpty()) {
-                // Two squares forward from starting position
-                int startingRow = isWhite ? 6 : 1;
-                return fromRow == startingRow;
+            if (rowDiff == 2 * direction && toSquare.isEmpty()) {
+                // Check intermediate square
+                int intermediateRow = fromRow + direction;
+                if (intermediateRow >= 0 && intermediateRow < 8 && board[intermediateRow] != null) {
+                    String intermediateSquare = board[intermediateRow][fromCol];
+                    if (intermediateSquare == null) intermediateSquare = "";
+                    
+                    if (intermediateSquare.isEmpty()) {
+                        // Two squares forward from starting position
+                        int startingRow = isWhite ? 6 : 1;
+                        return fromRow == startingRow;
+                    }
+                }
             }
         }
         // Diagonal capture
         else if (colDiff == 1 && rowDiff == direction) {
-            return !board[toRow][toCol].isEmpty();
+            String toSquare = board[toRow][toCol];
+            if (toSquare == null) toSquare = "";
+            return !toSquare.isEmpty();
         }
         
         return false;
     }
     
     private boolean isPathClear(String[][] board, int fromRow, int fromCol, int toRow, int toCol) {
+        // Null safety check for board
+        if (board == null) {
+            return false;
+        }
+        
         int rowStep = Integer.compare(toRow, fromRow);
         int colStep = Integer.compare(toCol, fromCol);
         
@@ -112,7 +160,22 @@ public class ChessRuleValidator {
         int currentCol = fromCol + colStep;
         
         while (currentRow != toRow || currentCol != toCol) {
-            if (!board[currentRow][currentCol].isEmpty()) {
+            // Bounds check
+            if (currentRow < 0 || currentRow >= 8 || currentCol < 0 || currentCol >= 8) {
+                return false;
+            }
+            
+            // Null safety check for board row
+            if (board[currentRow] == null) {
+                return false;
+            }
+            
+            String piece = board[currentRow][currentCol];
+            if (piece == null) {
+                piece = "";
+            }
+            
+            if (!piece.isEmpty()) {
                 return false;
             }
             currentRow += rowStep;
@@ -123,9 +186,28 @@ public class ChessRuleValidator {
     }
     
     private boolean wouldExposeKingToCheck(String[][] board, int fromRow, int fromCol, int toRow, int toCol, boolean whiteTurn) {
+        // Null safety check for board
+        if (board == null) {
+            return false;
+        }
+        
+        // Bounds check
+        if (fromRow < 0 || fromRow >= 8 || fromCol < 0 || fromCol >= 8 ||
+            toRow < 0 || toRow >= 8 || toCol < 0 || toCol >= 8) {
+            return false;
+        }
+        
+        // Null safety check for board rows
+        if (board[fromRow] == null || board[toRow] == null) {
+            return false;
+        }
+        
         // Simulate the move
         String piece = board[fromRow][fromCol];
         String captured = board[toRow][toCol];
+        
+        if (piece == null) piece = "";
+        if (captured == null) captured = "";
         
         board[toRow][toCol] = piece;
         board[fromRow][fromCol] = "";
@@ -147,10 +229,21 @@ public class ChessRuleValidator {
     }
     
     private int[] findKing(String[][] board, boolean isWhite) {
+        // Null safety check for board
+        if (board == null) {
+            return null;
+        }
+        
         String king = isWhite ? "♔" : "♚";
         for (int i = 0; i < 8; i++) {
+            // Null safety check for board row
+            if (board[i] == null) {
+                continue;
+            }
+            
             for (int j = 0; j < 8; j++) {
-                if (king.equals(board[i][j])) {
+                String piece = board[i][j];
+                if (piece != null && king.equals(piece)) {
                     return new int[]{i, j};
                 }
             }
@@ -159,14 +252,33 @@ public class ChessRuleValidator {
     }
     
     public boolean isSquareUnderAttack(String[][] board, int row, int col, boolean byWhite) {
+        // Null safety check for board
+        if (board == null) {
+            return false;
+        }
+        
         String attackerPieces = byWhite ? "♔♕♖♗♘♙" : "♚♛♜♝♞♟";
         
         for (int i = 0; i < 8; i++) {
+            // Null safety check for board row
+            if (board[i] == null) {
+                continue;
+            }
+            
             for (int j = 0; j < 8; j++) {
                 String piece = board[i][j];
+                if (piece == null) {
+                    piece = "";
+                }
+                
                 if (!piece.isEmpty() && attackerPieces.contains(piece)) {
-                    if (canDirectlyAttack(board, i, j, row, col, piece)) {
-                        return true;
+                    try {
+                        if (canDirectlyAttack(board, i, j, row, col, piece)) {
+                            return true;
+                        }
+                    } catch (Exception e) {
+                        // Skip pieces that cause exceptions
+                        continue;
                     }
                 }
             }
@@ -175,7 +287,18 @@ public class ChessRuleValidator {
     }
     
     public boolean canDirectlyAttack(String[][] board, int fromRow, int fromCol, int toRow, int toCol, String piece) {
+        // Null safety checks
+        if (board == null || piece == null) {
+            return false;
+        }
+        
         if (fromRow == toRow && fromCol == toCol) return false;
+        
+        // Bounds check
+        if (fromRow < 0 || fromRow >= 8 || fromCol < 0 || fromCol >= 8 ||
+            toRow < 0 || toRow >= 8 || toCol < 0 || toCol >= 8) {
+            return false;
+        }
         
         int rowDiff = Math.abs(toRow - fromRow);
         int colDiff = Math.abs(toCol - fromCol);
@@ -205,14 +328,34 @@ public class ChessRuleValidator {
         List<int[]> moves = new ArrayList<>();
         String pieces = forWhite ? "♔♕♖♗♘♙" : "♚♛♜♝♞♟";
         
+        // Null safety check for board
+        if (board == null) {
+            return moves;
+        }
+        
         for (int fromRow = 0; fromRow < 8; fromRow++) {
             for (int fromCol = 0; fromCol < 8; fromCol++) {
+                // Null safety check for board row
+                if (board[fromRow] == null) {
+                    continue;
+                }
+                
                 String piece = board[fromRow][fromCol];
+                // Null safety check for piece
+                if (piece == null) {
+                    piece = "";
+                }
+                
                 if (!piece.isEmpty() && pieces.contains(piece)) {
                     for (int toRow = 0; toRow < 8; toRow++) {
                         for (int toCol = 0; toCol < 8; toCol++) {
-                            if (isValidMove(board, fromRow, fromCol, toRow, toCol, forWhite)) {
-                                moves.add(new int[]{fromRow, fromCol, toRow, toCol});
+                            try {
+                                if (isValidMove(board, fromRow, fromCol, toRow, toCol, forWhite)) {
+                                    moves.add(new int[]{fromRow, fromCol, toRow, toCol});
+                                }
+                            } catch (Exception e) {
+                                // Skip invalid moves that cause exceptions
+                                continue;
                             }
                         }
                     }

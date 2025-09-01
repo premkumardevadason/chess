@@ -9,10 +9,11 @@ import java.util.ArrayList;
 public class UCITranslator {
     
     /**
-     * Parse UCI move notation to coordinates (e.g. "e2e4" -> [6,4,4,4])
+     * Parse UCI move notation to coordinates (e.g. "e2e4" -> [6,4,4,4], "c7c8Q" -> [1,2,0,2])
+     * Supports both 4-character moves and 5-character pawn promotion moves
      */
     public static int[] parseUCIMove(String uciMove) {
-        if (uciMove == null || uciMove.length() != 4) return null;
+        if (uciMove == null || (uciMove.length() != 4 && uciMove.length() != 5)) return null;
         
         try {
             char fromFile = uciMove.charAt(0);

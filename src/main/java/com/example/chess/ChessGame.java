@@ -2970,6 +2970,30 @@ public class ChessGame {
         return ruleValidator.getChessPieceValue(piece);
     }
     
+    /**
+     * Check if a pawn move results in promotion
+     */
+    private boolean isPawnPromotion(String piece, int toRow) {
+        if ("♙".equals(piece) && toRow == 0) return true; // White pawn reaches rank 8
+        if ("♟".equals(piece) && toRow == 7) return true; // Black pawn reaches rank 1
+        return false;
+    }
+    
+    /**
+     * Handle pawn promotion automatically to Queen
+     */
+    private boolean handlePawnPromotion(String piece, int toRow, int toCol) {
+        if (isPawnPromotion(piece, toRow)) {
+            if ("♙".equals(piece)) {
+                board[toRow][toCol] = "♕"; // White pawn promotes to Queen
+            } else if ("♟".equals(piece)) {
+                board[toRow][toCol] = "♛"; // Black pawn promotes to Queen
+            }
+            return true;
+        }
+        return false;
+    }
+    
     private List<int[]> filterSafeMoves(List<int[]> moves) {
         List<int[]> safeMoves = new ArrayList<>();
         
@@ -4548,23 +4572,7 @@ public class ChessGame {
         return score;
     }
     
-    private boolean isPawnPromotion(String piece, int toRow) {
-        return ruleValidator.isPawnPromotion(piece, toRow);
-    }
-    
-    private boolean handlePawnPromotion(String piece, int row, int col) {
-        // White pawn promotion (reaches row 0)
-        if ("♙".equals(piece) && row == 0) {
-            board[row][col] = "♕"; // Promote to Queen
-            return true;
-        }
-        // Black pawn promotion (reaches row 7)
-        if ("♟".equals(piece) && row == 7) {
-            board[row][col] = "♛"; // Promote to Queen
-            return true;
-        }
-        return false;
-    }
+
     
 
     
