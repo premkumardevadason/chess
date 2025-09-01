@@ -350,7 +350,7 @@ public class ChessSessionProxy {
         if (!gameActive || isGameOver()) {
             System.out.println("Game over - creating new game for session: " + sessionId + " (reusing connection)");
             initializeGame(
-                "white".equals(playerColor) ? config.getWhiteAI() : config.getBlackAI(),
+                "white".equals(playerColor) ? config.getBlackAI() : config.getWhiteAI(),
                 config.getAiDifficulty()
             );
         } else {

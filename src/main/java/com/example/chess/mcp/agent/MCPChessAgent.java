@@ -53,6 +53,7 @@ public class MCPChessAgent {
         System.out.println("MCP Chess Agent initialized");
         System.out.println("Server: " + config.getServerHost() + ":" + config.getServerPort());
         System.out.println("Transport: " + config.getTransportType());
+        System.out.println("Games per session: " + config.getGamesPerSession());
         
         // Display available MCP tools
         displayMCPTools();
@@ -214,7 +215,7 @@ public class MCPChessAgent {
         System.out.println("  --host <host>        MCP server host (default: localhost)");
         System.out.println("  --port <port>        MCP server port (default: 8082)");
         System.out.println("  --transport <type>   Transport type: websocket|stdio (default: websocket)");
-        System.out.println("  --games <count>      Games per session (default: 100)");
+        System.out.println("  --games <count>      Games per session (default: 1)");
         System.out.println("  --difficulty <level> AI difficulty 1-10 (default: 8)");
         System.out.println("  --white <ai>         White AI system (default: AlphaZero)");
         System.out.println("  --black <ai>         Black AI system (default: LeelaChessZero)");
