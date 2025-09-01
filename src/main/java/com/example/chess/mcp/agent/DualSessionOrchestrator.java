@@ -2,7 +2,6 @@ package com.example.chess.mcp.agent;
 
 import java.util.concurrent.atomic.AtomicLong;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * Orchestrates dual chess sessions for AI vs AI training
@@ -192,6 +191,7 @@ public class DualSessionOrchestrator {
             JsonNode whiteState = whiteSession.getBoardState();
             JsonNode blackState = blackSession.getBoardState();
             
+            // Prefer explicit winner fields if present
             if (whiteState.has("gameOver") && whiteState.get("gameOver").asBoolean()) {
                 if (whiteState.has("winner")) {
                     return whiteState.get("winner").asText();
@@ -204,10 +204,40 @@ public class DualSessionOrchestrator {
                 }
             }
             
+            // Fallback: map gameStatus if available
+            String whiteStatus = whiteState.path("gameStatus").asText("");
+            if (!whiteStatus.isEmpty() && !"active".equals(whiteStatus)) {
+                return mapStatusToResult(whiteStatus);
+            }
+            String blackStatus = blackState.path("gameStatus").asText("");
+            if (!blackStatus.isEmpty() && !"active".equals(blackStatus)) {
+                return mapStatusToResult(blackStatus);
+            }
+            
             return "Draw";
         } catch (Exception e) {
             System.err.println("Error determining game result: " + e.getMessage());
             return "Unknown";
+        }
+    }
+    
+    private String mapStatusToResult(String status) {
+        switch (status) {
+            case "white_wins":
+            case "WHITE_WINS":
+            case "white-checkmates":
+                return "White";
+            case "black_wins":
+            case "BLACK_WINS":
+            case "black-checkmates":
+                return "Black";
+            case "draw":
+            case "stalemate":
+            case "insufficient_material":
+            case "threefold_repetition":
+                return "Draw";
+            default:
+                return status;
         }
     }
     
