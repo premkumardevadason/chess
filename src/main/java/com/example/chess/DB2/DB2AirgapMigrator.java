@@ -1,4 +1,4 @@
-package com.example.chess;
+package com.example.chess.DB2;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;

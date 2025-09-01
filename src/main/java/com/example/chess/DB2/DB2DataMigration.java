@@ -1,4 +1,4 @@
-package com.example.chess;
+package com.example.chess.DB2;
 
 import java.io.BufferedReader;
 import java.io.FileInputStream;
@@ -19,6 +19,8 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
+import java.util.Properties;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
@@ -36,20 +38,17 @@ public class DB2DataMigration {
     
     private static final Logger logger = LogManager.getLogger(DB2DataMigration.class);
     
-    // Connection configurations
-    private static final String ONPREM_URL = "jdbc:db2://onprem-server:50000/FNDB";
-    private static final String ONPREM_USER = "db2admin";
-    private static final String ONPREM_PASSWORD = "password";
+    // Enhanced connection management
+    private DB2ConnectionManager onPremConnectionManager;
+    private DB2ConnectionManager rdsConnectionManager;
+    private DB2MigrationCircuitBreaker circuitBreaker;
     
-    private static final String RDS_URL = "jdbc:db2://rds-endpoint:50000/FNDB";
-    private static final String RDS_USER = "db2admin";
-    private static final String RDS_PASSWORD = "password";
+    // Configuration
+    private Properties onPremConfig;
+    private Properties rdsConfig;
+    private Map<String, String> migrationConfig;
     
-    private static final int BATCH_SIZE = 1000;
-    private static final int MAX_RETRIES = 3;
-    
-    private Connection onPremConn;
-    private Connection rdsConn;
+    // Statistics
     private AtomicLong totalRecords = new AtomicLong(0);
     private AtomicLong migratedRecords = new AtomicLong(0);
     private List<TableStats> tableStatsList = new ArrayList<>();
@@ -85,9 +84,9 @@ public class DB2DataMigration {
         Files.createDirectories(exportPath);
         
         try {
-            initializeOnPremConnection();
+            initializeConnections();
             
-            String[] tables = getFileNetTables();
+            String[] tables = DB2MigrationConfig.getFileNetTables();
             
             for (String table : tables) {
                 exportTable(table, exportPath);
@@ -102,7 +101,7 @@ public class DB2DataMigration {
             logger.info("*** Export completed: {} records exported ***", totalRecords.get());
             
         } finally {
-            closeOnPremConnection();
+            closeConnections();
         }
     }
     
@@ -115,7 +114,7 @@ public class DB2DataMigration {
         }
         
         try {
-            initializeRDSConnection();
+            initializeConnections();
             
             // Read manifest
             String[] tables = readManifest(exportPath);
@@ -130,74 +129,88 @@ public class DB2DataMigration {
             logger.info("*** Import completed: {} records imported ***", migratedRecords.get());
             
         } finally {
-            closeRDSConnection();
+            closeConnections();
         }
     }
     
-    private void initializeOnPremConnection() throws SQLException {
-        logger.info("Connecting to on-prem DB2 10.5...");
-        onPremConn = DriverManager.getConnection(ONPREM_URL, ONPREM_USER, ONPREM_PASSWORD);
-        onPremConn.setAutoCommit(false);
-        logger.info("On-prem connection established");
+    /**
+     * Initialize database connections using enhanced connection management
+     */
+    private void initializeConnections() throws Exception {
+        try {
+            // Load configuration
+            onPremConfig = DB2MigrationConfig.getOnPremConfig();
+            rdsConfig = DB2MigrationConfig.getRDSConfig();
+            migrationConfig = DB2MigrationConfig.getMigrationConfig();
+            
+            // Initialize connection managers
+            onPremConnectionManager = new DB2ConnectionManager(onPremConfig, "ONPREM");
+            rdsConnectionManager = new DB2ConnectionManager(rdsConfig, "RDS");
+            
+            // Initialize circuit breaker
+            circuitBreaker = new DB2MigrationCircuitBreaker();
+            
+            logger.info("Database connections initialized successfully");
+            
+        } catch (SecurityException e) {
+            logger.error("Configuration error: {}", e.getMessage());
+            throw new Exception("Failed to initialize connections: " + e.getMessage(), e);
+        }
     }
     
-    private void initializeRDSConnection() throws SQLException {
-        logger.info("Connecting to AWS RDS DB2 11.5...");
-        rdsConn = DriverManager.getConnection(RDS_URL, RDS_USER, RDS_PASSWORD);
-        rdsConn.setAutoCommit(false);
-        logger.info("RDS connection established");
-    }
-    
-    private String[] getFileNetTables() {
-        // FileNet P8 core tables in dependency order
-        return new String[]{
-            "FNCE_OBJECT_STORE",
-            "FNCE_CLASS_DEFINITION", 
-            "FNCE_PROPERTY_DEFINITION",
-            "FNCE_DOCUMENT",
-            "FNCE_FOLDER",
-            "FNCE_CONTENT_ELEMENT",
-            "FNCE_VERSION_SERIES",
-            "FNCE_SECURITY_POLICY",
-            "FNCE_ACCESS_PERMISSION",
-            "FNCE_WORKFLOW_DEFINITION",
-            "FNCE_WORKFLOW_ROSTER",
-            "FNCE_WORK_ITEM",
-            "FNCE_AUDIT_ENTRY",
-            "FNCE_SUBSCRIPTION",
-            "FNCE_EVENT_ACTION"
-        };
+    /**
+     * Close database connections
+     */
+    private void closeConnections() {
+        if (onPremConnectionManager != null) {
+            onPremConnectionManager.shutdown();
+        }
+        if (rdsConnectionManager != null) {
+            rdsConnectionManager.shutdown();
+        }
+        logger.info("Database connections closed");
     }
     
     private void exportTable(String tableName, Path exportPath) throws Exception {
         logger.info("Exporting table: {}", tableName);
         
-        if (!tableExists(onPremConn, tableName)) {
-            logger.warn("Table {} not found, skipping", tableName);
-            return;
+        try {
+            Connection conn = onPremConnectionManager.getConnection();
+            try {
+                if (!tableExists(conn, tableName)) {
+                    logger.warn("Table {} not found, skipping", tableName);
+                    return;
+                }
+                
+                TableMetadata metadata = getTableMetadata(conn, tableName);
+                long tableRecords = getRecordCount(conn, tableName);
+                
+                if (tableRecords == 0) {
+                    logger.info("Table {} is empty, skipping", tableName);
+                    return;
+                }
+                
+                // Export to compressed CSV file
+                Path tableFile = exportPath.resolve(tableName + ".csv.gz");
+                Path metaFile = exportPath.resolve(tableName + ".meta");
+                
+                exportTableData(tableName, metadata, tableFile);
+                exportTableMetadata(metadata, metaFile);
+                
+                totalRecords.addAndGet(tableRecords);
+                
+                // Store table stats for report
+                storeTableStats(tableName, tableRecords, "EXPORTED");
+                
+                logger.info("Table {} exported: {} records", tableName, tableRecords);
+                
+            } finally {
+                onPremConnectionManager.returnConnection(conn);
+            }
+        } catch (SQLException e) {
+            logger.error("Failed to export table {}: {}", tableName, e.getMessage());
+            throw e;
         }
-        
-        TableMetadata metadata = getTableMetadata(onPremConn, tableName);
-        long tableRecords = getRecordCount(onPremConn, tableName);
-        
-        if (tableRecords == 0) {
-            logger.info("Table {} is empty, skipping", tableName);
-            return;
-        }
-        
-        // Export to compressed CSV file
-        Path tableFile = exportPath.resolve(tableName + ".csv.gz");
-        Path metaFile = exportPath.resolve(tableName + ".meta");
-        
-        exportTableData(tableName, metadata, tableFile);
-        exportTableMetadata(metadata, metaFile);
-        
-        totalRecords.addAndGet(tableRecords);
-        
-        // Store table stats for report
-        storeTableStats(tableName, tableRecords, "EXPORTED");
-        
-        logger.info("Table {} exported: {} records", tableName, tableRecords);
     }
     
     private void importTable(String tableName, Path exportPath) throws Exception {
@@ -225,7 +238,8 @@ public class DB2DataMigration {
     private void exportTableData(String tableName, TableMetadata metadata, Path tableFile) throws Exception {
         String selectSql = "SELECT * FROM " + tableName;
         
-        try (PreparedStatement stmt = onPremConn.prepareStatement(selectSql);
+        Connection conn = onPremConnectionManager.getConnection();
+        try (PreparedStatement stmt = conn.prepareStatement(selectSql);
              ResultSet rs = stmt.executeQuery();
              FileOutputStream fos = new FileOutputStream(tableFile.toFile());
              GZIPOutputStream gzos = new GZIPOutputStream(fos);
@@ -246,6 +260,8 @@ public class DB2DataMigration {
                 
                 writer.println(line.toString());
             }
+        } finally {
+            onPremConnectionManager.returnConnection(conn);
         }
     }
     
@@ -253,13 +269,15 @@ public class DB2DataMigration {
         String insertSql = buildInsertSql(tableName, metadata);
         long imported = 0;
         
+        Connection conn = rdsConnectionManager.getConnection();
         try (FileInputStream fis = new FileInputStream(tableFile.toFile());
              GZIPInputStream gzis = new GZIPInputStream(fis);
              BufferedReader reader = new BufferedReader(new InputStreamReader(gzis, "UTF-8"));
-             PreparedStatement stmt = rdsConn.prepareStatement(insertSql)) {
+             PreparedStatement stmt = conn.prepareStatement(insertSql)) {
             
             String line;
             int batchCount = 0;
+            int batchSize = Integer.parseInt(migrationConfig.get("batchSize"));
             
             while ((line = reader.readLine()) != null) {
                 String[] values = line.split("\\|", -1);
@@ -279,17 +297,19 @@ public class DB2DataMigration {
                 batchCount++;
                 imported++;
                 
-                if (batchCount >= BATCH_SIZE) {
+                if (batchCount >= batchSize) {
                     stmt.executeBatch();
-                    rdsConn.commit();
+                    conn.commit();
                     batchCount = 0;
                 }
             }
             
             if (batchCount > 0) {
                 stmt.executeBatch();
-                rdsConn.commit();
+                conn.commit();
             }
+        } finally {
+            rdsConnectionManager.returnConnection(conn);
         }
         
         return imported;
@@ -422,27 +442,7 @@ public class DB2DataMigration {
         }
     }
     
-    private void closeOnPremConnection() {
-        try {
-            if (onPremConn != null && !onPremConn.isClosed()) {
-                onPremConn.close();
-                logger.info("On-prem connection closed");
-            }
-        } catch (SQLException e) {
-            logger.error("Error closing on-prem connection: {}", e.getMessage());
-        }
-    }
-    
-    private void closeRDSConnection() {
-        try {
-            if (rdsConn != null && !rdsConn.isClosed()) {
-                rdsConn.close();
-                logger.info("RDS connection closed");
-            }
-        } catch (SQLException e) {
-            logger.error("Error closing RDS connection: {}", e.getMessage());
-        }
-    }
+
     
     private void storeTableStats(String tableName, long recordCount, String operation) {
         tableStatsList.add(new TableStats(tableName, recordCount, operation, new Date()));
@@ -513,18 +513,7 @@ public class DB2DataMigration {
     }
     
     private String calculateFileChecksum(Path filePath) {
-        try {
-            if (!Files.exists(filePath)) return "FILE_NOT_FOUND";
-            
-            long fileSize = Files.size(filePath);
-            long lastModified = Files.getLastModifiedTime(filePath).toMillis();
-            
-            // Simple checksum based on file size and modification time
-            return String.format("CRC_%08X", (int)(fileSize ^ lastModified));
-            
-        } catch (IOException e) {
-            return "CHECKSUM_ERROR";
-        }
+        return DB2DataValidator.calculateFileChecksum(filePath);
     }
     
     // Helper classes

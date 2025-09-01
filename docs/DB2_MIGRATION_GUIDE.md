@@ -32,10 +32,10 @@
 2. **Compile and Run Export**
    ```bash
    # Compile
-   javac -cp ".:db2jcc4.jar:log4j-core-2.x.x.jar" com/example/chess/DB2DataMigration.java
+   javac -cp ".:db2jcc4.jar:log4j-core-2.x.x.jar" com/example/chess/DB2/DB2DataMigration.java
    
    # Run export
-   java -cp ".:db2jcc4.jar:log4j-core-2.x.x.jar" com.example.chess.DB2DataMigration export /path/to/export
+   java -cp ".:db2jcc4.jar:log4j-core-2.x.x.jar" com.example.chess.DB2.DB2DataMigration export /path/to/export
    ```
 
 3. **Export Output Structure**
@@ -106,10 +106,10 @@
 3. **Run Import**
    ```bash
    # Compile (if not done already)
-   javac -cp ".:db2jcc4.jar:log4j-core-2.x.x.jar" com/example/chess/DB2DataMigration.java
+   javac -cp ".:db2jcc4.jar:log4j-core-2.x.x.jar" com/example/chess/DB2/DB2DataMigration.java
    
    # Run import
-   java -cp ".:db2jcc4.jar:log4j-core-2.x.x.jar" com.example.chess.DB2DataMigration import /path/to/import
+   java -cp ".:db2jcc4.jar:log4j-core-2.x.x.jar" com.example.chess.DB2.DB2DataMigration import /path/to/import
    ```
 
 4. **Monitor Import Progress**
@@ -205,7 +205,7 @@ WHERE os.ID IS NULL; -- Should return 0
 2. **Memory Issues**
    ```bash
    # Increase JVM heap size
-   java -Xmx8g -Xms2g -cp "..." com.example.chess.DB2DataMigration
+   java -Xmx8g -Xms2g -cp "..." com.example.chess.DB2.DB2DataMigration
    ```
 
 3. **Character Encoding**
@@ -272,7 +272,7 @@ WHERE os.ID IS NULL; -- Should return 0
 #### Enable Detailed Logging
 ```java
 // Add to log4j2.xml
-<Logger name="com.example.chess.DB2DataMigration" level="DEBUG"/>
+<Logger name="com.example.chess.DB2.DB2DataMigration" level="DEBUG"/>
 ```
 
 #### AWS CloudWatch Integration
