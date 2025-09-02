@@ -4,6 +4,8 @@
 
 This document outlines the comprehensive high-level design for refactoring the Chess application's frontend from vanilla HTML/CSS/JavaScript to a modern React + TypeScript + ShadCN/UI + PWA architecture. The refactoring maintains 100% feature parity while enhancing user experience, performance, and maintainability.
 
+**Critical Requirement**: The existing UI will remain fully functional and accessible at the current URL (`http://localhost:8081`) throughout the entire refactoring process. The new React UI will be available at `http://localhost:8081/newage/chess`, ensuring zero disruption to current users and allowing for gradual migration and testing.
+
 ## 1. Project Overview
 
 ### 1.1 Current State
@@ -17,10 +19,54 @@ This document outlines the comprehensive high-level design for refactoring the C
 - **Backend**: Unchanged Spring Boot (minimal configuration updates)
 - **Real-time**: Enhanced WebSocket integration with React hooks
 - **Infrastructure**: Cloud-native deployment with horizontal scaling
+- **Dual UI Support**: Existing UI remains fully functional during transition
+- **New UI Access**: Available at `http://localhost:8081/newage/chess`
 
 ## 2. Architecture Overview
 
-### 2.1 High-Level Architecture
+### 2.1 Dual UI Architecture
+
+The refactoring will implement a **dual UI architecture** that ensures zero disruption to existing users:
+
+#### 2.1.1 URL Structure
+- **Existing UI**: `http://localhost:8081/` (unchanged)
+- **New React UI**: `http://localhost:8081/newage/chess/`
+- **API Endpoints**: `http://localhost:8081/api/**` (shared by both UIs)
+
+#### 2.1.2 Backend Routing Strategy
+```java
+// Dual UI Routing Configuration
+@Configuration
+public class DualUIRoutingConfig {
+    
+    // Existing UI - serves from templates directory
+    @RequestMapping("/")
+    public String existingUI() {
+        return "index"; // Serves existing HTML template
+    }
+    
+    // New React UI - serves from static/newage/chess directory
+    @RequestMapping("/newage/chess/**")
+    public String newReactUI() {
+        return "forward:/newage/chess/index.html"; // SPA routing
+    }
+    
+    // Shared API endpoints - used by both UIs
+    @RequestMapping("/api/**")
+    public ResponseEntity<?> sharedAPI() {
+        // Existing API logic unchanged
+    }
+}
+```
+
+#### 2.1.3 Benefits of Dual UI Approach
+- **Zero Downtime**: Existing users continue without interruption
+- **Gradual Migration**: Users can test new UI at their own pace
+- **Risk Mitigation**: Fallback to existing UI if issues arise
+- **A/B Testing**: Compare user experience between old and new UIs
+- **Development Safety**: New features can be tested without affecting production users
+
+### 2.2 High-Level Architecture
 
 ```mermaid
 graph TB
@@ -654,19 +700,19 @@ self.addEventListener('fetch', (event) => {
 
 #### 5.3.1 Required Backend Changes
 ```java
-// WebConfig.java - Static Resource Configuration
+// WebConfig.java - Static Resource Configuration with Dual UI Support
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
     
     @Override
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
-        // Serve React build files
-        registry.addResourceHandler("/static/**")
-                .addResourceLocations("classpath:/static/");
+        // Serve existing UI at root path (unchanged)
+        registry.addResourceHandler("/")
+                .addResourceLocations("classpath:/templates/");
         
-        // SPA routing - serve index.html for all non-API routes
-        registry.addResourceHandler("/**")
-                .addResourceLocations("classpath:/static/")
+        // Serve React build files for new UI at /newage/chess/**
+        registry.addResourceHandler("/newage/chess/**")
+                .addResourceLocations("classpath:/static/newage/chess/")
                 .resourceChain(true)
                 .addResolver(new PathResourceResolver() {
                     @Override
@@ -674,9 +720,13 @@ public class WebConfig implements WebMvcConfigurer {
                         Resource requestedResource = location.createRelative(resourcePath);
                         return requestedResource.exists() && requestedResource.isReadable() 
                             ? requestedResource 
-                            : new ClassPathResource("/static/index.html");
+                            : new ClassPathResource("/static/newage/chess/index.html");
                     }
                 });
+        
+        // Serve React static assets
+        registry.addResourceHandler("/newage/chess/static/**")
+                .addResourceLocations("classpath:/static/newage/chess/static/");
     }
 }
 
@@ -741,9 +791,10 @@ jobs:
         cd frontend
         npm run build
     
-    - name: Copy build to backend
+    - name: Copy build to backend with dual UI structure
       run: |
-        cp -r frontend/dist/* src/main/resources/static/
+        mkdir -p src/main/resources/static/newage/chess
+        cp -r frontend/dist/* src/main/resources/static/newage/chess/
     
     - name: Build Docker image
       run: |
@@ -963,30 +1014,42 @@ export default function() {
 - [ ] Install and configure ShadCN/UI
 - [ ] Create basic component structure
 - [ ] Set up PWA infrastructure
+- [ ] **Configure dual UI routing** - ensure existing UI remains at root path
+- [ ] **Set up new UI at `/newage/chess`** path
 
 ### 8.2 Phase 2: Core Components (Week 3-4)
 - [ ] Implement ChessBoard component
 - [ ] Create GameControls component
 - [ ] Build WebSocket integration hooks
 - [ ] Implement basic game state management
+- [ ] **Test both UIs side-by-side** - verify existing functionality preserved
 
 ### 8.3 Phase 3: Advanced Features (Week 5-6)
 - [ ] Add training management components
 - [ ] Implement pawn promotion dialog
 - [ ] Create AI status panels
 - [ ] Add opening book display
+- [ ] **Parallel testing** - ensure feature parity between old and new UI
 
 ### 8.4 Phase 4: Integration & Testing (Week 7-8)
-- [ ] Backend configuration updates
-- [ ] End-to-end testing
+- [ ] Backend configuration updates for dual UI support
+- [ ] End-to-end testing for both UIs
 - [ ] Performance optimization
 - [ ] PWA testing and validation
+- [ ] **User acceptance testing** - validate both UIs work correctly
 
 ### 8.5 Phase 5: Deployment (Week 9-10)
-- [ ] CI/CD pipeline setup
+- [ ] CI/CD pipeline setup with dual UI support
 - [ ] Infrastructure deployment
-- [ ] Production testing
+- [ ] Production testing of both UIs
+- [ ] **Gradual migration** - users can choose between old and new UI
 - [ ] Go-live and monitoring
+
+### 8.6 Phase 6: Legacy UI Deprecation (Future)
+- [ ] Monitor usage of both UIs
+- [ ] Collect user feedback
+- [ ] Plan legacy UI deprecation timeline
+- [ ] **Final migration** - redirect root path to new UI when ready
 
 ## 9. Risk Assessment & Mitigation
 
@@ -1013,11 +1076,19 @@ export default function() {
 - **Risk**: Some features may be lost during migration
 - **Mitigation**: Comprehensive feature testing and user acceptance testing
 - **Monitoring**: Track feature usage and user feedback
+- **Dual UI Benefit**: Existing UI remains available as fallback during development
 
 #### 9.2.2 User Experience
 - **Risk**: Users may prefer the old interface
 - **Mitigation**: Gradual rollout with A/B testing and user feedback collection
 - **Monitoring**: Track user engagement and satisfaction metrics
+- **Zero Disruption**: Existing users continue using current UI without interruption
+
+#### 9.2.3 Development Complexity
+- **Risk**: Maintaining two UIs simultaneously may increase complexity
+- **Mitigation**: Clear separation of concerns and comprehensive testing
+- **Monitoring**: Track development velocity and bug rates
+- **Benefit**: Allows for thorough testing and validation before migration
 
 ## 10. Success Metrics
 
@@ -2806,6 +2877,9 @@ This comprehensive high-level design document provides a complete roadmap for re
 - **Better Maintainability**: TypeScript, component architecture, testing
 - **Production Ready**: Security, monitoring, CI/CD pipeline
 - **Future Proof**: Scalable architecture, modern tech stack
+- **Zero Disruption**: Existing UI remains fully functional during transition
+- **Gradual Migration**: Users can choose between old and new UI
+- **Risk Mitigation**: Fallback to existing UI if issues arise
 
 ### 13.2 Implementation Phases
 1. **Phase 1**: Core components and basic functionality (4-6 weeks)
