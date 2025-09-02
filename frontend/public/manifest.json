@@ -1,0 +1,71 @@
+{
+  "name": "Chess AI Game - Advanced AI Training Platform",
+  "short_name": "Chess AI",
+  "description": "Advanced Chess Game with 12 AI Systems, Training Management, and Opening Book",
+  "start_url": "/newage/chess/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#1e293b",
+  "orientation": "portrait-primary",
+  "scope": "/newage/chess/",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["games", "education", "entertainment"],
+  "icons": [
+    {
+      "src": "/pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "New Game",
+      "short_name": "New Game",
+      "description": "Start a new chess game",
+      "url": "/newage/chess/?action=new-game",
+      "icons": [
+        {
+          "src": "/pwa-192x192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "AI Training",
+      "short_name": "Training",
+      "description": "Manage AI training",
+      "url": "/newage/chess/?tab=training",
+      "icons": [
+        {
+          "src": "/pwa-192x192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Opening Book",
+      "short_name": "Openings",
+      "description": "Browse chess openings",
+      "url": "/newage/chess/?tab=openings",
+      "icons": [
+        {
+          "src": "/pwa-192x192.png",
+          "sizes": "192x192"
+        }
+      ]
+    }
+  ],
+  "related_applications": [],
+  "prefer_related_applications": false,
+  "launch_handler": {
+    "client_mode": "navigate-existing"
+  }
+}
