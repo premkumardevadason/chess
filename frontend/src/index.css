@@ -75,16 +75,6 @@
   @apply bg-chess-dark;
 }
 
-.chess-square.selected {
-  @apply bg-chess-selected;
-}
-
-.chess-square.highlight {
-  @apply bg-chess-highlight;
-}
-
-
-
 .chess-square.ai-move {
   @apply border-4 border-green-500;
   animation: aiMoveBlink 5s ease-in-out;
@@ -97,10 +87,6 @@
   10%, 30%, 50%, 70%, 90% {
     border-color: transparent;
   }
-}
-
-.chess-square.check {
-  @apply bg-chess-check;
 }
 
 .chess-piece {

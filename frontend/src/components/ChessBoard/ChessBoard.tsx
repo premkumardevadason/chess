@@ -49,13 +49,12 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({ onPawnPromotion }) => {
             key={`${rowIndex}-${colIndex}`}
             piece={piece}
             position={[rowIndex, colIndex]}
-            isSelected={gameState.selectedSquare?.[0] === rowIndex && gameState.selectedSquare?.[1] === colIndex}
-            isHighlighted={availableMoves.some(([r, c]) => r === rowIndex && c === colIndex)}
+            isSelected={false}
+            isHighlighted={false}
             isLastMove={false}
             isAIMove={gameState.aiMove && 
-              ((gameState.aiMove.from[0] === rowIndex && gameState.aiMove.from[1] === colIndex) ||
-               (gameState.aiMove.to[0] === rowIndex && gameState.aiMove.to[1] === colIndex))}
-            isCheck={checkSquares.some(([r, c]) => r === rowIndex && c === colIndex)}
+              (gameState.aiMove.to[0] === rowIndex && gameState.aiMove.to[1] === colIndex)}
+            isCheck={false}
             onClick={() => handleSquareClick(rowIndex, colIndex)}
           />
         ))
