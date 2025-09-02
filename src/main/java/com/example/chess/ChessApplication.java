@@ -145,9 +145,15 @@ public class ChessApplication {
         logger.info("Starting Chess Application in Dual Mode (Web + MCP)");
         // Keep web application enabled for dual mode
         System.setProperty("spring.profiles.active", "dev,mcp");
+        // CRITICAL FIX: Override MCP profile's web-application-type=none for dual mode
+        System.setProperty("spring.main.web-application-type", "servlet");
         
         ConfigurableApplicationContext context = SpringApplication.run(ChessApplication.class, args);
         applicationContext = context;
+        
+        // Log web server port
+        String webPort = context.getEnvironment().getProperty("server.port", "8081");
+        logger.info("Web server started on port: {}", webPort);
         
         // Start MCP transport in addition to web interface
         startMCPTransport(context, args);
