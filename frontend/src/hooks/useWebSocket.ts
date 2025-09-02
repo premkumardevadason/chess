@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Client } from '@stomp/stompjs';
+import SockJS from 'sockjs-client';
 import useChessStore from '@/stores/chessStore';
-import type { WebSocketMessage } from '@/types/chess';
+import type { WebSocketMessage, Piece } from '@/types/chess';
 
 interface UseWebSocketOptions {
   url?: string;
@@ -11,7 +12,7 @@ interface UseWebSocketOptions {
 
 export const useWebSocket = (options: UseWebSocketOptions = {}) => {
   const {
-    url = 'ws://localhost:8081/ws',
+    url = 'http://localhost:8081/ws', // Changed to HTTP for SockJS
     reconnectDelay = 1000,
     maxReconnectAttempts = 5
   } = options;
@@ -21,17 +22,20 @@ export const useWebSocket = (options: UseWebSocketOptions = {}) => {
   const [reconnectAttempts, setReconnectAttempts] = useState(0);
   
   const clientRef = useRef<Client | null>(null);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectTimeoutRef = useRef<number | null>(null);
+  const isConnectingRef = useRef<boolean>(false);
   
   const { actions } = useChessStore();
 
   const connect = useCallback(() => {
-    if (clientRef.current?.connected) {
+    if (clientRef.current?.connected || clientRef.current?.active || isConnectingRef.current) {
       return;
     }
+    
+    isConnectingRef.current = true;
 
     const client = new Client({
-      brokerURL: url,
+      webSocketFactory: () => new SockJS(url), // Use SockJS instead of direct WebSocket
       reconnectDelay: reconnectDelay,
       heartbeatIncoming: 4000,
       heartbeatOutgoing: 4000,
@@ -45,16 +49,23 @@ export const useWebSocket = (options: UseWebSocketOptions = {}) => {
       setIsConnected(true);
       setError(null);
       setReconnectAttempts(0);
+      isConnectingRef.current = false;
       actions.setConnectionStatus(true);
 
-      // Subscribe to game updates
-      client.subscribe('/topic/game-updates', (message) => {
+      // Subscribe to game state updates
+      client.subscribe('/topic/gameState', (message) => {
         try {
-          const data: WebSocketMessage = JSON.parse(message.body);
-          handleGameUpdate(data);
+          const gameState = JSON.parse(message.body);
+          handleGameStateUpdate(gameState);
         } catch (err) {
-          console.error('Error parsing game update:', err);
+          console.error('Error parsing game state:', err);
         }
+      });
+
+      // Request initial board state
+      client.publish({
+        destination: '/app/board',
+        body: JSON.stringify({})
       });
 
       // Subscribe to AI training updates
@@ -93,6 +104,7 @@ export const useWebSocket = (options: UseWebSocketOptions = {}) => {
     client.onWebSocketClose = (event) => {
       console.log('WebSocket closed:', event);
       setIsConnected(false);
+      isConnectingRef.current = false;
       actions.setConnectionStatus(false, 'Connection closed');
       
       // Attempt to reconnect
@@ -124,6 +136,7 @@ export const useWebSocket = (options: UseWebSocketOptions = {}) => {
       clientRef.current = null;
     }
     
+    isConnectingRef.current = false;
     setIsConnected(false);
     setError(null);
     setReconnectAttempts(0);
@@ -141,23 +154,57 @@ export const useWebSocket = (options: UseWebSocketOptions = {}) => {
     }
   }, []);
 
-  // Game update handlers
-  const handleGameUpdate = (data: WebSocketMessage) => {
-    switch (data.type) {
-      case 'BOARD_UPDATE':
-        // Update board state
-        break;
-      case 'MOVE_MADE':
-        // Handle move made
-        break;
-      case 'GAME_STATUS':
-        // Update game status
-        break;
-      case 'AVAILABLE_MOVES':
-        // Update available moves
-        break;
-      default:
-        console.log('Unknown game update type:', data.type);
+  // Convert backend board format to frontend format
+  const convertBackendBoard = (backendBoard: string[][]): (Piece | null)[][] => {
+    const pieceMap: Record<string, { type: string; color: string }> = {
+      '♔': { type: 'king', color: 'white' },
+      '♕': { type: 'queen', color: 'white' },
+      '♖': { type: 'rook', color: 'white' },
+      '♗': { type: 'bishop', color: 'white' },
+      '♘': { type: 'knight', color: 'white' },
+      '♙': { type: 'pawn', color: 'white' },
+      '♚': { type: 'king', color: 'black' },
+      '♛': { type: 'queen', color: 'black' },
+      '♜': { type: 'rook', color: 'black' },
+      '♝': { type: 'bishop', color: 'black' },
+      '♞': { type: 'knight', color: 'black' },
+      '♟': { type: 'pawn', color: 'black' }
+    };
+
+    return backendBoard.map(row => 
+      row.map(cell => {
+        if (!cell || cell.trim() === '') return null;
+        const pieceInfo = pieceMap[cell];
+        if (!pieceInfo) return null;
+        return {
+          type: pieceInfo.type as any,
+          color: pieceInfo.color as any,
+          hasMoved: false // We don't track this from backend yet
+        };
+      })
+    );
+  };
+
+  // Game state update handler
+  const handleGameStateUpdate = (gameState: any) => {
+    console.log('Received game state update:', gameState);
+    
+    // Update the chess store with the new game state
+    if (gameState.board) {
+      const convertedBoard = convertBackendBoard(gameState.board);
+      
+      actions.updateGameState({
+        board: convertedBoard,
+        currentPlayer: gameState.whiteTurn ? 'white' : 'black',
+        gameStatus: gameState.gameOver ? 'checkmate' : 'active',
+        availableMoves: [],
+        checkSquares: gameState.kingInCheck ? [gameState.kingInCheck] : [],
+        aiMove: gameState.aiLastMove ? {
+          from: [gameState.aiLastMove[0], gameState.aiLastMove[1]],
+          to: [gameState.aiLastMove[2], gameState.aiLastMove[3]],
+          aiName: gameState.lastMoveAI || 'AI'
+        } : undefined
+      });
     }
   };
 
@@ -195,7 +242,12 @@ export const useWebSocket = (options: UseWebSocketOptions = {}) => {
 
   // Chess-specific message sending
   const makeMove = useCallback((from: [number, number], to: [number, number]) => {
-    sendMessage('/app/make-move', { from, to });
+    sendMessage('/app/move', { 
+      fromRow: from[0], 
+      fromCol: from[1], 
+      toRow: to[0], 
+      toCol: to[1] 
+    });
   }, [sendMessage]);
 
   const startTraining = useCallback((aiSystems: string[]) => {
@@ -211,7 +263,7 @@ export const useWebSocket = (options: UseWebSocketOptions = {}) => {
   }, [sendMessage]);
 
   const newGame = useCallback(() => {
-    sendMessage('/app/new-game', {});
+    sendMessage('/app/newgame', {});
   }, [sendMessage]);
 
   const undoMove = useCallback(() => {
@@ -228,7 +280,7 @@ export const useWebSocket = (options: UseWebSocketOptions = {}) => {
     return () => {
       disconnect();
     };
-  }, [connect, disconnect]);
+  }, []); // Empty dependency array to prevent multiple connections
 
   return {
     isConnected,

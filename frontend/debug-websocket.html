@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Debug Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .log { background: #f5f5f5; padding: 10px; margin: 10px 0; border-radius: 4px; }
+        .error { background: #ffebee; color: #c62828; }
+        .success { background: #e8f5e8; color: #2e7d32; }
+        .info { background: #e3f2fd; color: #1565c0; }
+        button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <h1>WebSocket Connection Debug Test</h1>
+    
+    <div>
+        <button onclick="testDirectWebSocket()">Test Direct WebSocket</button>
+        <button onclick="testSTOMPConnection()">Test STOMP Connection</button>
+        <button onclick="testSockJS()">Test SockJS</button>
+        <button onclick="clearLogs()">Clear Logs</button>
+    </div>
+    
+    <div id="logs"></div>
+
+    <script>
+        function log(message, type = 'info') {
+            const logs = document.getElementById('logs');
+            const logDiv = document.createElement('div');
+            logDiv.className = `log ${type}`;
+            logDiv.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logs.appendChild(logDiv);
+            logs.scrollTop = logs.scrollHeight;
+        }
+
+        function clearLogs() {
+            document.getElementById('logs').innerHTML = '';
+        }
+
+        function testDirectWebSocket() {
+            log('Testing direct WebSocket connection to ws://localhost:8081/ws', 'info');
+            
+            try {
+                const ws = new WebSocket('ws://localhost:8081/ws');
+                
+                ws.onopen = function(event) {
+                    log('Direct WebSocket connection opened successfully!', 'success');
+                    ws.close();
+                };
+                
+                ws.onerror = function(error) {
+                    log(`Direct WebSocket error: ${error}`, 'error');
+                };
+                
+                ws.onclose = function(event) {
+                    log(`Direct WebSocket closed: Code ${event.code}, Reason: ${event.reason}`, 'info');
+                };
+                
+            } catch (error) {
+                log(`Direct WebSocket exception: ${error.message}`, 'error');
+            }
+        }
+
+        function testSockJS() {
+            log('Testing SockJS connection to http://localhost:8081/ws', 'info');
+            
+            // Load SockJS dynamically
+            const script = document.createElement('script');
+            script.src = 'https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js';
+            script.onload = function() {
+                try {
+                    const sock = new SockJS('http://localhost:8081/ws');
+                    
+                    sock.onopen = function() {
+                        log('SockJS connection opened successfully!', 'success');
+                        sock.close();
+                    };
+                    
+                    sock.onmessage = function(e) {
+                        log(`SockJS message received: ${e.data}`, 'info');
+                    };
+                    
+                    sock.onclose = function() {
+                        log('SockJS connection closed', 'info');
+                    };
+                    
+                    sock.onerror = function(error) {
+                        log(`SockJS error: ${error}`, 'error');
+                    };
+                    
+                } catch (error) {
+                    log(`SockJS exception: ${error.message}`, 'error');
+                }
+            };
+            script.onerror = function() {
+                log('Failed to load SockJS library', 'error');
+            };
+            document.head.appendChild(script);
+        }
+
+        function testSTOMPConnection() {
+            log('Testing STOMP connection with SockJS', 'info');
+            
+            // Load both SockJS and STOMP.js dynamically
+            const sockjsScript = document.createElement('script');
+            sockjsScript.src = 'https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js';
+            sockjsScript.onload = function() {
+                const stompScript = document.createElement('script');
+                stompScript.src = 'https://cdn.jsdelivr.net/npm/@stomp/stompjs@7.0.0/bundles/stomp.umd.min.js';
+                stompScript.onload = function() {
+                    try {
+                        const client = new StompJs.Client({
+                            webSocketFactory: () => new SockJS('http://localhost:8081/ws'),
+                            debug: function(str) {
+                                log(`STOMP Debug: ${str}`, 'info');
+                            },
+                            reconnectDelay: 5000,
+                            heartbeatIncoming: 4000,
+                            heartbeatOutgoing: 4000,
+                        });
+
+                        client.onConnect = function(frame) {
+                            log('STOMP + SockJS connection established successfully!', 'success');
+                            log(`STOMP Frame: ${JSON.stringify(frame)}`, 'info');
+                            client.deactivate();
+                        };
+
+                        client.onStompError = function(frame) {
+                            log(`STOMP Error: ${frame.headers.message}`, 'error');
+                            log(`STOMP Error Details: ${JSON.stringify(frame)}`, 'error');
+                        };
+
+                        client.onWebSocketError = function(error) {
+                            log(`STOMP WebSocket Error: ${error}`, 'error');
+                        };
+
+                        client.activate();
+                        
+                    } catch (error) {
+                        log(`STOMP exception: ${error.message}`, 'error');
+                    }
+                };
+                stompScript.onerror = function() {
+                    log('Failed to load STOMP.js library', 'error');
+                };
+                document.head.appendChild(stompScript);
+            };
+            sockjsScript.onerror = function() {
+                log('Failed to load SockJS library', 'error');
+            };
+            document.head.appendChild(sockjsScript);
+        }
+
+        // Test on page load
+        window.onload = function() {
+            log('WebSocket Debug Test Page Loaded', 'info');
+            log('Spring Boot should be running on port 8081', 'info');
+            log('Click buttons above to test different connection methods', 'info');
+        };
+    </script>
+</body>
+</html>

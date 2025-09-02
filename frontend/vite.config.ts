@@ -54,6 +54,9 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  define: {
+    global: 'globalThis',
+  },
   server: {
     port: 3000,
     proxy: {
@@ -62,8 +65,8 @@ export default defineConfig({
         changeOrigin: true,
       },
       '/ws': {
-        target: 'ws://localhost:8081',
-        ws: true,
+        target: 'http://localhost:8081',
+        changeOrigin: true,
       }
     }
   },

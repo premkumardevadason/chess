@@ -10,6 +10,8 @@ interface ChessBoardProps {
 export const ChessBoard: React.FC<ChessBoardProps> = ({ onPawnPromotion }) => {
   const { gameState, actions } = useChessStore();
 
+
+
   const handleSquareClick = (row: number, col: number) => {
     if (gameState.selectedSquare) {
       // Make a move
@@ -20,6 +22,25 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({ onPawnPromotion }) => {
     }
   };
 
+  // Ensure we have a valid board and game state
+  if (!gameState.board || gameState.board.length === 0) {
+    console.error('ChessBoard: Invalid board state', gameState.board);
+    return (
+      <div className="chess-board w-96 h-96 mx-auto flex items-center justify-center border-2 border-gray-800">
+        <div className="text-center">
+          <p className="text-lg font-semibold text-red-600">Chess Board Error</p>
+          <p className="text-sm text-gray-600">Board state is invalid</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Ensure we have valid arrays for moves and check squares
+  const availableMoves = gameState.availableMoves || [];
+  const checkSquares = gameState.checkSquares || [];
+  
+
+
   return (
     <div className="chess-board w-96 h-96 mx-auto">
       {gameState.board.map((row, rowIndex) =>
@@ -29,11 +50,12 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({ onPawnPromotion }) => {
             piece={piece}
             position={[rowIndex, colIndex]}
             isSelected={gameState.selectedSquare?.[0] === rowIndex && gameState.selectedSquare?.[1] === colIndex}
-            isHighlighted={gameState.availableMoves.some(([r, c]) => r === rowIndex && c === colIndex)}
-            isLastMove={gameState.lastMove && 
-              ((gameState.lastMove.from[0] === rowIndex && gameState.lastMove.from[1] === colIndex) ||
-               (gameState.lastMove.to[0] === rowIndex && gameState.lastMove.to[1] === colIndex))}
-            isCheck={gameState.checkSquares.some(([r, c]) => r === rowIndex && c === colIndex)}
+            isHighlighted={availableMoves.some(([r, c]) => r === rowIndex && c === colIndex)}
+            isLastMove={false}
+            isAIMove={gameState.aiMove && 
+              ((gameState.aiMove.from[0] === rowIndex && gameState.aiMove.from[1] === colIndex) ||
+               (gameState.aiMove.to[0] === rowIndex && gameState.aiMove.to[1] === colIndex))}
+            isCheck={checkSquares.some(([r, c]) => r === rowIndex && c === colIndex)}
             onClick={() => handleSquareClick(rowIndex, colIndex)}
           />
         ))

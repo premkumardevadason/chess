@@ -7,11 +7,14 @@ import { OpeningBook } from './OpeningBook/OpeningBook';
 import { Header } from './Header';
 import { Sidebar } from './Sidebar';
 import { Footer } from './Footer';
+
 import useChessStore from '@/stores/chessStore';
+import { useChessWebSocket } from '@/hooks/useChessWebSocket';
 import type { PieceType, PieceColor } from '@/types/chess';
 
 export const ChessGame: React.FC = () => {
-  const { gameState, actions } = useChessStore();
+  const { gameState } = useChessStore();
+  useChessWebSocket(); // Initialize WebSocket connection
   const [activeTab, setActiveTab] = useState<'game' | 'training' | 'openings'>('game');
   const [pawnPromotion, setPawnPromotion] = useState<{
     isOpen: boolean;

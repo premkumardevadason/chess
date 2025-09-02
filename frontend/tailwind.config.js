@@ -55,10 +55,9 @@ export default {
         chess: {
           light: "#f0d9b5",
           dark: "#b58863",
-          highlight: "#ffff00",
-          selected: "#7fb069",
-          check: "#ff6b6b",
-          lastMove: "#ffd93d"
+          highlight: "#ffff00", // Yellow for available moves
+          selected: "#7fb069",  // Green for selected piece
+          check: "#ff6b6b"      // Red for check
         }
       },
       borderRadius: {

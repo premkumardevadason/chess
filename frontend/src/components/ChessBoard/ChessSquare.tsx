@@ -7,6 +7,7 @@ interface ChessSquareProps {
   isSelected?: boolean;
   isHighlighted?: boolean;
   isLastMove?: boolean;
+  isAIMove?: boolean;
   isCheck?: boolean;
   onClick: () => void;
 }
@@ -17,6 +18,7 @@ export const ChessSquare: React.FC<ChessSquareProps> = ({
   isSelected,
   isHighlighted,
   isLastMove,
+  isAIMove,
   isCheck,
   onClick
 }) => {
@@ -44,6 +46,10 @@ export const ChessSquare: React.FC<ChessSquareProps> = ({
       classes += 'last-move ';
     }
     
+    if (isAIMove) {
+      classes += 'ai-move ';
+    }
+    
     if (isCheck) {
       classes += 'check ';
     }
@@ -52,17 +58,31 @@ export const ChessSquare: React.FC<ChessSquareProps> = ({
   };
 
   const getPieceSymbol = (piece: Piece) => {
-    const pieceMap: Record<string, string> = {
-      'K': '♔', 'Q': '♕', 'R': '♖', 'B': '♗', 'N': '♘', 'P': '♙',
-      'k': '♚', 'q': '♛', 'r': '♜', 'b': '♝', 'n': '♞', 'p': '♟'
+    if (!piece || !piece.color || !piece.type) {
+      return '?';
+    }
+    
+    // Direct mapping from piece type to Unicode symbols
+    const pieceMap: Record<string, Record<string, string>> = {
+      'white': {
+        'king': '♔',
+        'queen': '♕', 
+        'rook': '♖',
+        'bishop': '♗',
+        'knight': '♘',
+        'pawn': '♙'
+      },
+      'black': {
+        'king': '♚︎',
+        'queen': '♛︎',
+        'rook': '♜︎', 
+        'bishop': '♝︎',
+        'knight': '♞︎',
+        'pawn': '♟︎'
+      }
     };
     
-    // Convert Piece object to string representation
-    const pieceString = piece.color === 'white' 
-      ? piece.type.charAt(0).toUpperCase()
-      : piece.type.charAt(0).toLowerCase();
-    
-    return pieceMap[pieceString] || pieceString;
+    return pieceMap[piece.color]?.[piece.type] || '?';
   };
 
   return (
@@ -73,11 +93,11 @@ export const ChessSquare: React.FC<ChessSquareProps> = ({
       aria-label={`${isLight ? 'Light' : 'Dark'} square ${String.fromCharCode(97 + col)}${8 - row}${piece ? ` with ${piece}` : ''}`}
       tabIndex={0}
     >
-      {piece && (
+      {piece ? (
         <span className="chess-piece">
           {getPieceSymbol(piece)}
         </span>
-      )}
+      ) : null}
     </div>
   );
 };

@@ -44,7 +44,7 @@ function AppContent() {
       </div>
 
       {/* Main Application */}
-      <Router basename="/newage/chess">
+      <Router>
         <Routes>
           <Route path="/" element={<ChessGame />} />
           <Route path="*" element={<ChessGame />} />

@@ -29,13 +29,19 @@ export interface Move {
   timestamp: number;
 }
 
+export interface AIMove {
+  from: [number, number];
+  to: [number, number];
+  aiName: string;
+}
+
 export interface GameState {
   board: (Piece | null)[][];
   currentPlayer: PieceColor;
   gameStatus: GameStatus;
   moveHistory: Move[];
   selectedSquare?: [number, number];
-  lastMove?: Move;
+  aiMove?: AIMove;
   checkSquares: [number, number][];
   availableMoves: [number, number][];
 }
