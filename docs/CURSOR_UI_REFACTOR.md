@@ -342,6 +342,39 @@ export const useCircuitBreaker = (url: string, options: RequestInit) => {
   const [failureCount, setFailureCount] = useState(0);
   const [lastFailureTime, setLastFailureTime] = useState<number>(0);
   
+  const makeRequest = async () => {
+    if (state === 'OPEN') {
+      if (Date.now() - lastFailureTime > 60000) {
+        setState('HALF_OPEN');
+      } else {
+        throw new Error('Circuit breaker is OPEN');
+      }
+    }
+    
+    try {
+      const response = await fetch(url, options);
+      if (response.ok) {
+        setState('CLOSED');
+        setFailureCount(0);
+        return response;
+      } else {
+        throw new Error(`HTTP ${response.status}`);
+      }
+    } catch (error) {
+      setFailureCount(prev => prev + 1);
+      setLastFailureTime(Date.now());
+      
+      if (failureCount >= 5) {
+        setState('OPEN');
+      }
+      throw error;
+    }
+  };
+  
+  return { makeRequest, state, failureCount };
+};
+```ime, setLastFailureTime] = useState<number>(0);
+  
   const threshold = 5;
   const timeout = 60000; // 1 minute
   
@@ -1021,3 +1054,1770 @@ Key success factors:
 - **Phased migration approach** to minimize risk and ensure quality
 
 The refactoring will result in a modern, maintainable, and scalable chess application that provides an excellent user experience while maintaining all existing functionality.
+
+## 5. State Management Strategy
+
+### 5.1 Global State Architecture
+```typescript
+// Zustand Store for Chess Application
+interface ChessAppState {
+  // Game State
+  gameState: {
+    board: string[][];
+    currentPlayer: 'white' | 'black';
+    gameStatus: 'active' | 'checkmate' | 'stalemate' | 'draw';
+    moveHistory: Move[];
+    selectedAI: string;
+    lastMove?: Move;
+  };
+  
+  // AI Systems State
+  aiSystems: {
+    [key: string]: {
+      enabled: boolean;
+      training: boolean;
+      progress: number;
+      status: 'idle' | 'training' | 'error';
+      lastError?: string;
+    };
+  };
+  
+  // Training State
+  trainingStatus: {
+    active: boolean;
+    progress: Record<string, number>;
+    quality: Record<string, TrainingQuality>;
+    startTime?: number;
+  };
+  
+  // MCP Status
+  mcpStatus: {
+    enabled: boolean;
+    connected: boolean;
+    activeAgents: number;
+    totalSessions: number;
+  };
+  
+  // User Preferences
+  userPreferences: {
+    theme: 'light' | 'dark' | 'system';
+    soundEnabled: boolean;
+    animationsEnabled: boolean;
+    language: string;
+    chessNotation: 'algebraic' | 'descriptive';
+    pieceStyle: 'unicode' | 'images';
+  };
+  
+  // Actions
+  actions: {
+    makeMove: (from: [number, number], to: [number, number]) => void;
+    startTraining: (aiSystems: string[]) => void;
+    stopTraining: () => void;
+    selectAI: (aiName: string) => void;
+    updatePreferences: (prefs: Partial<UserPreferences>) => void;
+  };
+}
+
+const useChessStore = create<ChessAppState>((set, get) => ({
+  gameState: {
+    board: initialBoard,
+    currentPlayer: 'white',
+    gameStatus: 'active',
+    moveHistory: [],
+    selectedAI: 'AlphaZero'
+  },
+  aiSystems: {},
+  trainingStatus: { active: false, progress: {}, quality: {} },
+  mcpStatus: { enabled: false, connected: false, activeAgents: 0, totalSessions: 0 },
+  userPreferences: {
+    theme: 'system',
+    soundEnabled: true,
+    animationsEnabled: true,
+    language: 'en',
+    chessNotation: 'algebraic',
+    pieceStyle: 'unicode'
+  },
+  actions: {
+    makeMove: (from, to) => {
+      // Move logic implementation
+    },
+    startTraining: (aiSystems) => {
+      // Training start logic
+    },
+    stopTraining: () => {
+      // Training stop logic
+    },
+    selectAI: (aiName) => {
+      set(state => ({ gameState: { ...state.gameState, selectedAI: aiName } }));
+    },
+    updatePreferences: (prefs) => {
+      set(state => ({ userPreferences: { ...state.userPreferences, ...prefs } }));
+    }
+  }
+}));
+```
+
+### 5.2 Error Boundary & Recovery
+```typescript
+// Chess Error Boundary Component
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error?: Error;
+  errorInfo?: React.ErrorInfo;
+  errorType: 'ai_system' | 'websocket' | 'game_logic' | 'unknown';
+}
+
+class ChessErrorBoundary extends React.Component<
+  React.PropsWithChildren<{}>,
+  ErrorBoundaryState
+> {
+  constructor(props: React.PropsWithChildren<{}>) {
+    super(props);
+    this.state = { hasError: false, errorType: 'unknown' };
+  }
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    const errorType = ChessErrorBoundary.categorizeError(error);
+    return {
+      hasError: true,
+      error,
+      errorType
+    };
+  }
+
+  static categorizeError(error: Error): ErrorBoundaryState['errorType'] {
+    if (error.message.includes('AI') || error.message.includes('training')) {
+      return 'ai_system';
+    }
+    if (error.message.includes('WebSocket') || error.message.includes('connection')) {
+      return 'websocket';
+    }
+    if (error.message.includes('move') || error.message.includes('board')) {
+      return 'game_logic';
+    }
+    return 'unknown';
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    this.setState({ errorInfo });
+    
+    // Log to monitoring service
+    console.error('Chess Error Boundary caught an error:', error, errorInfo);
+    
+    // Send to error tracking service
+    if (window.Sentry) {
+      window.Sentry.captureException(error, {
+        contexts: {
+          react: {
+            componentStack: errorInfo.componentStack
+          }
+        }
+      });
+    }
+  }
+
+  handleRetry = () => {
+    this.setState({ hasError: false, error: undefined, errorInfo: undefined });
+  };
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="error-boundary p-6 text-center">
+          <h2 className="text-2xl font-bold text-red-600 mb-4">
+            {this.getErrorTitle()}
+          </h2>
+          <p className="text-gray-600 mb-4">
+            {this.getErrorMessage()}
+          </p>
+          <div className="space-x-4">
+            <Button onClick={this.handleRetry} variant="outline">
+              Try Again
+            </Button>
+            <Button onClick={() => window.location.reload()} variant="default">
+              Reload Application
+            </Button>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+
+  private getErrorTitle(): string {
+    switch (this.state.errorType) {
+      case 'ai_system':
+        return 'AI System Error';
+      case 'websocket':
+        return 'Connection Error';
+      case 'game_logic':
+        return 'Game Logic Error';
+      default:
+        return 'Application Error';
+    }
+  }
+
+  private getErrorMessage(): string {
+    switch (this.state.errorType) {
+      case 'ai_system':
+        return 'An AI system encountered an error. The game can continue with other AI opponents.';
+      case 'websocket':
+        return 'Connection to the server was lost. Please check your internet connection.';
+      case 'game_logic':
+        return 'A game logic error occurred. Please try restarting the game.';
+      default:
+        return 'An unexpected error occurred. Please try refreshing the page.';
+    }
+  }
+}
+```
+## 6. Accessibility & Internationalization
+
+### 6.1 WCAG 2.1 AA Compliance
+```typescript
+// Accessibility Configuration
+interface AccessibilityConfig {
+  wcagLevel: 'AA' | 'AAA';
+  features: {
+    screenReaderSupport: boolean;
+    keyboardNavigation: boolean;
+    highContrastMode: boolean;
+    reducedMotion: boolean;
+    focusManagement: boolean;
+    ariaLabels: boolean;
+  };
+}
+
+// Chess Board Accessibility
+const ChessBoardA11y: React.FC = () => {
+  const [focusedSquare, setFocusedSquare] = useState<[number, number] | null>(null);
+  
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (!focusedSquare) return;
+    
+    const [row, col] = focusedSquare;
+    let newRow = row;
+    let newCol = col;
+    
+    switch (e.key) {
+      case 'ArrowUp':
+        newRow = Math.max(0, row - 1);
+        break;
+      case 'ArrowDown':
+        newRow = Math.min(7, row + 1);
+        break;
+      case 'ArrowLeft':
+        newCol = Math.max(0, col - 1);
+        break;
+      case 'ArrowRight':
+        newCol = Math.min(7, col + 1);
+        break;
+      case 'Enter':
+      case ' ':
+        // Handle piece selection/movement
+        break;
+    }
+    
+    if (newRow !== row || newCol !== col) {
+      setFocusedSquare([newRow, newCol]);
+    }
+  };
+  
+  return (
+    <div
+      role="grid"
+      aria-label="Chess board"
+      tabIndex={0}
+      onKeyDown={handleKeyDown}
+      className="chess-board"
+    >
+      {/* Board squares with proper ARIA labels */}
+    </div>
+  );
+};
+
+// Screen Reader Announcements
+const useScreenReaderAnnouncements = () => {
+  const announce = (message: string, priority: 'polite' | 'assertive' = 'polite') => {
+    const announcement = document.createElement('div');
+    announcement.setAttribute('aria-live', priority);
+    announcement.setAttribute('aria-atomic', 'true');
+    announcement.className = 'sr-only';
+    announcement.textContent = message;
+    
+    document.body.appendChild(announcement);
+    
+    setTimeout(() => {
+      document.body.removeChild(announcement);
+    }, 1000);
+  };
+  
+  return { announce };
+};
+```
+
+### 6.2 Internationalization (i18n)
+```typescript
+// i18n Configuration
+interface I18nConfig {
+  defaultLanguage: 'en';
+  supportedLanguages: ['en', 'es', 'fr', 'de', 'zh', 'ja', 'ru', 'pt'];
+  chessNotation: {
+    algebraic: boolean;
+    descriptive: boolean;
+    coordinate: boolean;
+  };
+  pieceSymbols: {
+    unicode: boolean;
+    ascii: boolean;
+    images: boolean;
+  };
+  rtlSupport: boolean;
+}
+
+// Translation Keys
+interface TranslationKeys {
+  game: {
+    newGame: string;
+    undo: string;
+    redo: string;
+    resign: string;
+    draw: string;
+    checkmate: string;
+    stalemate: string;
+    check: string;
+  };
+  pieces: {
+    king: string;
+    queen: string;
+    rook: string;
+    bishop: string;
+    knight: string;
+    pawn: string;
+  };
+  ai: {
+    training: string;
+    progress: string;
+    quality: string;
+    systems: Record<string, string>;
+  };
+  accessibility: {
+    chessBoard: string;
+    makeMove: string;
+    pieceAt: string;
+    emptySquare: string;
+  };
+}
+
+// React i18n Hook
+const useTranslation = () => {
+  const { language } = useChessStore(state => state.userPreferences);
+  const [translations, setTranslations] = useState<TranslationKeys | null>(null);
+  
+  useEffect(() => {
+    import(`../locales/${language}.json`)
+      .then(module => setTranslations(module.default))
+      .catch(() => import('../locales/en.json'))
+      .then(fallback => setTranslations(fallback.default));
+  }, [language]);
+  
+  const t = (key: string, params?: Record<string, string>) => {
+    if (!translations) return key;
+    
+    const value = key.split('.').reduce((obj, k) => obj?.[k], translations as any);
+    if (!value) return key;
+    
+    if (params) {
+      return Object.entries(params).reduce(
+        (str, [param, val]) => str.replace(`{{${param}}}`, val),
+        value
+      );
+    }
+    
+    return value;
+  };
+  
+  return { t, language };
+};
+```
+
+## 7. Advanced PWA Features
+
+### 7.1 Enhanced PWA Capabilities
+```typescript
+// Advanced PWA Configuration
+interface AdvancedPWAFeatures {
+  backgroundSync: {
+    enabled: boolean;
+    syncTags: ['chess-moves', 'training-data', 'game-state'];
+  };
+  pushNotifications: {
+    enabled: boolean;
+    types: ['training-complete', 'game-invite', 'move-reminder'];
+  };
+  periodicBackgroundSync: {
+    enabled: boolean;
+    interval: number; // milliseconds
+    tasks: ['ai-model-updates', 'leaderboard-sync'];
+  };
+  webShare: {
+    enabled: boolean;
+    shareTypes: ['game-position', 'training-results', 'game-pgn'];
+  };
+  fileSystemAccess: {
+    enabled: boolean;
+    supportedFormats: ['pgn', 'fen', 'json'];
+  };
+}
+
+// Background Sync Implementation
+const useBackgroundSync = () => {
+  const registerBackgroundSync = async (tag: string) => {
+    if ('serviceWorker' in navigator && 'sync' in window.ServiceWorkerRegistration.prototype) {
+      const registration = await navigator.serviceWorker.ready;
+      await registration.sync.register(tag);
+    }
+  };
+  
+  const syncChessMoves = async (moves: Move[]) => {
+    // Store moves in IndexedDB
+    await offlineStorage.storePendingMoves(moves);
+    // Register background sync
+    await registerBackgroundSync('chess-moves');
+  };
+  
+  return { syncChessMoves, registerBackgroundSync };
+};
+
+// Push Notifications
+const usePushNotifications = () => {
+  const [permission, setPermission] = useState<NotificationPermission>('default');
+  
+  const requestPermission = async () => {
+    const result = await Notification.requestPermission();
+    setPermission(result);
+    return result;
+  };
+  
+  const subscribeToNotifications = async () => {
+    if ('serviceWorker' in navigator && 'PushManager' in window) {
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: process.env.REACT_APP_VAPID_PUBLIC_KEY
+      });
+      
+      // Send subscription to backend
+      await fetch('/api/notifications/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(subscription)
+      });
+    }
+  };
+  
+  return { permission, requestPermission, subscribeToNotifications };
+};
+
+// File System Access API
+const useFileSystemAccess = () => {
+  const exportGamePGN = async (gameData: GameData) => {
+    if ('showSaveFilePicker' in window) {
+      const fileHandle = await window.showSaveFilePicker({
+        suggestedName: `chess-game-${Date.now()}.pgn`,
+        types: [{
+          description: 'PGN files',
+          accept: { 'application/x-chess-pgn': ['.pgn'] }
+        }]
+      });
+      
+      const writable = await fileHandle.createWritable();
+      await writable.write(generatePGN(gameData));
+      await writable.close();
+    } else {
+      // Fallback to download
+      const blob = new Blob([generatePGN(gameData)], { type: 'application/x-chess-pgn' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `chess-game-${Date.now()}.pgn`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+  };
+  
+  const importGamePGN = async () => {
+    if ('showOpenFilePicker' in window) {
+      const [fileHandle] = await window.showOpenFilePicker({
+        types: [{
+          description: 'PGN files',
+          accept: { 'application/x-chess-pgn': ['.pgn'] }
+        }]
+      });
+      
+      const file = await fileHandle.getFile();
+      const content = await file.text();
+      return parsePGN(content);
+    }
+  };
+  
+  return { exportGamePGN, importGamePGN };
+};
+```
+## 8. Performance Monitoring & Analytics
+
+### 8.1 Performance Metrics Tracking
+```typescript
+// Performance Monitoring Configuration
+interface PerformanceMetrics {
+  chessEngineLatency: {
+    moveValidation: number;
+    aiResponse: number;
+    boardUpdate: number;
+  };
+  aiResponseTimes: Record<string, {
+    average: number;
+    p95: number;
+    p99: number;
+    errorRate: number;
+  }>;
+  webSocketLatency: {
+    connectionTime: number;
+    messageLatency: number;
+    reconnectionCount: number;
+  };
+  renderingPerformance: {
+    fps: number;
+    frameDrops: number;
+    paintTime: number;
+  };
+  memoryUsage: {
+    heapUsed: number;
+    heapTotal: number;
+    external: number;
+  };
+  userInteractionMetrics: {
+    clickToResponse: number;
+    dragLatency: number;
+    keyboardResponse: number;
+  };
+}
+
+// Performance Monitoring Hook
+const usePerformanceMonitoring = () => {
+  const [metrics, setMetrics] = useState<PerformanceMetrics | null>(null);
+  
+  const measureChessEngineLatency = async (operation: string, fn: () => Promise<any>) => {
+    const start = performance.now();
+    try {
+      const result = await fn();
+      const duration = performance.now() - start;
+      
+      // Send to analytics
+      if (window.gtag) {
+        window.gtag('event', 'chess_engine_performance', {
+          operation,
+          duration,
+          custom_map: { metric1: 'duration' }
+        });
+      }
+      
+      return result;
+    } catch (error) {
+      const duration = performance.now() - start;
+      
+      // Track errors
+      if (window.gtag) {
+        window.gtag('event', 'chess_engine_error', {
+          operation,
+          duration,
+          error: error.message
+        });
+      }
+      
+      throw error;
+    }
+  };
+  
+  const measureAIResponseTime = async (aiSystem: string, fn: () => Promise<any>) => {
+    const start = performance.now();
+    try {
+      const result = await fn();
+      const duration = performance.now() - start;
+      
+      // Update AI response time metrics
+      setMetrics(prev => ({
+        ...prev,
+        aiResponseTimes: {
+          ...prev?.aiResponseTimes,
+          [aiSystem]: {
+            ...prev?.aiResponseTimes?.[aiSystem],
+            average: (prev?.aiResponseTimes?.[aiSystem]?.average || 0) * 0.9 + duration * 0.1
+          }
+        }
+      }));
+      
+      return result;
+    } catch (error) {
+      // Track AI errors
+      setMetrics(prev => ({
+        ...prev,
+        aiResponseTimes: {
+          ...prev?.aiResponseTimes,
+          [aiSystem]: {
+            ...prev?.aiResponseTimes?.[aiSystem],
+            errorRate: (prev?.aiResponseTimes?.[aiSystem]?.errorRate || 0) + 1
+          }
+        }
+      }));
+      
+      throw error;
+    }
+  };
+  
+  const trackUserInteraction = (interactionType: string, startTime: number) => {
+    const duration = performance.now() - startTime;
+    
+    if (window.gtag) {
+      window.gtag('event', 'user_interaction', {
+        interaction_type: interactionType,
+        duration,
+        custom_map: { metric1: 'duration' }
+      });
+    }
+  };
+  
+  return {
+    metrics,
+    measureChessEngineLatency,
+    measureAIResponseTime,
+    trackUserInteraction
+  };
+};
+
+// Real User Monitoring (RUM)
+const useRealUserMonitoring = () => {
+  useEffect(() => {
+    // Core Web Vitals
+    const observer = new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) {
+        if (entry.entryType === 'largest-contentful-paint') {
+          // Track LCP
+          if (window.gtag) {
+            window.gtag('event', 'web_vitals', {
+              metric_name: 'LCP',
+              metric_value: entry.startTime,
+              metric_rating: entry.startTime < 2500 ? 'good' : entry.startTime < 4000 ? 'needs-improvement' : 'poor'
+            });
+          }
+        }
+        
+        if (entry.entryType === 'first-input') {
+          // Track FID
+          if (window.gtag) {
+            window.gtag('event', 'web_vitals', {
+              metric_name: 'FID',
+              metric_value: entry.processingStart - entry.startTime,
+              metric_rating: (entry.processingStart - entry.startTime) < 100 ? 'good' : 'needs-improvement'
+            });
+          }
+        }
+      }
+    });
+    
+    observer.observe({ entryTypes: ['largest-contentful-paint', 'first-input'] });
+    
+    // Cumulative Layout Shift
+    let clsValue = 0;
+    const clsObserver = new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) {
+        if (!entry.hadRecentInput) {
+          clsValue += entry.value;
+        }
+      }
+    });
+    
+    clsObserver.observe({ entryTypes: ['layout-shift'] });
+    
+    // Send CLS on page unload
+    const sendCLS = () => {
+      if (window.gtag) {
+        window.gtag('event', 'web_vitals', {
+          metric_name: 'CLS',
+          metric_value: clsValue,
+          metric_rating: clsValue < 0.1 ? 'good' : clsValue < 0.25 ? 'needs-improvement' : 'poor'
+        });
+      }
+    };
+    
+    window.addEventListener('beforeunload', sendCLS);
+    
+    return () => {
+      observer.disconnect();
+      clsObserver.disconnect();
+      window.removeEventListener('beforeunload', sendCLS);
+    };
+  }, []);
+};
+```
+
+### 8.2 Error Tracking & Monitoring
+```typescript
+// Error Tracking Configuration
+interface ErrorTrackingConfig {
+  service: 'Sentry' | 'Bugsnag' | 'LogRocket';
+  environment: 'development' | 'staging' | 'production';
+  sampleRate: number;
+  enableUserFeedback: boolean;
+  enableSessionReplay: boolean;
+}
+
+// Sentry Configuration
+const initErrorTracking = () => {
+  if (process.env.NODE_ENV === 'production') {
+    Sentry.init({
+      dsn: process.env.REACT_APP_SENTRY_DSN,
+      environment: process.env.REACT_APP_ENVIRONMENT,
+      sampleRate: 1.0,
+      tracesSampleRate: 0.1,
+      integrations: [
+        new Sentry.BrowserTracing({
+          routingInstrumentation: Sentry.reactRouterV6Instrumentation(
+            React.useEffect,
+            useLocation,
+            useNavigationType,
+            createRoutesFromChildren,
+            matchRoutes
+          ),
+        }),
+        new Sentry.Replay({
+          maskAllText: false,
+          blockAllMedia: false,
+        }),
+      ],
+      beforeSend(event, hint) {
+        // Filter out known non-critical errors
+        if (event.exception) {
+          const error = hint.originalException;
+          if (error && error.message && error.message.includes('ResizeObserver loop limit exceeded')) {
+            return null;
+          }
+        }
+        return event;
+      },
+    });
+  }
+};
+
+// Custom Error Tracking Hook
+const useErrorTracking = () => {
+  const trackError = (error: Error, context?: Record<string, any>) => {
+    console.error('Chess App Error:', error);
+    
+    if (window.Sentry) {
+      Sentry.captureException(error, {
+        tags: {
+          component: 'chess-app',
+          feature: context?.feature || 'unknown'
+        },
+        extra: context
+      });
+    }
+  };
+  
+  const trackAIError = (aiSystem: string, error: Error, gameState?: any) => {
+    trackError(error, {
+      feature: 'ai-system',
+      aiSystem,
+      gameState: gameState ? JSON.stringify(gameState) : undefined
+    });
+  };
+  
+  const trackWebSocketError = (error: Error, connectionState?: any) => {
+    trackError(error, {
+      feature: 'websocket',
+      connectionState
+    });
+  };
+  
+  return { trackError, trackAIError, trackWebSocketError };
+};
+```
+
+## 9. Testing Strategy
+
+### 9.1 Comprehensive Testing Approach
+```typescript
+// Testing Strategy Configuration
+interface TestingStrategy {
+  unitTests: {
+    chessLogic: {
+      coverage: number; // 95%
+      frameworks: ['Jest', 'React Testing Library'];
+      testTypes: ['move-validation', 'game-state', 'ai-integration'];
+    };
+    reactComponents: {
+      coverage: number; // 90%
+      frameworks: ['Jest', 'React Testing Library', '@testing-library/user-event'];
+      testTypes: ['rendering', 'user-interactions', 'accessibility'];
+    };
+    hooks: {
+      coverage: number; // 95%
+      frameworks: ['Jest', '@testing-library/react-hooks'];
+      testTypes: ['state-management', 'side-effects', 'error-handling'];
+    };
+    utilities: {
+      coverage: number; // 100%
+      frameworks: ['Jest'];
+      testTypes: ['pure-functions', 'data-transformations', 'validations'];
+    };
+  };
+  integrationTests: {
+    webSocketCommunication: {
+      frameworks: ['Jest', 'ws', 'mock-socket'];
+      scenarios: ['connection', 'message-handling', 'reconnection', 'error-recovery'];
+    };
+    aiSystemIntegration: {
+      frameworks: ['Jest', 'supertest'];
+      scenarios: ['ai-responses', 'training-workflows', 'error-handling'];
+    };
+    gameFlowTesting: {
+      frameworks: ['Jest', 'React Testing Library'];
+      scenarios: ['complete-games', 'edge-cases', 'state-persistence'];
+    };
+  };
+  e2eTests: {
+    completeGamePlaythrough: {
+      frameworks: ['Playwright', 'Cypress'];
+      scenarios: ['human-vs-ai', 'ai-training', 'game-analysis'];
+    };
+    aiTrainingWorkflows: {
+      frameworks: ['Playwright'];
+      scenarios: ['start-training', 'monitor-progress', 'stop-training'];
+    };
+    pwaCaching: {
+      frameworks: ['Playwright', 'Lighthouse CI'];
+      scenarios: ['offline-functionality', 'cache-strategies', 'update-flows'];
+    };
+  };
+  performanceTests: {
+    loadTesting: {
+      frameworks: ['Artillery', 'k6'];
+      scenarios: ['concurrent-users', 'websocket-load', 'ai-system-load'];
+    };
+    stressTesting: {
+      frameworks: ['Artillery'];
+      scenarios: ['memory-pressure', 'cpu-intensive-ai', 'network-failures'];
+    };
+    memoryLeakDetection: {
+      frameworks: ['Playwright', 'Chrome DevTools'];
+      scenarios: ['long-running-games', 'training-sessions', 'component-unmounting'];
+    };
+  };
+}
+
+// Example Unit Tests
+describe('ChessBoard Component', () => {
+  it('should render 64 squares', () => {
+    render(<ChessBoard board={initialBoard} onMove={jest.fn()} currentPlayer="white" />);
+    expect(screen.getAllByRole('gridcell')).toHaveLength(64);
+  });
+  
+  it('should handle piece movement via drag and drop', async () => {
+    const mockOnMove = jest.fn();
+    render(<ChessBoard board={initialBoard} onMove={mockOnMove} currentPlayer="white" />);
+    
+    const pawn = screen.getByLabelText('White pawn at e2');
+    const targetSquare = screen.getByLabelText('Empty square at e4');
+    
+    await userEvent.dragAndDrop(pawn, targetSquare);
+    
+    expect(mockOnMove).toHaveBeenCalledWith([6, 4], [4, 4]);
+  });
+  
+  it('should be accessible via keyboard navigation', async () => {
+    render(<ChessBoard board={initialBoard} onMove={jest.fn()} currentPlayer="white" />);
+    
+    const board = screen.getByRole('grid');
+    board.focus();
+    
+    await userEvent.keyboard('{ArrowRight}{ArrowRight}{Enter}');
+    
+    expect(screen.getByLabelText(/selected/i)).toBeInTheDocument();
+  });
+});
+
+// Example Integration Test
+describe('WebSocket Integration', () => {
+  let mockServer: WS;
+  
+  beforeEach(() => {
+    mockServer = new WS('ws://localhost:8081/ws');
+  });
+  
+  afterEach(() => {
+    WS.clean();
+  });
+  
+  it('should handle AI move responses', async () => {
+    const { result } = renderHook(() => useWebSocket('ws://localhost:8081/ws'));
+    
+    await waitFor(() => {
+      expect(result.current.isConnected).toBe(true);
+    });
+    
+    // Simulate AI move response
+    mockServer.send(JSON.stringify({
+      type: 'AI_MOVE',
+      payload: { move: 'e2e4', aiSystem: 'AlphaZero' }
+    }));
+    
+    await waitFor(() => {
+      expect(result.current.lastMessage).toEqual({
+        type: 'AI_MOVE',
+        payload: { move: 'e2e4', aiSystem: 'AlphaZero' }
+      });
+    });
+  });
+});
+
+// Example E2E Test
+describe('Complete Game Flow', () => {
+  it('should allow playing a complete game against AI', async () => {
+    await page.goto('http://localhost:3000');
+    
+    // Select AI opponent
+    await page.selectOption('[data-testid="ai-selector"]', 'AlphaZero');
+    
+    // Start new game
+    await page.click('[data-testid="new-game-button"]');
+    
+    // Make first move
+    await page.dragAndDrop('[data-square="e2"]', '[data-square="e4"]');
+    
+    // Wait for AI response
+    await page.waitForSelector('[data-testid="ai-move-indicator"]');
+    
+    // Verify game state
+    const gameStatus = await page.textContent('[data-testid="game-status"]');
+    expect(gameStatus).toContain('Black to move');
+    
+    // Continue game until completion
+    // ... additional moves
+    
+    // Verify game completion
+    await page.waitForSelector('[data-testid="game-over"]');
+    const result = await page.textContent('[data-testid="game-result"]');
+    expect(result).toMatch(/(White wins|Black wins|Draw)/);
+  });
+});
+```
+## 10. Data Migration & Backward Compatibility
+
+### 10.1 Migration Strategy
+```typescript
+// Migration Strategy Configuration
+interface MigrationStrategy {
+  gameStateMigration: {
+    enabled: boolean;
+    preserveOngoingGames: boolean;
+    migrationVersion: string;
+    rollbackSupport: boolean;
+  };
+  aiTrainingDataMigration: {
+    enabled: boolean;
+    preserveTrainingProgress: boolean;
+    modelCompatibility: string[];
+    compressionEnabled: boolean;
+  };
+  userPreferencesMigration: {
+    enabled: boolean;
+    preserveCustomSettings: boolean;
+    defaultFallbacks: boolean;
+  };
+  versionCompatibility: {
+    supportedBackendVersions: string[];
+    apiVersioning: boolean;
+    gracefulDegradation: boolean;
+  };
+}
+
+// Data Migration Service
+class DataMigrationService {
+  private readonly MIGRATION_VERSION = '2.0.0';
+  private readonly STORAGE_KEY = 'chess-app-migration';
+  
+  async migrateFromLegacyVersion(): Promise<void> {
+    const migrationStatus = localStorage.getItem(this.STORAGE_KEY);
+    
+    if (migrationStatus === this.MIGRATION_VERSION) {
+      return; // Already migrated
+    }
+    
+    console.log('Starting data migration to version', this.MIGRATION_VERSION);
+    
+    try {
+      // Migrate game state
+      await this.migrateGameState();
+      
+      // Migrate AI training data
+      await this.migrateAITrainingData();
+      
+      // Migrate user preferences
+      await this.migrateUserPreferences();
+      
+      // Mark migration as complete
+      localStorage.setItem(this.STORAGE_KEY, this.MIGRATION_VERSION);
+      
+      console.log('Data migration completed successfully');
+    } catch (error) {
+      console.error('Data migration failed:', error);
+      throw error;
+    }
+  }
+  
+  private async migrateGameState(): Promise<void> {
+    const legacyGameState = localStorage.getItem('chessGameState');
+    
+    if (legacyGameState) {
+      try {
+        const parsed = JSON.parse(legacyGameState);
+        
+        // Transform legacy format to new format
+        const migratedState = {
+          board: parsed.board || this.getInitialBoard(),
+          currentPlayer: parsed.currentPlayer || 'white',
+          gameStatus: this.mapLegacyGameStatus(parsed.gameStatus),
+          moveHistory: this.migrateMoveHistory(parsed.moveHistory || []),
+          selectedAI: parsed.selectedAI || 'AlphaZero',
+          lastMove: parsed.lastMove || null,
+          timestamp: Date.now()
+        };
+        
+        // Store in new format
+        await this.storeGameState(migratedState);
+        
+        // Remove legacy data
+        localStorage.removeItem('chessGameState');
+        
+        console.log('Game state migrated successfully');
+      } catch (error) {
+        console.warn('Failed to migrate game state:', error);
+      }
+    }
+  }
+  
+  private async migrateAITrainingData(): Promise<void> {
+    // Check for legacy training data in localStorage
+    const legacyTrainingKeys = Object.keys(localStorage)
+      .filter(key => key.startsWith('ai_training_') || key.startsWith('chess_ai_'));
+    
+    for (const key of legacyTrainingKeys) {
+      try {
+        const data = localStorage.getItem(key);
+        if (data) {
+          const aiSystem = this.extractAISystemFromKey(key);
+          
+          // Migrate to IndexedDB for better performance
+          await this.storeAITrainingData(aiSystem, JSON.parse(data));
+          
+          // Remove from localStorage
+          localStorage.removeItem(key);
+        }
+      } catch (error) {
+        console.warn(`Failed to migrate training data for ${key}:`, error);
+      }
+    }
+  }
+  
+  private async migrateUserPreferences(): Promise<void> {
+    const legacyPrefs = localStorage.getItem('userPreferences');
+    
+    if (legacyPrefs) {
+      try {
+        const parsed = JSON.parse(legacyPrefs);
+        
+        const migratedPrefs = {
+          theme: parsed.theme || 'system',
+          soundEnabled: parsed.soundEnabled ?? true,
+          animationsEnabled: parsed.animationsEnabled ?? true,
+          language: parsed.language || 'en',
+          chessNotation: parsed.notation || 'algebraic',
+          pieceStyle: parsed.pieceStyle || 'unicode',
+          // New preferences with defaults
+          accessibilityMode: false,
+          reducedMotion: false,
+          highContrast: false
+        };
+        
+        await this.storeUserPreferences(migratedPrefs);
+        localStorage.removeItem('userPreferences');
+        
+        console.log('User preferences migrated successfully');
+      } catch (error) {
+        console.warn('Failed to migrate user preferences:', error);
+      }
+    }
+  }
+  
+  private mapLegacyGameStatus(status: string): string {
+    const statusMap: Record<string, string> = {
+      'in_progress': 'active',
+      'game_over': 'checkmate',
+      'draw_game': 'draw',
+      'stale_mate': 'stalemate'
+    };
+    
+    return statusMap[status] || 'active';
+  }
+  
+  private migrateMoveHistory(legacyHistory: any[]): Move[] {
+    return legacyHistory.map(move => ({
+      from: move.from || [0, 0],
+      to: move.to || [0, 0],
+      piece: move.piece || '',
+      captured: move.captured || null,
+      promotion: move.promotion || null,
+      timestamp: move.timestamp || Date.now()
+    }));
+  }
+}
+
+// Version Compatibility Check
+const useVersionCompatibility = () => {
+  const [isCompatible, setIsCompatible] = useState<boolean>(true);
+  const [backendVersion, setBackendVersion] = useState<string>('');
+  
+  useEffect(() => {
+    const checkCompatibility = async () => {
+      try {
+        const response = await fetch('/api/version');
+        const { version } = await response.json();
+        setBackendVersion(version);
+        
+        const supportedVersions = ['2.0.0', '2.1.0', '2.2.0'];
+        const compatible = supportedVersions.some(v => version.startsWith(v));
+        setIsCompatible(compatible);
+        
+        if (!compatible) {
+          console.warn(`Backend version ${version} may not be fully compatible`);
+        }
+      } catch (error) {
+        console.error('Failed to check version compatibility:', error);
+        setIsCompatible(false);
+      }
+    };
+    
+    checkCompatibility();
+  }, []);
+  
+  return { isCompatible, backendVersion };
+};
+```
+
+### 10.2 Mobile-Specific Optimizations
+
+```typescript
+// Mobile Optimization Configuration
+interface MobileOptimizations {
+  touchGestures: {
+    dragAndDrop: {
+      enabled: boolean;
+      sensitivity: number;
+      hapticFeedback: boolean;
+    };
+    pinchToZoom: {
+      enabled: boolean;
+      minScale: number;
+      maxScale: number;
+    };
+    swipeNavigation: {
+      enabled: boolean;
+      threshold: number;
+      directions: ['left', 'right', 'up', 'down'];
+    };
+  };
+  responsiveBreakpoints: {
+    mobile: '320px';
+    mobileLarge: '425px';
+    tablet: '768px';
+    desktop: '1024px';
+    desktopLarge: '1440px';
+  };
+  performanceOptimizations: {
+    lazyLoading: {
+      enabled: boolean;
+      threshold: number;
+      components: string[];
+    };
+    imageOptimization: {
+      enabled: boolean;
+      formats: ['webp', 'avif', 'png'];
+      sizes: number[];
+    };
+    bundleSplitting: {
+      enabled: boolean;
+      chunkStrategy: 'route' | 'vendor' | 'feature';
+    };
+  };
+}
+
+// Touch Gesture Hook
+const useTouchGestures = () => {
+  const [touchState, setTouchState] = useState({
+    isDragging: false,
+    startPosition: { x: 0, y: 0 },
+    currentPosition: { x: 0, y: 0 },
+    draggedElement: null as HTMLElement | null
+  });
+  
+  const handleTouchStart = (e: React.TouchEvent, element: HTMLElement) => {
+    const touch = e.touches[0];
+    setTouchState({
+      isDragging: true,
+      startPosition: { x: touch.clientX, y: touch.clientY },
+      currentPosition: { x: touch.clientX, y: touch.clientY },
+      draggedElement: element
+    });
+    
+    // Haptic feedback on supported devices
+    if ('vibrate' in navigator) {
+      navigator.vibrate(10);
+    }
+  };
+  
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!touchState.isDragging) return;
+    
+    const touch = e.touches[0];
+    setTouchState(prev => ({
+      ...prev,
+      currentPosition: { x: touch.clientX, y: touch.clientY }
+    }));
+    
+    // Prevent scrolling while dragging
+    e.preventDefault();
+  };
+  
+  const handleTouchEnd = (e: React.TouchEvent, onDrop?: (target: HTMLElement) => void) => {
+    if (!touchState.isDragging) return;
+    
+    const touch = e.changedTouches[0];
+    const targetElement = document.elementFromPoint(touch.clientX, touch.clientY) as HTMLElement;
+    
+    if (targetElement && onDrop) {
+      onDrop(targetElement);
+    }
+    
+    setTouchState({
+      isDragging: false,
+      startPosition: { x: 0, y: 0 },
+      currentPosition: { x: 0, y: 0 },
+      draggedElement: null
+    });
+  };
+  
+  return {
+    touchState,
+    handleTouchStart,
+    handleTouchMove,
+    handleTouchEnd
+  };
+};
+
+// Responsive Design Hook
+const useResponsiveDesign = () => {
+  const [screenSize, setScreenSize] = useState({
+    width: window.innerWidth,
+    height: window.innerHeight,
+    isMobile: window.innerWidth < 768,
+    isTablet: window.innerWidth >= 768 && window.innerWidth < 1024,
+    isDesktop: window.innerWidth >= 1024
+  });
+  
+  useEffect(() => {
+    const handleResize = () => {
+      const width = window.innerWidth;
+      const height = window.innerHeight;
+      
+      setScreenSize({
+        width,
+        height,
+        isMobile: width < 768,
+        isTablet: width >= 768 && width < 1024,
+        isDesktop: width >= 1024
+      });
+    };
+    
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+  
+  const getBoardSize = () => {
+    if (screenSize.isMobile) {
+      return Math.min(screenSize.width - 32, screenSize.height * 0.6);
+    }
+    if (screenSize.isTablet) {
+      return Math.min(400, screenSize.width * 0.7);
+    }
+    return 480;
+  };
+  
+  const getLayoutConfig = () => ({
+    boardSize: getBoardSize(),
+    showSidebar: !screenSize.isMobile,
+    compactControls: screenSize.isMobile,
+    stackedLayout: screenSize.isMobile
+  });
+  
+  return { screenSize, getLayoutConfig };
+};
+
+// Performance Budget Hook
+const usePerformanceBudget = () => {
+  const [budgetStatus, setBudgetStatus] = useState({
+    bundleSize: { current: 0, budget: 2048, status: 'good' as 'good' | 'warning' | 'error' },
+    loadTime: { current: 0, budget: 3000, status: 'good' as 'good' | 'warning' | 'error' },
+    memoryUsage: { current: 0, budget: 100, status: 'good' as 'good' | 'warning' | 'error' }
+  });
+  
+  useEffect(() => {
+    // Monitor bundle size
+    if ('performance' in window && 'getEntriesByType' in performance) {
+      const resources = performance.getEntriesByType('resource') as PerformanceResourceTiming[];
+      const totalSize = resources.reduce((sum, resource) => {
+        return sum + (resource.transferSize || 0);
+      }, 0);
+      
+      setBudgetStatus(prev => ({
+        ...prev,
+        bundleSize: {
+          current: Math.round(totalSize / 1024),
+          budget: 2048,
+          status: totalSize < 1536 * 1024 ? 'good' : totalSize < 2048 * 1024 ? 'warning' : 'error'
+        }
+      }));
+    }
+    
+    // Monitor load time
+    const loadTime = performance.timing.loadEventEnd - performance.timing.navigationStart;
+    setBudgetStatus(prev => ({
+      ...prev,
+      loadTime: {
+        current: loadTime,
+        budget: 3000,
+        status: loadTime < 2000 ? 'good' : loadTime < 3000 ? 'warning' : 'error'
+      }
+    }));
+    
+    // Monitor memory usage
+    if ('memory' in performance) {
+      const memoryInfo = (performance as any).memory;
+      const usedMB = Math.round(memoryInfo.usedJSHeapSize / 1024 / 1024);
+      
+      setBudgetStatus(prev => ({
+        ...prev,
+        memoryUsage: {
+          current: usedMB,
+          budget: 100,
+          status: usedMB < 50 ? 'good' : usedMB < 100 ? 'warning' : 'error'
+        }
+      }));
+    }
+  }, []);
+  
+  return budgetStatus;
+};
+```
+
+## 11. Security Enhancements
+
+### 11.1 Advanced Security Measures
+```typescript
+// Security Configuration
+interface SecurityEnhancements {
+  contentSecurityPolicy: {
+    enabled: boolean;
+    directives: CSPDirectives;
+    reportUri?: string;
+    reportOnly: boolean;
+  };
+  subresourceIntegrity: {
+    enabled: boolean;
+    algorithms: ['sha256', 'sha384', 'sha512'];
+  };
+  crossOriginIsolation: {
+    enabled: boolean;
+    coep: 'require-corp' | 'credentialless';
+    coop: 'same-origin' | 'same-origin-allow-popups';
+  };
+  trustedTypes: {
+    enabled: boolean;
+    policies: string[];
+  };
+  webCrypto: {
+    enabled: boolean;
+    algorithms: ['AES-GCM', 'RSA-OAEP', 'ECDSA'];
+  };
+}
+
+// Content Security Policy
+const CSP_DIRECTIVES = {
+  'default-src': ["'self'"],
+  'script-src': [
+    "'self'",
+    "'unsafe-inline'", // Required for React
+    "'unsafe-eval'",   // Required for React dev mode
+    'https://www.googletagmanager.com',
+    'https://www.google-analytics.com'
+  ],
+  'style-src': [
+    "'self'",
+    "'unsafe-inline'", // Required for styled-components
+    'https://fonts.googleapis.com'
+  ],
+  'font-src': [
+    "'self'",
+    'https://fonts.gstatic.com',
+    'data:'
+  ],
+  'img-src': [
+    "'self'",
+    'data:',
+    'blob:',
+    'https://www.google-analytics.com'
+  ],
+  'connect-src': [
+    "'self'",
+    'ws://localhost:*',
+    'wss://localhost:*',
+    'https://api.chess.com', // For opening book data
+    'https://www.google-analytics.com'
+  ],
+  'worker-src': [
+    "'self'",
+    'blob:'
+  ],
+  'manifest-src': ["'self'"],
+  'object-src': ["'none'"],
+  'base-uri': ["'self'"],
+  'form-action': ["'self'"],
+  'frame-ancestors': ["'none'"],
+  'upgrade-insecure-requests': []
+};
+
+// Secure Game State Storage
+const useSecureStorage = () => {
+  const encryptData = async (data: any, key: CryptoKey): Promise<string> => {
+    const encoder = new TextEncoder();
+    const dataBuffer = encoder.encode(JSON.stringify(data));
+    
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const encryptedBuffer = await crypto.subtle.encrypt(
+      { name: 'AES-GCM', iv },
+      key,
+      dataBuffer
+    );
+    
+    const encryptedArray = new Uint8Array(encryptedBuffer);
+    const combinedArray = new Uint8Array(iv.length + encryptedArray.length);
+    combinedArray.set(iv);
+    combinedArray.set(encryptedArray, iv.length);
+    
+    return btoa(String.fromCharCode(...combinedArray));
+  };
+  
+  const decryptData = async (encryptedData: string, key: CryptoKey): Promise<any> => {
+    const combinedArray = new Uint8Array(
+      atob(encryptedData).split('').map(char => char.charCodeAt(0))
+    );
+    
+    const iv = combinedArray.slice(0, 12);
+    const encryptedArray = combinedArray.slice(12);
+    
+    const decryptedBuffer = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv },
+      key,
+      encryptedArray
+    );
+    
+    const decoder = new TextDecoder();
+    const decryptedString = decoder.decode(decryptedBuffer);
+    
+    return JSON.parse(decryptedString);
+  };
+  
+  const generateKey = async (): Promise<CryptoKey> => {
+    return await crypto.subtle.generateKey(
+      { name: 'AES-GCM', length: 256 },
+      false,
+      ['encrypt', 'decrypt']
+    );
+  };
+  
+  return { encryptData, decryptData, generateKey };
+};
+
+// Input Sanitization
+const useSanitization = () => {
+  const sanitizeMove = (move: string): string => {
+    // Only allow valid chess move format (e.g., "e2e4", "O-O", "O-O-O")
+    const moveRegex = /^([a-h][1-8][a-h][1-8]|O-O|O-O-O)$/;
+    
+    if (!moveRegex.test(move)) {
+      throw new Error('Invalid move format');
+    }
+    
+    return move;
+  };
+  
+  const sanitizeAIName = (aiName: string): string => {
+    const allowedAIs = [
+      'AlphaZero', 'LeelaChessZero', 'AlphaFold3', 'A3C',
+      'MCTS', 'Negamax', 'OpenAI', 'QLearning',
+      'DeepLearning', 'CNN', 'DQN', 'Genetic'
+    ];
+    
+    if (!allowedAIs.includes(aiName)) {
+      throw new Error('Invalid AI system name');
+    }
+    
+    return aiName;
+  };
+  
+  const sanitizeUserInput = (input: string): string => {
+    // Remove potentially dangerous characters
+    return input
+      .replace(/[<>\"'&]/g, '')
+      .trim()
+      .substring(0, 1000); // Limit length
+  };
+  
+  return { sanitizeMove, sanitizeAIName, sanitizeUserInput };
+};
+```
+
+## 12. Development & Deployment Pipeline
+
+### 12.1 CI/CD Pipeline Configuration
+```yaml
+# .github/workflows/chess-ui-pipeline.yml
+name: Chess UI CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+    paths: ['frontend/**']
+  pull_request:
+    branches: [main]
+    paths: ['frontend/**']
+
+jobs:
+  lint_and_test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+      
+      - name: Install dependencies
+        run: npm ci
+        working-directory: frontend
+      
+      - name: Run ESLint
+        run: npm run lint
+        working-directory: frontend
+      
+      - name: Run Prettier check
+        run: npm run format:check
+        working-directory: frontend
+      
+      - name: Run TypeScript check
+        run: npm run type-check
+        working-directory: frontend
+      
+      - name: Run unit tests
+        run: npm run test:coverage
+        working-directory: frontend
+      
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: frontend/coverage/lcov.info
+
+  build_and_bundle:
+    needs: lint_and_test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+      
+      - name: Install dependencies
+        run: npm ci
+        working-directory: frontend
+      
+      - name: Build application
+        run: npm run build
+        working-directory: frontend
+        env:
+          REACT_APP_API_URL: ${{ secrets.API_URL }}
+          REACT_APP_SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+      
+      - name: Analyze bundle size
+        run: npm run analyze
+        working-directory: frontend
+      
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: build-files
+          path: frontend/build/
+
+  security_scan:
+    needs: build_and_bundle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Run npm audit
+        run: npm audit --audit-level=high
+        working-directory: frontend
+      
+      - name: Run Snyk security scan
+        uses: snyk/actions/node@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --severity-threshold=high
+          command: test
+
+  performance_audit:
+    needs: build_and_bundle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Download build artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: build-files
+          path: frontend/build/
+      
+      - name: Run Lighthouse CI
+        uses: treosh/lighthouse-ci-action@v9
+        with:
+          configPath: frontend/lighthouserc.json
+          uploadArtifacts: true
+          temporaryPublicStorage: true
+
+  deploy_staging:
+    needs: [security_scan, performance_audit]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/develop'
+    steps:
+      - name: Deploy to staging
+        run: |
+          # Deploy to staging environment
+          echo "Deploying to staging..."
+          # Add deployment commands here
+
+  e2e_tests:
+    needs: deploy_staging
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/develop'
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Run E2E tests
+        uses: cypress-io/github-action@v5
+        with:
+          working-directory: frontend
+          start: npm start
+          wait-on: 'http://localhost:3000'
+          browser: chrome
+          record: true
+        env:
+          CYPRESS_RECORD_KEY: ${{ secrets.CYPRESS_RECORD_KEY }}
+
+  deploy_production:
+    needs: e2e_tests
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Deploy to production
+        run: |
+          # Deploy to production environment
+          echo "Deploying to production..."
+          # Add production deployment commands here
+      
+      - name: Setup monitoring
+        run: |
+          # Setup production monitoring
+          echo "Setting up monitoring..."
+          # Add monitoring setup commands here
+```
+
+### 12.2 Performance Budget Configuration
+```javascript
+// lighthouserc.json
+{
+  "ci": {
+    "collect": {
+      "url": ["http://localhost:3000"],
+      "startServerCommand": "npm start",
+      "numberOfRuns": 3
+    },
+    "assert": {
+      "assertions": {
+        "categories:performance": ["error", {"minScore": 0.9}],
+        "categories:accessibility": ["error", {"minScore": 0.9}],
+        "categories:best-practices": ["error", {"minScore": 0.9}],
+        "categories:seo": ["error", {"minScore": 0.9}],
+        "categories:pwa": ["error", {"minScore": 0.8}]
+      }
+    },
+    "upload": {
+      "target": "temporary-public-storage"
+    }
+  }
+}
+```
+
+## 13. Conclusion
+
+This comprehensive high-level design document provides a complete roadmap for refactoring the Chess application's frontend to a modern React + TypeScript + ShadCN/UI + PWA architecture. The design ensures:
+
+### 13.1 Key Benefits
+- **100% Feature Parity**: All existing functionality preserved
+- **Enhanced User Experience**: Modern, responsive, accessible interface
+- **Improved Performance**: PWA capabilities, optimized loading, caching
+- **Better Maintainability**: TypeScript, component architecture, testing
+- **Production Ready**: Security, monitoring, CI/CD pipeline
+- **Future Proof**: Scalable architecture, modern tech stack
+
+### 13.2 Implementation Phases
+1. **Phase 1**: Core components and basic functionality (4-6 weeks)
+2. **Phase 2**: Advanced features and PWA implementation (3-4 weeks)
+3. **Phase 3**: Testing, security, and performance optimization (2-3 weeks)
+4. **Phase 4**: Deployment and monitoring setup (1-2 weeks)
+
+### 13.3 Success Metrics
+- **Performance**: Lighthouse score > 90
+- **Accessibility**: WCAG 2.1 AA compliance
+- **Test Coverage**: > 90% unit test coverage
+- **Bundle Size**: < 2MB gzipped
+- **Load Time**: < 3 seconds initial load
+
+This refactoring will transform the Chess application into a world-class, production-ready web application while maintaining all the sophisticated AI capabilities and features that make it unique.
