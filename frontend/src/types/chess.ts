@@ -35,14 +35,20 @@ export interface AIMove {
   aiName: string;
 }
 
-export interface GameState {
+// Backend Game State - received via WebSocket
+export interface BackendGameState {
   board: (Piece | null)[][];
   currentPlayer: PieceColor;
   gameStatus: GameStatus;
-  moveHistory: Move[];
-  selectedSquare?: [number, number];
   aiMove?: AIMove;
   checkSquares: [number, number][];
+  invalidMove?: [number, number];
+  success?: boolean;
+}
+
+// Frontend UI State - only for presentation
+export interface UIState {
+  selectedSquare?: [number, number];
   availableMoves: [number, number][];
 }
 

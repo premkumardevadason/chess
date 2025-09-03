@@ -9,6 +9,7 @@ interface ChessSquareProps {
   isLastMove?: boolean;
   isAIMove?: boolean;
   isCheck?: boolean;
+  isInvalidMove?: boolean;
   onClick: () => void;
 }
 
@@ -20,6 +21,7 @@ export const ChessSquare: React.FC<ChessSquareProps> = ({
   isLastMove,
   isAIMove,
   isCheck,
+  isInvalidMove,
   onClick
 }) => {
   const [row, col] = position;
@@ -52,6 +54,10 @@ export const ChessSquare: React.FC<ChessSquareProps> = ({
     
     if (isCheck) {
       classes += 'check ';
+    }
+    
+    if (isInvalidMove) {
+      classes += 'invalid-move ';
     }
     
     return classes.trim();

@@ -1,12 +1,12 @@
 import { create } from 'zustand';
 import { devtools, persist } from 'zustand/middleware';
 import type { 
-  GameState, 
+  BackendGameState,
+  UIState,
   AISystem, 
   TrainingStatus, 
   MCPStatus, 
   UserPreferences,
-  Move,
   Piece,
   PieceType,
   PieceColor,
@@ -58,8 +58,11 @@ const generateNotation = (piece: Piece, _from: [number, number], to: [number, nu
 };
 
 interface ChessAppState {
-  // Game State
-  gameState: GameState;
+  // Backend Game State (received via WebSocket)
+  backendGameState: BackendGameState | null;
+  
+  // Frontend UI State (only for presentation)
+  uiState: UIState;
   
   // AI Systems State
   aiSystems: Record<string, AISystem>;
@@ -86,13 +89,12 @@ interface ChessAppState {
     selectAI: (aiName: string) => void;
     updatePreferences: (prefs: Partial<UserPreferences>) => void;
     resetGame: () => void;
-    undoMove: () => void;
-    redoMove: () => void;
     setConnectionStatus: (connected: boolean, error?: string) => void;
     updateAISystem: (name: string, updates: Partial<AISystem>) => void;
     updateTrainingStatus: (updates: Partial<TrainingStatus>) => void;
     updateMCPStatus: (updates: Partial<MCPStatus>) => void;
-    updateGameState: (updates: Partial<GameState>) => void;
+    updateBackendGameState: (updates: Partial<BackendGameState>) => void;
+    updateUIState: (updates: Partial<UIState>) => void;
   };
 }
 
@@ -102,14 +104,9 @@ const useChessStore = create<ChessAppState>()(
       (set) => {
 
         return {
-          gameState: {
-            board: initialBoard,
-            currentPlayer: 'white' as PieceColor,
-            gameStatus: 'active' as GameStatus,
-            moveHistory: [],
+          backendGameState: null,
+          uiState: {
             selectedSquare: undefined,
-            aiMove: undefined,
-            checkSquares: [] as [number, number][],
             availableMoves: [] as [number, number][]
           },
           
@@ -236,19 +233,18 @@ const useChessStore = create<ChessAppState>()(
               // This will be overridden by the WebSocket hook
               // But we still need to clear the selection locally
               set((state) => ({
-                gameState: {
-                  ...state.gameState,
+                uiState: {
+                  ...state.uiState,
                   selectedSquare: undefined,
                   availableMoves: []
                 }
               }));
-              console.log('Making move:', { from, to });
             },
             
             selectSquare: (position) => {
               set((state) => ({
-                gameState: {
-                  ...state.gameState,
+                uiState: {
+                  ...state.uiState,
                   selectedSquare: position || undefined,
                   availableMoves: [] // Will be populated by backend
                 }
@@ -301,13 +297,7 @@ const useChessStore = create<ChessAppState>()(
             },
             
             selectAI: (aiName) => {
-              set((state) => ({
-                gameState: {
-                  ...state.gameState,
-                  // Add selectedAI to gameState if needed
-                }
-              }));
-              console.log('AI selected:', aiName);
+              // TODO: Implement AI selection logic
             },
             
             updatePreferences: (prefs) => {
@@ -321,44 +311,15 @@ const useChessStore = create<ChessAppState>()(
             
             resetGame: () => {
               set((state) => ({
-                gameState: {
-                  ...state.gameState,
-                  board: initialBoard,
-                  currentPlayer: 'white',
-                  gameStatus: 'active',
-                  moveHistory: [],
+                uiState: {
+                  ...state.uiState,
                   selectedSquare: undefined,
-                  lastMove: undefined,
-                  checkSquares: [],
                   availableMoves: []
                 }
               }));
             },
             
-            undoMove: () => {
-              set((state) => {
-                if (state.gameState.moveHistory.length === 0) return state;
-                
-                const newMoveHistory = [...state.gameState.moveHistory];
-                newMoveHistory.pop();
-                
-                return {
-                  gameState: {
-                    ...state.gameState,
-                    moveHistory: newMoveHistory,
-                    currentPlayer: newMoveHistory.length % 2 === 0 ? 'white' : 'black',
-                    lastMove: newMoveHistory[newMoveHistory.length - 1],
-                    selectedSquare: undefined,
-                    availableMoves: []
-                  }
-                };
-              });
-            },
-            
-            redoMove: () => {
-              // Implementation for redo functionality
-              // This would require storing undone moves
-            },
+
             
             setConnectionStatus: (connected, error) => {
               set(() => ({
@@ -397,10 +358,19 @@ const useChessStore = create<ChessAppState>()(
               }));
             },
             
-            updateGameState: (updates) => {
+            updateBackendGameState: (updates) => {
               set((state) => ({
-                gameState: {
-                  ...state.gameState,
+                backendGameState: state.backendGameState ? {
+                  ...state.backendGameState,
+                  ...updates
+                } : updates as BackendGameState
+              }));
+            },
+            
+            updateUIState: (updates) => {
+              set((state) => ({
+                uiState: {
+                  ...state.uiState,
                   ...updates
                 }
               }));

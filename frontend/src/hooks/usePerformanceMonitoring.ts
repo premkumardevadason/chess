@@ -6,7 +6,7 @@ export const usePerformanceMonitoring = () => {
     const observer = new PerformanceObserver((list) => {
       for (const entry of list.getEntries()) {
         if (entry.entryType === 'measure') {
-          console.log(`${entry.name}: ${entry.duration}ms`);
+          // Performance measurement logged
         }
       }
     });
@@ -18,14 +18,14 @@ export const usePerformanceMonitoring = () => {
       // First Contentful Paint
       const fcpEntry = performance.getEntriesByName('first-contentful-paint')[0];
       if (fcpEntry) {
-        console.log('FCP:', fcpEntry.startTime);
+        // FCP measured
       }
       
       // Largest Contentful Paint
       const lcpObserver = new PerformanceObserver((list) => {
         const entries = list.getEntries();
         const lastEntry = entries[entries.length - 1];
-        console.log('LCP:', lastEntry.startTime);
+        // LCP measured
       });
       lcpObserver.observe({ entryTypes: ['largest-contentful-paint'] });
       
@@ -33,22 +33,24 @@ export const usePerformanceMonitoring = () => {
       const fidObserver = new PerformanceObserver((list) => {
         for (const entry of list.getEntries()) {
           const fid = entry.processingStart - entry.startTime;
-          console.log('FID:', fid);
+          // FID measured
         }
       });
       fidObserver.observe({ entryTypes: ['first-input'] });
       
-      // Cumulative Layout Shift
+      // Cumulative Layout Shift (with browser compatibility check)
       let clsValue = 0;
-      const clsObserver = new PerformanceObserver((list) => {
-        for (const entry of list.getEntries()) {
-          if (!(entry as any).hadRecentInput) {
-            clsValue += (entry as any).value;
+      if ('PerformanceObserver' in window && 'layout-shift' in PerformanceObserver.supportedEntryTypes) {
+        const clsObserver = new PerformanceObserver((list) => {
+          for (const entry of list.getEntries()) {
+            if (!(entry as any).hadRecentInput) {
+              clsValue += (entry as any).value;
+            }
           }
-        }
-        console.log('CLS:', clsValue);
-      });
-      clsObserver.observe({ entryTypes: ['layout-shift'] });
+          // CLS measured
+        });
+        clsObserver.observe({ entryTypes: ['layout-shift'] });
+      }
     };
     
     measureWebVitals();

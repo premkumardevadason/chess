@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import useChessStore from '@/stores/chessStore';
 
 export const GameControls: React.FC = () => {
-  const { gameState, actions, isConnected } = useChessStore();
+  const { backendGameState, actions, isConnected } = useChessStore();
   const [showConfirmDialog, setShowConfirmDialog] = useState<'resign' | 'draw' | null>(null);
 
   const handleResign = () => {
@@ -61,15 +61,15 @@ export const GameControls: React.FC = () => {
         
         <div className="grid grid-cols-2 gap-2">
           <button
-            onClick={actions.undoMove}
-            disabled={gameState.moveHistory.length === 0}
+            onClick={() => {}} // TODO: Implement undo via backend
+            disabled={true} // TODO: Backend should provide move history
             className="px-3 py-2 bg-secondary text-secondary-foreground rounded-md hover:bg-secondary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
           >
             ↶ Undo
           </button>
           
           <button
-            onClick={actions.redoMove}
+            onClick={() => {}} // TODO: Implement redo via backend
             className="px-3 py-2 bg-secondary text-secondary-foreground rounded-md hover:bg-secondary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
           >
             ↷ Redo
@@ -82,34 +82,29 @@ export const GameControls: React.FC = () => {
         <div className="text-sm space-y-2">
           <div className="flex justify-between">
             <span>Current Player:</span>
-            <span className={`font-medium ${gameState.currentPlayer === 'white' ? 'text-white' : 'text-gray-800'}`}>
-              {getCurrentPlayerDisplay(gameState.currentPlayer)}
+            <span className={`font-medium ${backendGameState?.currentPlayer === 'white' ? 'text-white' : 'text-gray-800'}`}>
+              {getCurrentPlayerDisplay(backendGameState?.currentPlayer || 'white')}
             </span>
           </div>
           
           <div className="flex justify-between">
             <span>Game Status:</span>
-            <span className={`font-medium ${getGameStatusColor(gameState.gameStatus)}`}>
-              {gameState.gameStatus.charAt(0).toUpperCase() + gameState.gameStatus.slice(1)}
+            <span className={`font-medium ${getGameStatusColor(backendGameState?.gameStatus || 'active')}`}>
+              {(backendGameState?.gameStatus || 'active').charAt(0).toUpperCase() + (backendGameState?.gameStatus || 'active').slice(1)}
             </span>
           </div>
           
           <div className="flex justify-between">
             <span>Moves:</span>
-            <span className="font-medium">{gameState.moveHistory.length}</span>
+            <span className="font-medium">0</span> {/* TODO: Backend should provide move count */}
           </div>
           
-          {gameState.lastMove && (
-            <div className="flex justify-between">
-              <span>Last Move:</span>
-              <span className="font-mono text-xs">{gameState.lastMove.notation}</span>
-            </div>
-          )}
+          {/* TODO: Backend should provide last move information */}
         </div>
       </div>
       
       {/* Game Actions */}
-      {gameState.gameStatus === 'active' && (
+      {(backendGameState?.gameStatus || 'active') === 'active' && (
         <div className="pt-4 border-t border-border">
           <div className="grid grid-cols-2 gap-2">
             <button

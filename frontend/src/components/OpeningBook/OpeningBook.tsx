@@ -75,13 +75,11 @@ export const OpeningBook: React.FC = () => {
 
   const handlePlayOpening = (opening: Opening) => {
     // TODO: Implement opening play functionality
-    console.log('Playing opening:', opening.name);
     // This would send the opening moves to the backend
   };
 
   const handleAnalyzeOpening = (opening: Opening) => {
     // TODO: Implement opening analysis
-    console.log('Analyzing opening:', opening.name);
   };
 
   return (

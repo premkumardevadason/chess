@@ -13,7 +13,7 @@ import { useChessWebSocket } from '@/hooks/useChessWebSocket';
 import type { PieceType, PieceColor } from '@/types/chess';
 
 export const ChessGame: React.FC = () => {
-  const { gameState } = useChessStore();
+  const { backendGameState } = useChessStore();
   useChessWebSocket(); // Initialize WebSocket connection
   const [activeTab, setActiveTab] = useState<'game' | 'training' | 'openings'>('game');
   const [pawnPromotion, setPawnPromotion] = useState<{

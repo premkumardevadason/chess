@@ -4,6 +4,9 @@ import SockJS from 'sockjs-client';
 import useChessStore from '@/stores/chessStore';
 import type { WebSocketMessage, Piece } from '@/types/chess';
 
+// Track the last attempted move destination for invalid move animation
+let lastMoveDestination: [number, number] | null = null;
+
 interface UseWebSocketOptions {
   url?: string;
   reconnectDelay?: number;
@@ -40,12 +43,11 @@ export const useWebSocket = (options: UseWebSocketOptions = {}) => {
       heartbeatIncoming: 4000,
       heartbeatOutgoing: 4000,
       debug: (str) => {
-        console.log('STOMP Debug:', str);
+        // Debug logging removed for production
       },
     });
 
     client.onConnect = (frame) => {
-      console.log('WebSocket connected:', frame);
       setIsConnected(true);
       setError(null);
       setReconnectAttempts(0);
@@ -102,7 +104,6 @@ export const useWebSocket = (options: UseWebSocketOptions = {}) => {
     };
 
     client.onWebSocketClose = (event) => {
-      console.log('WebSocket closed:', event);
       setIsConnected(false);
       isConnectingRef.current = false;
       actions.setConnectionStatus(false, 'Connection closed');
@@ -110,7 +111,6 @@ export const useWebSocket = (options: UseWebSocketOptions = {}) => {
       // Attempt to reconnect
       if (reconnectAttempts < maxReconnectAttempts) {
         const delay = reconnectDelay * Math.pow(2, reconnectAttempts);
-        console.log(`Attempting to reconnect in ${delay}ms (attempt ${reconnectAttempts + 1}/${maxReconnectAttempts})`);
         
         reconnectTimeoutRef.current = setTimeout(() => {
           setReconnectAttempts(prev => prev + 1);
@@ -187,18 +187,43 @@ export const useWebSocket = (options: UseWebSocketOptions = {}) => {
 
   // Game state update handler
   const handleGameStateUpdate = (gameState: any) => {
-    console.log('Received game state update:', gameState);
+    
+    // Handle invalid move - if success is false, we need to show invalid move animation
+    let invalidMoveSquare: [number, number] | undefined = undefined;
+    if (gameState.success === false && lastMoveDestination) {
+      invalidMoveSquare = lastMoveDestination;
+      // Clear the tracked destination
+      lastMoveDestination = null;
+    }
     
     // Update the chess store with the new game state
     if (gameState.board) {
       const convertedBoard = convertBackendBoard(gameState.board);
       
-      actions.updateGameState({
+      // Process threatened pieces (kings in check + queens under attack)
+      const threatenedSquares: [number, number][] = [];
+      
+      // Add king in check
+      if (gameState.kingInCheck) {
+        threatenedSquares.push([gameState.kingInCheck[0], gameState.kingInCheck[1]]);
+      }
+      
+      // Add threatened pieces (including queens)
+      if (gameState.threatenedPieces) {
+        gameState.threatenedPieces.forEach((threatened: number[]) => {
+          if (threatened && threatened.length >= 2) {
+            threatenedSquares.push([threatened[0], threatened[1]]);
+          }
+        });
+      }
+      
+      actions.updateBackendGameState({
         board: convertedBoard,
         currentPlayer: gameState.whiteTurn ? 'white' : 'black',
         gameStatus: gameState.gameOver ? 'checkmate' : 'active',
-        availableMoves: [],
-        checkSquares: gameState.kingInCheck ? [gameState.kingInCheck] : [],
+        checkSquares: threatenedSquares,
+        invalidMove: invalidMoveSquare,
+        success: gameState.success,
         aiMove: gameState.aiLastMove ? {
           from: [gameState.aiLastMove[0], gameState.aiLastMove[1]],
           to: [gameState.aiLastMove[2], gameState.aiLastMove[3]],
@@ -223,7 +248,7 @@ export const useWebSocket = (options: UseWebSocketOptions = {}) => {
         actions.updateAISystem(data.payload.name, data.payload.updates);
         break;
       default:
-        console.log('Unknown training update type:', data.type);
+        // Unknown training update type
     }
   };
 
@@ -236,12 +261,15 @@ export const useWebSocket = (options: UseWebSocketOptions = {}) => {
         actions.updateMCPStatus({ connected: data.payload.connected });
         break;
       default:
-        console.log('Unknown MCP update type:', data.type);
+        // Unknown MCP update type
     }
   };
 
   // Chess-specific message sending
   const makeMove = useCallback((from: [number, number], to: [number, number]) => {
+    // Track the destination for invalid move animation
+    lastMoveDestination = to;
+    
     sendMessage('/app/move', { 
       fromRow: from[0], 
       fromCol: from[1], 

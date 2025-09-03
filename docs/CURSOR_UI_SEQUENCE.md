@@ -155,7 +155,6 @@ sequenceDiagram
                 Backend-->>WS: Connection restored
                 WS->>Store: setConnectionStatus(true)
                 WS->>Backend: Re-subscribe to all topics
-                break
             else Reconnection Failed
                 WS->>WS: Wait with exponential backoff
                 WS->>Store: setConnectionStatus(false, "Reconnecting...")
@@ -188,13 +187,8 @@ sequenceDiagram
     WS->>WS: Convert backend board format to frontend format
     Note over WS: Convert Unicode pieces to Piece objects
     
-    WS->>Store: updateGameState({
-        board: convertedBoard,
-        currentPlayer: gameState.whiteTurn ? 'white' : 'black',
-        gameStatus: gameState.gameOver ? 'checkmate' : 'active',
-        aiMove: gameState.aiLastMove ? {from, to, aiName} : undefined,
-        checkSquares: gameState.kingInCheck ? [position] : []
-    })
+    WS->>Store: updateGameState(convertedBoard, currentPlayer, gameStatus, aiMove, checkSquares)
+    Note over WS,Store: Update board, player, status, AI move, and check squares
     
     Store-->>Board: Re-render with new board state
     Store-->>AIPanel: Update AI move indicators
@@ -312,7 +306,6 @@ sequenceDiagram
                 WS->>Store: setConnectionStatus(true)
                 Store-->>Component: Re-render with connected state
                 Component-->>User: Hide error message
-                break
             else Failure
                 WS->>Store: setConnectionStatus(false, "Reconnecting...")
                 Store-->>Component: Show reconnecting message

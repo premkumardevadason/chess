@@ -14,14 +14,12 @@ export const useChessWebSocket = () => {
     
     // Override with WebSocket versions
     actions.makeMove = (from: [number, number], to: [number, number]) => {
-      console.log('Sending move via WebSocket:', { from, to });
       // Clear selection immediately when move is made
       actions.selectSquare(undefined);
       sendMove(from, to);
     };
 
     actions.resetGame = () => {
-      console.log('Sending new game request via WebSocket');
       sendNewGame();
     };
 

@@ -17,12 +17,10 @@ export const AIPanel: React.FC = () => {
 
   const handleDeleteTraining = (aiName: string) => {
     // TODO: Implement delete training data
-    console.log('Delete training for:', aiName);
   };
 
   const handleEvaluateTraining = (aiName: string) => {
     // TODO: Implement training evaluation
-    console.log('Evaluate training for:', aiName);
   };
 
   const toggleAISelection = (aiName: string) => {
