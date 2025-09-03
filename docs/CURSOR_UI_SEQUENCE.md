@@ -4,6 +4,25 @@
 
 This document contains sequence diagrams for all major interactions and flows implemented in the new React UI for the Chess Application. The diagrams illustrate the communication patterns between components, state management, WebSocket connections, and user interactions.
 
+## Architecture Changes (Latest Updates)
+
+### Stateless Frontend Architecture
+- **Backend as Single Source of Truth**: All game state is managed by the Java backend
+- **Frontend as Presentation Layer**: React UI only handles presentation and user interactions
+- **State Separation**: 
+  - `BackendGameState`: Game data received from backend (board, current player, game status, etc.)
+  - `UIState`: Frontend-only state (selected square, available moves, etc.)
+
+### Console Logging Removal
+- **Production Ready**: All `console.log` statements removed from frontend code
+- **Error Handling Preserved**: `console.error` and `console.warn` statements kept for debugging
+- **Clean Production Build**: No debug output in production environment
+
+### Performance Monitoring Enhancements
+- **Browser Compatibility**: Added checks for `layout-shift` entry type support
+- **Graceful Degradation**: Performance monitoring works across different browsers
+- **Error Prevention**: Prevents browser compatibility warnings
+
 ---
 
 ## 1. Application Initialization Flow
@@ -29,8 +48,8 @@ sequenceDiagram
     WS->>Backend: Subscribe to /topic/mcp-updates
     WS->>Backend: Request initial board state (/app/board)
     Backend-->>WS: Send current game state
-    WS->>Store: updateGameState(board, currentPlayer, etc.)
-    Store-->>App: State updated
+    WS->>Store: updateBackendGameState(board, currentPlayer, etc.)
+    Store-->>App: Backend game state updated
     App-->>User: Render chess board with current state
 ```
 
@@ -48,13 +67,13 @@ sequenceDiagram
 
     User->>Board: Click on chess square
     Board->>Store: selectSquare(position)
-    Store->>Store: Update selectedSquare state
+    Store->>Store: Update UI state (selectedSquare)
     Store-->>Board: Re-render with selection highlight
     
     User->>Board: Click on destination square
     Board->>Store: makeMove(from, to)
     Store->>WS: Override makeMove with WebSocket version
-    WS->>WS: Clear selection immediately
+    WS->>WS: Clear UI selection immediately
     WS->>Backend: Send move via /app/move
     Note over WS,Backend: {fromRow, fromCol, toRow, toCol}
     
@@ -65,12 +84,12 @@ sequenceDiagram
     
     Backend-->>WS: Send updated game state via /topic/gameState
     WS->>WS: Convert backend board format to frontend format
-    WS->>Store: updateGameState(newBoard, currentPlayer, etc.)
+    WS->>Store: updateBackendGameState(newBoard, currentPlayer, etc.)
     Store-->>Board: Re-render with updated board
     
     alt Pawn Promotion Required
         Backend-->>WS: Include promotion flag in game state
-        WS->>Store: Update game state with promotion info
+        WS->>Store: updateBackendGameState with promotion info
         Store-->>Board: Trigger pawn promotion dialog
         Board->>User: Show promotion piece selection
         User->>Board: Select promotion piece
@@ -187,8 +206,8 @@ sequenceDiagram
     WS->>WS: Convert backend board format to frontend format
     Note over WS: Convert Unicode pieces to Piece objects
     
-    WS->>Store: updateGameState(convertedBoard, currentPlayer, gameStatus, aiMove, checkSquares)
-    Note over WS,Store: Update board, player, status, AI move, and check squares
+    WS->>Store: updateBackendGameState(convertedBoard, currentPlayer, gameStatus, aiMove, checkSquares)
+    Note over WS,Store: Update backend game state: board, player, status, AI move, and check squares
     
     Store-->>Board: Re-render with new board state
     Store-->>AIPanel: Update AI move indicators
@@ -227,7 +246,7 @@ sequenceDiagram
     Backend->>Backend: Validate move and detect pawn promotion
     Backend->>Backend: Set promotion required flag
     Backend-->>WS: Send game state with promotion flag
-    WS->>Store: updateGameState with promotion info
+    WS->>Store: updateBackendGameState with promotion info
     
     Store-->>Board: Re-render with promotion state
     Board->>Game: onPawnPromotion(color, position)
@@ -242,7 +261,7 @@ sequenceDiagram
     
     Backend->>Backend: Execute promotion
     Backend-->>WS: Send updated game state
-    WS->>Store: updateGameState with promoted piece
+    WS->>Store: updateBackendGameState with promoted piece
     Store-->>Board: Re-render with promoted piece
     Game-->>User: Hide promotion modal
 ```
@@ -364,7 +383,76 @@ sequenceDiagram
 
 ---
 
-## 10. Performance Monitoring Flow
+## 10. Stateless Frontend Architecture Flow
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Frontend as React Frontend
+    participant Store as Zustand Store
+    participant WS as WebSocket Hook
+    participant Backend as Java Backend
+
+    Note over Frontend,Backend: Frontend is stateless - all game state managed by backend
+    
+    User->>Frontend: User interaction (click, move, etc.)
+    Frontend->>Store: Update UI state only (selectedSquare, availableMoves)
+    Store->>Store: Update uiState (frontend-only state)
+    
+    Frontend->>WS: Send action to backend
+    WS->>Backend: Forward action via WebSocket
+    
+    Backend->>Backend: Process action and update game state
+    Backend->>Backend: Validate move, check rules, update board
+    
+    Backend-->>WS: Send updated game state
+    WS->>WS: Convert backend format to frontend format
+    WS->>Store: updateBackendGameState(newGameState)
+    Store->>Store: Update backendGameState (backend-managed state)
+    
+    Store-->>Frontend: Re-render with new backend state
+    Frontend-->>User: Display updated game state
+    
+    Note over Frontend,Backend: Frontend never modifies game state directly
+    Note over Frontend,Backend: All game logic handled by backend
+```
+
+---
+
+## 11. Invalid Move Handling Flow
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Board as ChessBoard Component
+    participant Store as Zustand Store
+    participant WS as WebSocket Hook
+    participant Backend as Java Backend
+
+    User->>Board: Attempt invalid move
+    Board->>Store: makeMove(from, to)
+    Store->>WS: Send move via WebSocket
+    WS->>WS: Track lastMoveDestination
+    WS->>Backend: Send move via /app/move
+    
+    Backend->>Backend: Validate move
+    Backend->>Backend: Move is invalid
+    Backend-->>WS: Send game state with success: false
+    WS->>WS: Check success field and lastMoveDestination
+    WS->>Store: updateBackendGameState({invalidMove: destination, success: false})
+    
+    Store-->>Board: Re-render with invalid move indicator
+    Board->>Board: Start invalid move animation (red blinking)
+    Board->>Board: Clear animation after timeout
+    Board->>Store: updateBackendGameState({invalidMove: undefined})
+    
+    Note over Board,Backend: No client-side validation - all validation by backend
+    Note over Board,Backend: Invalid move animation triggered by backend response
+```
+
+---
+
+## 12. Performance Monitoring Flow
 
 ```mermaid
 sequenceDiagram
@@ -372,9 +460,19 @@ sequenceDiagram
     participant Component as React Component
     participant Monitor as PerformanceMonitor
     participant Store as Zustand Store
+    participant Browser as Browser API
 
     Component->>Monitor: usePerformanceMonitoring() hook
-    Monitor->>Monitor: Initialize performance tracking
+    Monitor->>Browser: Check PerformanceObserver support
+    Browser-->>Monitor: Return supported entry types
+    
+    alt Browser Supports All Metrics
+        Monitor->>Monitor: Initialize all performance tracking
+        Monitor->>Monitor: Track FCP, LCP, FID, CLS
+    else Browser Limited Support
+        Monitor->>Monitor: Initialize supported metrics only
+        Monitor->>Monitor: Skip unsupported entry types (e.g., layout-shift)
+    end
     
     loop During User Interaction
         User->>Component: User action (click, move, etc.)
@@ -397,6 +495,9 @@ sequenceDiagram
     
     Monitor->>Monitor: Generate performance report
     Monitor-->>User: Display performance metrics
+    
+    Note over Monitor,Browser: Browser compatibility checks prevent console warnings
+    Note over Monitor,Browser: Graceful degradation for unsupported features
 ```
 
 ---
@@ -411,6 +512,10 @@ sequenceDiagram
 
 ### State Management
 - **Zustand** for lightweight, performant state management
+- **Stateless Frontend**: All game state managed by backend
+- **State Separation**: 
+  - `BackendGameState`: Game data from backend (board, player, status, etc.)
+  - `UIState`: Frontend-only state (selected square, available moves)
 - **Persistent storage** for user preferences only
 - **Immutable updates** to prevent unnecessary re-renders
 - **Action overrides** for WebSocket integration
@@ -422,10 +527,12 @@ sequenceDiagram
 - **Responsive design** with Tailwind CSS
 
 ### Data Flow
-- **Unidirectional data flow** from store to components
+- **Unidirectional data flow** from backend to frontend
+- **Backend as single source of truth** for all game state
 - **WebSocket updates** trigger store updates
 - **Component re-renders** based on state changes
-- **Optimistic updates** for immediate user feedback
+- **No client-side game logic** - all validation by backend
+- **Invalid move handling** via backend response
 
 ---
 
@@ -434,10 +541,20 @@ sequenceDiagram
 These sequence diagrams illustrate the comprehensive implementation of the React UI for the Chess Application. The architecture ensures:
 
 1. **Real-time communication** via WebSocket
-2. **Robust error handling** and recovery
-3. **Efficient state management** with Zustand
-4. **Responsive user interface** with modern React patterns
-5. **Performance monitoring** and optimization
-6. **Persistent user preferences** across sessions
+2. **Stateless frontend architecture** with backend as single source of truth
+3. **Robust error handling** and recovery
+4. **Efficient state management** with Zustand
+5. **Responsive user interface** with modern React patterns
+6. **Performance monitoring** with browser compatibility
+7. **Production-ready code** with console logging removed
+8. **Persistent user preferences** across sessions
 
-The implementation provides a solid foundation for the dual UI approach, allowing both the existing Java-based UI and the new React UI to coexist seamlessly.
+### Key Architectural Improvements
+
+- **Backend-Driven State**: All game logic and state management handled by Java backend
+- **Frontend as Presentation Layer**: React UI focuses solely on user interaction and display
+- **No Client-Side Validation**: All move validation performed by backend
+- **Clean Production Build**: No debug console output in production
+- **Browser Compatibility**: Performance monitoring works across all browsers
+
+The implementation provides a solid foundation for the dual UI approach, allowing both the existing Java-based UI and the new React UI to coexist seamlessly while maintaining a clean separation of concerns.
