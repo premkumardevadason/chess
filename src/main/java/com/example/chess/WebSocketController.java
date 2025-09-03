@@ -51,26 +51,6 @@ public class WebSocketController {
         boolean checkmate = game.isGameOver() && game.getKingInCheckPosition() != null;
         String winner = checkmate ? (game.isWhiteTurn() ? "Black" : "White") : null;
         
-        // If user move was successful and game is not over, trigger AI move
-        int[] aiMove = null;
-        String aiName = null;
-        if (success && !game.isGameOver()) {
-            // Trigger AI move
-            aiMove = game.findBestMove();
-            if (aiMove != null && aiMove.length == 4) {
-                // Make the AI move
-                boolean aiSuccess = game.makeMove(aiMove[0], aiMove[1], aiMove[2], aiMove[3]);
-                if (aiSuccess) {
-                    aiName = game.isAllAIEnabled() ? "All AIs" : game.getSelectedAIForGame();
-                    // Update checkmate status after AI move
-                    checkmate = game.isGameOver() && game.getKingInCheckPosition() != null;
-                    winner = checkmate ? (game.isWhiteTurn() ? "Black" : "White") : null;
-                } else {
-                    aiMove = null; // AI move failed
-                }
-            }
-        }
-        
         return new GameStateMessage(
             game.getBoard(),
             game.isWhiteTurn(),
@@ -78,12 +58,46 @@ public class WebSocketController {
             game.getKingInCheckPosition(),
             game.getThreatenedHighValuePieces(),
             success,
-            aiMove, // AI move coordinates for highlighting
+            null, // No AI move for user moves
             checkmate,
             winner,
-            game.isAllAIEnabled() ? "All AIs" : game.getSelectedAIForGame(),
-            aiName // AI that made the move
+            game.isAllAIEnabled() ? "All AIs" : game.getSelectedAIForGame()
         );
+        
+        // DO NOT UNDERSTAND why CURSOR added this code segment - it introduced a short cut which introduced a PAUSE for AI moves!
+        // // If user move was successful and game is not over, trigger AI move
+        // int[] aiMove = null;
+        // String aiName = null;
+        // if (success && !game.isGameOver()) {
+        //     // Trigger AI move
+        //     aiMove = game.findBestMove();
+        //     if (aiMove != null && aiMove.length == 4) {
+        //         // Make the AI move
+        //         boolean aiSuccess = game.makeMove(aiMove[0], aiMove[1], aiMove[2], aiMove[3]);
+        //         if (aiSuccess) {
+        //             aiName = game.isAllAIEnabled() ? "All AIs" : game.getSelectedAIForGame();
+        //             // Update checkmate status after AI move
+        //             checkmate = game.isGameOver() && game.getKingInCheckPosition() != null;
+        //             winner = checkmate ? (game.isWhiteTurn() ? "Black" : "White") : null;
+        //         } else {
+        //             aiMove = null; // AI move failed
+        //         }
+        //     }
+        // }
+        
+        // return new GameStateMessage(
+        //     game.getBoard(),
+        //     game.isWhiteTurn(),
+        //     game.isGameOver(),
+        //     game.getKingInCheckPosition(),
+        //     game.getThreatenedHighValuePieces(),
+        //     success,
+        //     aiMove, // AI move coordinates for highlighting
+        //     checkmate,
+        //     winner,
+        //     game.isAllAIEnabled() ? "All AIs" : game.getSelectedAIForGame(),
+        //     aiName // AI that made the move
+        // );
     }
     
     @MessageMapping("/newgame")
