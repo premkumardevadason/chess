@@ -3,11 +3,26 @@
 ## Overview
 This sequence diagram illustrates the main interactions and flow within the refactored ChessGame.java class, showing how user moves, AI moves, and game state management work together in the enhanced architecture.
 
+## Architecture Changes (Latest Updates)
+
+### Stateless Frontend Integration
+- **Backend as Single Source of Truth**: All game state managed by ChessGame.java
+- **Frontend as Presentation Layer**: React UI only handles user interactions and display
+- **WebSocket Communication**: Real-time state synchronization with frontend
+- **No Client-Side Validation**: All move validation performed by backend
+
+### Enhanced State Management
+- **Game State Broadcasting**: Automatic WebSocket updates for all state changes
+- **Invalid Move Handling**: Backend sends success/failure status to frontend
+- **Threat Detection**: King in check and queen under attack detection
+- **Move History**: Complete game state tracking for undo/redo functionality
+
 ## Main Game Flow Sequence
 
 ```mermaid
 sequenceDiagram
     participant User
+    participant Frontend as React_Frontend
     participant ChessController
     participant ChessGame
     participant AISystem as AI_Systems
@@ -28,8 +43,12 @@ sequenceDiagram
     end
     ChessGame->>ChessGame: aiSystemsReady = true
 
-    Note over User,GameState: User Move Flow
-    User->>ChessController: makeMove
+    Note over User,GameState: User Move Flow (Stateless Frontend)
+    User->>Frontend: Click on chess square
+    Frontend->>Frontend: Update UI state (selectedSquare)
+    User->>Frontend: Click destination square
+    Frontend->>WebSocket: Send move via /app/move
+    WebSocket->>ChessController: makeMove
     ChessController->>ChessGame: makeMove
     ChessGame->>RuleValidator: isValidMove 9-step validation
     RuleValidator->>RuleValidator: Check coordinate bounds
@@ -47,9 +66,13 @@ sequenceDiagram
         ChessGame->>OpeningBook: addMoveToHistory()
         ChessGame->>ChessGame: whiteTurn = false
         ChessGame->>ChessGame: start makeComputerMove thread
-        ChessGame->>WebSocket: broadcastGameState()
+        ChessGame->>WebSocket: broadcastGameState({success: true})
+        WebSocket-->>Frontend: Send updated game state
+        Frontend->>Frontend: Update backend game state
     else Move is invalid
-        ChessGame-->>ChessController: return false
+        ChessGame->>WebSocket: broadcastGameState({success: false})
+        WebSocket-->>Frontend: Send invalid move response
+        Frontend->>Frontend: Trigger invalid move animation
     end
 
     Note over ChessGame,AISystem: AI Move Flow
@@ -112,7 +135,9 @@ sequenceDiagram
     ChessGame->>GameState: update move history
     ChessGame->>OpeningBook: addMoveToHistory()
     ChessGame->>ChessGame: whiteTurn = true
-    ChessGame->>WebSocket: broadcastGameState()
+    ChessGame->>WebSocket: broadcastGameState({aiLastMove: [from, to], success: true})
+    WebSocket-->>Frontend: Send AI move and updated game state
+    Frontend->>Frontend: Update backend game state and highlight AI move
 
     Note over ChessGame,AISystem: Training Flow
     User->>ChessController: startTraining(games)
@@ -138,13 +163,19 @@ sequenceDiagram
         ChessGame->>AISystem: a3cAI startTraining
     end
 
-    Note over ChessGame,GameState: Game State Management
-    User->>ChessController: undoMove()
+    Note over ChessGame,GameState: Game State Management (Backend-Driven)
+    User->>Frontend: Click undo button
+    Frontend->>WebSocket: Send undo request
+    WebSocket->>ChessController: undoMove()
     ChessController->>ChessGame: undoMove()
     ChessGame->>GameState: restore previous state
     ChessGame->>WebSocket: broadcastGameState()
+    WebSocket-->>Frontend: Send updated game state
+    Frontend->>Frontend: Update backend game state
 
-    User->>ChessController: resetGame()
+    User->>Frontend: Click reset button
+    Frontend->>WebSocket: Send reset request
+    WebSocket->>ChessController: resetGame()
     ChessController->>ChessGame: resetGame()
     loop For each AI system
         ChessGame->>AISystem: addHumanGameData()
@@ -153,6 +184,8 @@ sequenceDiagram
     ChessGame->>ChessGame: initializeBoard()
     ChessGame->>OpeningBook: resetOpeningLine()
     ChessGame->>WebSocket: broadcastGameState()
+    WebSocket-->>Frontend: Send reset game state
+    Frontend->>Frontend: Update backend game state
 ```
 
 ## Enhanced Move Validation Flow
@@ -201,6 +234,80 @@ sequenceDiagram
     Comparator-->>ChessGame: Best move selected
 ```
 
+## Stateless Frontend Integration Flow
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Frontend as React_Frontend
+    participant WebSocket
+    participant ChessController
+    participant ChessGame
+    participant GameState as Game_State_Manager
+
+    Note over Frontend,ChessGame: Frontend is stateless - all game state managed by backend
+    
+    User->>Frontend: User interaction (click, move, etc.)
+    Frontend->>Frontend: Update UI state only (selectedSquare, availableMoves)
+    
+    Frontend->>WebSocket: Send action to backend
+    WebSocket->>ChessController: Forward action
+    ChessController->>ChessGame: Process action
+    
+    ChessGame->>ChessGame: Validate and execute action
+    ChessGame->>GameState: Update game state
+    ChessGame->>ChessGame: Check for threats (king in check, queen under attack)
+    ChessGame->>ChessGame: Generate AI response if needed
+    
+    ChessGame->>WebSocket: broadcastGameState({board, currentPlayer, gameStatus, kingInCheck, threatenedPieces, success})
+    WebSocket-->>Frontend: Send updated game state
+    Frontend->>Frontend: Update backend game state
+    Frontend-->>User: Display updated game state
+    
+    Note over Frontend,ChessGame: Frontend never modifies game state directly
+    Note over Frontend,ChessGame: All game logic handled by backend
+```
+
+---
+
+## Threat Detection and Highlighting Flow
+
+```mermaid
+sequenceDiagram
+    participant ChessGame
+    participant ThreatDetector as Threat_Detector
+    participant WebSocket
+    participant Frontend as React_Frontend
+
+    ChessGame->>ThreatDetector: checkForThreats()
+    ThreatDetector->>ThreatDetector: isKingInCheck()
+    ThreatDetector->>ThreatDetector: getThreatenedHighValuePieces()
+    
+    alt King in Check
+        ThreatDetector->>ThreatDetector: Find king position
+        ThreatDetector->>ThreatDetector: Check if king is under attack
+        ThreatDetector-->>ChessGame: Return king position
+        ChessGame->>WebSocket: broadcastGameState({kingInCheck: [row, col]})
+    end
+    
+    alt Queen Under Attack
+        ThreatDetector->>ThreatDetector: Find queen positions
+        ThreatDetector->>ThreatDetector: Check if queens are under attack
+        ThreatDetector-->>ChessGame: Return threatened queen positions
+        ChessGame->>WebSocket: broadcastGameState({threatenedPieces: [[row, col], ...]})
+    end
+    
+    WebSocket-->>Frontend: Send threat information
+    Frontend->>Frontend: Combine kingInCheck and threatenedPieces
+    Frontend->>Frontend: Apply red border to threatened squares
+    Frontend-->>User: Display threat highlighting
+    
+    Note over ChessGame,Frontend: Both king in check and queen under attack get red border
+    Note over ChessGame,Frontend: Frontend combines threat data for consistent highlighting
+```
+
+---
+
 ## Enhanced Checkmate Detection Flow
 
 ```mermaid
@@ -235,9 +342,10 @@ sequenceDiagram
 - **Logging**: Apache Log4j2 for comprehensive logging
 - **AI Systems**: 12 different AI implementations (increased from 10)
 - **Opening Book**: Leela Chess Zero professional opening database (extended to 6 moves)
-- **WebSocket**: Real-time communication with frontend
+- **WebSocket**: Real-time communication with stateless frontend
 - **Rule Validation**: Dedicated `ChessRuleValidator` class
 - **Tactical Defense**: Dedicated `ChessTacticalDefense` class
+- **State Management**: Backend as single source of truth for all game state
 
 ### AI System Integration (Updated)
 1. **Q-Learning AI**: Reinforcement learning with experience replay
@@ -260,6 +368,9 @@ sequenceDiagram
 - **Improved Move Validation**: 9-step comprehensive checking process
 - **Better Error Handling**: Comprehensive exception management
 - **Performance Optimization**: Parallel AI execution and caching
+- **Stateless Frontend Integration**: Backend-driven state management
+- **Threat Detection System**: King in check and queen under attack detection
+- **WebSocket State Broadcasting**: Real-time game state synchronization
 
 ## File Storage Location
 
@@ -287,3 +398,7 @@ For more detailed information about specific components:
 - **Opening Book**: Extended depth from 4 to 6 moves for better opening play
 - **Error Handling**: Comprehensive exception management and logging
 - **Code Organization**: Better separation of concerns and modularity
+- **Stateless Frontend**: Backend as single source of truth for all game state
+- **WebSocket Integration**: Real-time state synchronization with React frontend
+- **Threat Detection**: Enhanced king in check and queen under attack detection
+- **Invalid Move Handling**: Backend-driven validation with frontend animation feedback
