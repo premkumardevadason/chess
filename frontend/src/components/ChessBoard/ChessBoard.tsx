@@ -55,7 +55,7 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({ onPawnPromotion }) => {
   // Ensure we have a valid board and game state
   if (!backendGameState?.board || backendGameState.board.length === 0) {
     return (
-      <div className="chess-board w-[400px] h-[400px] sm:w-[450px] sm:h-[450px] lg:w-[500px] lg:h-[500px] max-h-[50vh] mx-auto flex items-center justify-center border-4 border-black flex-shrink-0" style={{minWidth: '400px'}}>
+      <div className="chess-board w-[400px] h-[400px] sm:w-[450px] sm:h-[450px] lg:w-[500px] lg:h-[500px] max-h-[50vh] mx-auto flex items-center justify-center flex-shrink-0" style={{minWidth: '400px'}}>
         <div className="text-center">
           <p className="text-lg font-semibold text-blue-600">Loading Chess Board</p>
           <p className="text-sm text-gray-600">
