@@ -45,6 +45,11 @@ public class AIMoveTranslator {
             }
         }
         
+        // Final fallback: return any valid BLACK move to prevent null
+        if (!blackMoves.isEmpty()) {
+            return blackMoves.get(0);
+        }
+        
         return null;
     }
     

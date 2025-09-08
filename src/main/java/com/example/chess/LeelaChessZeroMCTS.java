@@ -260,10 +260,12 @@ public class LeelaChessZeroMCTS {
             String[][] newBoard = copyBoard(board);
             applyMove(newBoard, move);
             
-            // Generate valid moves for new position
-            List<int[]> newValidMoves = moveAdapter.getAllLegalMoves(newBoard, false); // AI plays black
+            // Generate valid moves for new position - alternate turns
+            boolean nextTurn = !node.isWhiteTurn;
+            List<int[]> newValidMoves = moveAdapter.getAllLegalMoves(newBoard, nextTurn);
             
             MCTSNode child = new MCTSNode(move, newBoard, newValidMoves);
+            child.isWhiteTurn = nextTurn;
             node.children.add(child);
         }
     }
@@ -495,11 +497,13 @@ public class LeelaChessZeroMCTS {
         List<MCTSNode> children = new ArrayList<>();
         int visitCount = 0;
         double totalValue = 0.0;
+        boolean isWhiteTurn;
         
         MCTSNode(int[] move, String[][] board, List<int[]> validMoves) {
             this.move = move;
             this.board = board;
             this.validMoves = validMoves;
+            this.isWhiteTurn = false; // AI plays as BLACK
         }
         
         boolean isLeaf() {
