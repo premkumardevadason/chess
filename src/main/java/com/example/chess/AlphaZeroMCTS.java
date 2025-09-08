@@ -258,7 +258,7 @@ public class AlphaZeroMCTS implements AlphaZeroInterfaces.MCTSEngine {
         if (!node.children.isEmpty()) return; // Already expanded
         
         // Use unified move adapter for consistent legal moves
-        List<int[]> validMoves = moveAdapter.getAllLegalMoves(node.board, !node.isWhiteTurn);
+        List<int[]> validMoves = moveAdapter.getAllLegalMoves(node.board, node.isWhiteTurn);
         logger.debug("*** AlphaZero MCTS: Found {} total valid moves for expansion ***", validMoves.size());
         
         if (validMoves.isEmpty()) {
