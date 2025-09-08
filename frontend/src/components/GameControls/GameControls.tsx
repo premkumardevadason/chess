@@ -74,7 +74,7 @@ export const GameControls: React.FC = () => {
   };
 
   return (
-    <Card>
+    <Card className="w-80 max-w-sm">
       <CardHeader>
         <CardTitle>Game Controls</CardTitle>
         <Badge 

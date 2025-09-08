@@ -51,25 +51,27 @@ export const ChessGame: React.FC = () => {
       <Header />
       
       {/* Main Layout */}
-      <div className="flex flex-col lg:flex-row min-h-[calc(100vh-4rem)]">
-        {/* Sidebar */}
-        <Sidebar />
+      <div className="flex flex-col xl:flex-row min-h-[calc(100vh-4rem)] w-full">
+        {/* Left Sidebar */}
+        <div className="xl:w-64 flex-shrink-0">
+          <Sidebar />
+        </div>
         
         {/* Main Game Area */}
-        <main className="flex-1 flex flex-col lg:flex-row items-center justify-center p-4 gap-6 -ml-[500px]">
-          {/* Chess Board */}
-          <div className="flex-shrink-0">
+        <main className="flex-1 flex flex-col xl:flex-row items-center justify-center p-4 gap-12 xl:gap-6 min-w-0">
+          {/* Chess Board - Left side when maximized */}
+          <div className="flex-shrink-0 mr-4 xl:mr-0" style={{width: '500px', minWidth: '400px'}}>
             <ChessBoard onPawnPromotion={handlePawnPromotion} />
           </div>
           
-          {/* Game Controls */}
-          <div className="flex-shrink-0">
+          {/* Game Controls - Right side when maximized, below when minimized */}
+          <div className="flex-shrink-0 xl:ml-8">
             <GameControls />
           </div>
         </main>
         
         {/* Right Panel */}
-        <div className="lg:w-80 flex-shrink-0 p-4 space-y-4 -ml-[200px]">
+        <div className="xl:w-80 flex-shrink-0 p-4 space-y-4 overflow-y-auto">
           <Tabs value={activeTab} onValueChange={(value: string) => setActiveTab(value as 'game' | 'training' | 'openings')} className="w-full">
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="game">AI Training</TabsTrigger>
