@@ -61,7 +61,7 @@
 
 /* Chess-specific styles */
 .chess-board {
-  @apply grid grid-cols-8 gap-0 border-4 border-black;
+  @apply grid grid-cols-8 gap-0;
   min-width: 0;
   min-height: 0;
   box-sizing: border-box;
