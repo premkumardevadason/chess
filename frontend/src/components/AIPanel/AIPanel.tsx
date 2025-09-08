@@ -1,5 +1,10 @@
 import React, { useState } from 'react';
 import useChessStore from '@/stores/chessStore';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
+import { Checkbox } from '@/components/ui/checkbox';
 
 export const AIPanel: React.FC = () => {
   const { aiSystems, trainingStatus, mcpStatus, actions } = useChessStore();
@@ -15,11 +20,11 @@ export const AIPanel: React.FC = () => {
     actions.stopTraining();
   };
 
-  const handleDeleteTraining = (aiName: string) => {
+  const handleDeleteTraining = (_aiName: string) => {
     // TODO: Implement delete training data
   };
 
-  const handleEvaluateTraining = (aiName: string) => {
+  const handleEvaluateTraining = (_aiName: string) => {
     // TODO: Implement training evaluation
   };
 
@@ -48,167 +53,178 @@ export const AIPanel: React.FC = () => {
   };
 
   return (
-    <div className="bg-card border border-border rounded-lg p-4 space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold">AI Training Management</h3>
-        <button
-          onClick={() => setShowQualityReport(!showQualityReport)}
-          className="px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
-        >
-          {showQualityReport ? 'Hide' : 'Show'} Quality Report
-        </button>
-      </div>
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <CardTitle>AI Training Management</CardTitle>
+          <Button
+            onClick={() => setShowQualityReport(!showQualityReport)}
+            variant="outline"
+            size="sm"
+          >
+            {showQualityReport ? 'Hide' : 'Show'} Quality Report
+          </Button>
+        </div>
+      </CardHeader>
       
-      {/* Training Controls */}
-      <div className="space-y-3">
-        <div className="flex space-x-2">
-          <button
-            onClick={handleStartTraining}
-            disabled={trainingStatus.active}
-            className="flex-1 px-3 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
-          >
-            {selectedAIs.length > 0 ? `Start Training (${selectedAIs.length})` : 'Start All Training'}
-          </button>
-          <button
-            onClick={handleStopTraining}
-            disabled={!trainingStatus.active}
-            className="flex-1 px-3 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
-          >
-            Stop Training
-          </button>
+      <CardContent className="space-y-6">
+        {/* Training Controls */}
+        <div className="space-y-3">
+          <div className="flex space-x-2">
+            <Button
+              onClick={handleStartTraining}
+              disabled={trainingStatus.active}
+              className="flex-1"
+              size="sm"
+            >
+              {selectedAIs.length > 0 ? `Start Training (${selectedAIs.length})` : 'Start All Training'}
+            </Button>
+            <Button
+              onClick={handleStopTraining}
+              disabled={!trainingStatus.active}
+              variant="destructive"
+              className="flex-1"
+              size="sm"
+            >
+              Stop Training
+            </Button>
+          </div>
+          
+          {trainingStatus.active && (
+            <Card className="bg-green-50 border-green-200">
+              <CardContent className="p-3">
+                <div className="text-sm space-y-1">
+                  <div className="flex justify-between">
+                    <span className="font-medium text-green-800">Training Active</span>
+                    <span className="text-green-600">{formatTrainingTime(trainingStatus.startTime)}</span>
+                  </div>
+                  <div className="flex justify-between text-xs text-green-700">
+                    <span>Games: {trainingStatus.completedGames || 0}/{trainingStatus.totalGames || 0}</span>
+                    <span>Progress: {Math.round((trainingStatus.completedGames || 0) / (trainingStatus.totalGames || 1) * 100)}%</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
         
-        {trainingStatus.active && (
-          <div className="bg-green-50 border border-green-200 rounded-md p-3">
-            <div className="text-sm space-y-1">
+        {/* AI Systems Grid */}
+        <div className="space-y-3">
+          <h4 className="text-sm font-medium">AI Systems (12 Total)</h4>
+          <div className="grid grid-cols-1 gap-2 max-h-64 overflow-y-auto">
+            {Object.values(aiSystems).map((ai) => (
+              <Card
+                key={ai.name}
+                className={`transition-colors ${
+                  selectedAIs.includes(ai.name) ? 'bg-blue-50 border-blue-200' : ''
+                }`}
+              >
+                <CardContent className="p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        checked={selectedAIs.includes(ai.name)}
+                        onCheckedChange={() => toggleAISelection(ai.name)}
+                      />
+                      <span className="font-medium text-sm">{ai.name}</span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <div className={`w-2 h-2 rounded-full ${
+                        ai.status === 'training' ? 'bg-green-500 animate-pulse' :
+                        ai.status === 'error' ? 'bg-red-500' :
+                        'bg-gray-400'
+                      }`} />
+                      <Badge variant="outline" className="text-xs">
+                        {ai.status}
+                      </Badge>
+                    </div>
+                  </div>
+                  
+                  {/* Progress Bar */}
+                  {ai.status === 'training' && (
+                    <div className="mb-2">
+                      <div className="flex justify-between text-xs text-muted-foreground mb-1">
+                        <span>Progress</span>
+                        <span>{getTrainingProgress(ai.name)}%</span>
+                      </div>
+                      <Progress value={getTrainingProgress(ai.name)} className="h-1.5" />
+                    </div>
+                  )}
+                  
+                  {/* Quality Metrics */}
+                  {showQualityReport && getTrainingQuality(ai.name) && (
+                    <div className="text-xs text-muted-foreground space-y-1 mb-2">
+                      <div className="flex justify-between">
+                        <span>Win Rate:</span>
+                        <span className="font-medium">{getTrainingQuality(ai.name).winRate.toFixed(1)}%</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Avg Response:</span>
+                        <span className="font-medium">{getTrainingQuality(ai.name).averageResponseTime.toFixed(0)}ms</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Error Rate:</span>
+                        <span className="font-medium">{getTrainingQuality(ai.name).errorRate.toFixed(1)}%</span>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Action Buttons */}
+                  <div className="flex space-x-1">
+                    <Button
+                      onClick={() => handleEvaluateTraining(ai.name)}
+                      size="sm"
+                      variant="outline"
+                      className="text-xs px-2 py-1 h-auto"
+                    >
+                      Evaluate
+                    </Button>
+                    <Button
+                      onClick={() => handleDeleteTraining(ai.name)}
+                      size="sm"
+                      variant="destructive"
+                      className="text-xs px-2 py-1 h-auto"
+                    >
+                      Delete
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+        
+        {/* MCP Status */}
+        <div className="pt-4 border-t">
+          <h4 className="text-sm font-medium mb-3">MCP Server Status</h4>
+          <div className="grid grid-cols-2 gap-4 text-sm">
+            <div className="space-y-2">
               <div className="flex justify-between">
-                <span className="font-medium text-green-800">Training Active</span>
-                <span className="text-green-600">{formatTrainingTime(trainingStatus.startTime)}</span>
+                <span>Status:</span>
+                <Badge variant={mcpStatus.connected ? "default" : "destructive"}>
+                  {mcpStatus.connected ? 'Connected' : 'Disconnected'}
+                </Badge>
               </div>
-              <div className="flex justify-between text-xs text-green-700">
-                <span>Games: {trainingStatus.completedGames || 0}/{trainingStatus.totalGames || 0}</span>
-                <span>Progress: {Math.round((trainingStatus.completedGames || 0) / (trainingStatus.totalGames || 1) * 100)}%</span>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-      
-      {/* AI Systems Grid */}
-      <div className="space-y-3">
-        <h4 className="text-sm font-medium">AI Systems (12 Total)</h4>
-        <div className="grid grid-cols-1 gap-2 max-h-64 overflow-y-auto">
-          {Object.values(aiSystems).map((ai) => (
-            <div
-              key={ai.name}
-              className={`p-3 rounded-md border transition-colors ${
-                selectedAIs.includes(ai.name) ? 'bg-blue-50 border-blue-200' : 'bg-muted border-border'
-              }`}
-            >
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    checked={selectedAIs.includes(ai.name)}
-                    onChange={() => toggleAISelection(ai.name)}
-                    className="rounded"
-                  />
-                  <span className="font-medium text-sm">{ai.name}</span>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <div className={`w-2 h-2 rounded-full ${
-                    ai.status === 'training' ? 'bg-green-500 animate-pulse' :
-                    ai.status === 'error' ? 'bg-red-500' :
-                    'bg-gray-400'
-                  }`} />
-                  <span className="text-xs text-muted-foreground capitalize">{ai.status}</span>
-                </div>
-              </div>
-              
-              {/* Progress Bar */}
-              {ai.status === 'training' && (
-                <div className="mb-2">
-                  <div className="flex justify-between text-xs text-muted-foreground mb-1">
-                    <span>Progress</span>
-                    <span>{getTrainingProgress(ai.name)}%</span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-1.5">
-                    <div 
-                      className="bg-green-600 h-1.5 rounded-full transition-all duration-300"
-                      style={{ width: `${getTrainingProgress(ai.name)}%` }}
-                    />
-                  </div>
-                </div>
-              )}
-              
-              {/* Quality Metrics */}
-              {showQualityReport && getTrainingQuality(ai.name) && (
-                <div className="text-xs text-muted-foreground space-y-1">
-                  <div className="flex justify-between">
-                    <span>Win Rate:</span>
-                    <span className="font-medium">{getTrainingQuality(ai.name).winRate.toFixed(1)}%</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Avg Response:</span>
-                    <span className="font-medium">{getTrainingQuality(ai.name).averageResponseTime.toFixed(0)}ms</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Error Rate:</span>
-                    <span className="font-medium">{getTrainingQuality(ai.name).errorRate.toFixed(1)}%</span>
-                  </div>
-                </div>
-              )}
-              
-              {/* Action Buttons */}
-              <div className="flex space-x-1 mt-2">
-                <button
-                  onClick={() => handleEvaluateTraining(ai.name)}
-                  className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
-                >
-                  Evaluate
-                </button>
-                <button
-                  onClick={() => handleDeleteTraining(ai.name)}
-                  className="px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
-                >
-                  Delete
-                </button>
+              <div className="flex justify-between">
+                <span>Active Agents:</span>
+                <span className="font-medium">{mcpStatus.activeAgents}</span>
               </div>
             </div>
-          ))}
-        </div>
-      </div>
-      
-      {/* MCP Status */}
-      <div className="pt-4 border-t border-border">
-        <h4 className="text-sm font-medium mb-2">MCP Server Status</h4>
-        <div className="grid grid-cols-2 gap-4 text-sm">
-          <div>
-            <div className="flex justify-between">
-              <span>Status:</span>
-              <span className={`font-medium ${mcpStatus.connected ? 'text-green-600' : 'text-red-600'}`}>
-                {mcpStatus.connected ? 'Connected' : 'Disconnected'}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span>Active Agents:</span>
-              <span className="font-medium">{mcpStatus.activeAgents}</span>
-            </div>
-          </div>
-          <div>
-            <div className="flex justify-between">
-              <span>Total Sessions:</span>
-              <span className="font-medium">{mcpStatus.totalSessions}</span>
-            </div>
-            <div className="flex justify-between">
-              <span>Last Activity:</span>
-              <span className="font-medium text-xs">
-                {mcpStatus.lastActivity ? new Date(mcpStatus.lastActivity).toLocaleTimeString() : 'Never'}
-              </span>
+            <div className="space-y-2">
+              <div className="flex justify-between">
+                <span>Total Sessions:</span>
+                <span className="font-medium">{mcpStatus.totalSessions}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Last Activity:</span>
+                <span className="font-medium text-xs">
+                  {mcpStatus.lastActivity ? new Date(mcpStatus.lastActivity).toLocaleTimeString() : 'Never'}
+                </span>
+              </div>
             </div>
           </div>
         </div>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 };

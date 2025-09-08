@@ -7,13 +7,14 @@ import { OpeningBook } from './OpeningBook/OpeningBook';
 import { Header } from './Header';
 import { Sidebar } from './Sidebar';
 import { Footer } from './Footer';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 import useChessStore from '@/stores/chessStore';
 import { useChessWebSocket } from '@/hooks/useChessWebSocket';
 import type { PieceType, PieceColor } from '@/types/chess';
 
 export const ChessGame: React.FC = () => {
-  const { backendGameState } = useChessStore();
+  const { } = useChessStore();
   useChessWebSocket(); // Initialize WebSocket connection
   const [activeTab, setActiveTab] = useState<'game' | 'training' | 'openings'>('game');
   const [pawnPromotion, setPawnPromotion] = useState<{
@@ -55,7 +56,7 @@ export const ChessGame: React.FC = () => {
         <Sidebar />
         
         {/* Main Game Area */}
-        <main className="flex-1 flex flex-col lg:flex-row items-center justify-center p-4 gap-6">
+        <main className="flex-1 flex flex-col lg:flex-row items-center justify-center p-4 gap-6 -ml-[500px]">
           {/* Chess Board */}
           <div className="flex-shrink-0">
             <ChessBoard onPawnPromotion={handlePawnPromotion} />
@@ -68,34 +69,21 @@ export const ChessGame: React.FC = () => {
         </main>
         
         {/* Right Panel */}
-        <div className="lg:w-80 flex-shrink-0 p-4 space-y-4">
-          {/* Tab Navigation */}
-          <div className="flex bg-muted rounded-lg p-1">
-            <button
-              onClick={() => setActiveTab('game')}
-              className={`flex-1 px-3 py-2 text-sm rounded-md transition-colors ${
-                activeTab === 'game' 
-                  ? 'bg-background text-foreground shadow-sm' 
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              AI Training
-            </button>
-            <button
-              onClick={() => setActiveTab('openings')}
-              className={`flex-1 px-3 py-2 text-sm rounded-md transition-colors ${
-                activeTab === 'openings' 
-                  ? 'bg-background text-foreground shadow-sm' 
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              Openings
-            </button>
-          </div>
-          
-          {/* Tab Content */}
-          {activeTab === 'game' && <AIPanel />}
-          {activeTab === 'openings' && <OpeningBook />}
+        <div className="lg:w-80 flex-shrink-0 p-4 space-y-4 -ml-[200px]">
+          <Tabs value={activeTab} onValueChange={(value: string) => setActiveTab(value as 'game' | 'training' | 'openings')} className="w-full">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="game">AI Training</TabsTrigger>
+              <TabsTrigger value="openings">Openings</TabsTrigger>
+            </TabsList>
+            
+            <TabsContent value="game" className="mt-4">
+              <AIPanel />
+            </TabsContent>
+            
+            <TabsContent value="openings" className="mt-4">
+              <OpeningBook />
+            </TabsContent>
+          </Tabs>
         </div>
       </div>
       

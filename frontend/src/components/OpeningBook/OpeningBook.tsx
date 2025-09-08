@@ -1,5 +1,9 @@
 import React, { useState } from 'react';
 import useChessStore from '@/stores/chessStore';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Badge } from '@/components/ui/badge';
 
 interface Opening {
   name: string;
@@ -65,7 +69,7 @@ const OPENINGS: Opening[] = [
 export const OpeningBook: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [selectedOpening, setSelectedOpening] = useState<Opening | null>(null);
-  const { actions } = useChessStore();
+  const { } = useChessStore();
 
   const categories = ['All', ...Array.from(new Set(OPENINGS.map(o => o.category)))];
 
@@ -73,157 +77,165 @@ export const OpeningBook: React.FC = () => {
     ? OPENINGS 
     : OPENINGS.filter(opening => opening.category === selectedCategory);
 
-  const handlePlayOpening = (opening: Opening) => {
+  const handlePlayOpening = (_opening: Opening) => {
     // TODO: Implement opening play functionality
     // This would send the opening moves to the backend
   };
 
-  const handleAnalyzeOpening = (opening: Opening) => {
+  const handleAnalyzeOpening = (_opening: Opening) => {
     // TODO: Implement opening analysis
   };
 
   return (
-    <div className="bg-card border border-border rounded-lg p-4 space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold">Opening Book (34 Openings)</h3>
-        <div className="text-sm text-muted-foreground">
-          {filteredOpenings.length} openings
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <CardTitle>Opening Book (34 Openings)</CardTitle>
+          <Badge variant="outline">
+            {filteredOpenings.length} openings
+          </Badge>
         </div>
-      </div>
+      </CardHeader>
 
-      {/* Category Filter */}
-      <div className="flex flex-wrap gap-2">
-        {categories.map((category) => (
-          <button
-            key={category}
-            onClick={() => setSelectedCategory(category)}
-            className={`px-3 py-1 text-xs rounded-full transition-colors ${
-              selectedCategory === category
-                ? 'bg-primary text-primary-foreground'
-                : 'bg-muted text-muted-foreground hover:bg-muted/80'
-            }`}
-          >
-            {category}
-          </button>
-        ))}
-      </div>
+      <CardContent className="space-y-4">
+        {/* Category Filter */}
+        <div className="flex flex-wrap gap-2">
+          {categories.map((category) => (
+            <Button
+              key={category}
+              onClick={() => setSelectedCategory(category)}
+              variant={selectedCategory === category ? "default" : "outline"}
+              size="sm"
+              className="text-xs"
+            >
+              {category}
+            </Button>
+          ))}
+        </div>
 
-      {/* Openings List */}
-      <div className="max-h-64 overflow-y-auto space-y-2">
-        {filteredOpenings.map((opening, index) => (
-          <div
-            key={index}
-            className="p-3 border border-border rounded-lg hover:bg-muted/50 transition-colors cursor-pointer"
-            onClick={() => setSelectedOpening(opening)}
-          >
-            <div className="flex items-center justify-between mb-2">
-              <h4 className="font-medium text-sm">{opening.name}</h4>
-              <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
-                {opening.category}
-              </span>
-            </div>
-            
-            <div className="text-xs text-muted-foreground mb-2">
-              {opening.description}
-            </div>
-            
-            <div className="flex items-center justify-between">
-              <div className="flex space-x-1">
-                {opening.moves.map((move, moveIndex) => (
-                  <span
-                    key={moveIndex}
-                    className="text-xs bg-muted px-2 py-1 rounded font-mono"
-                  >
-                    {move}
-                  </span>
-                ))}
-              </div>
-              
-              <div className="flex space-x-1">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handlePlayOpening(opening);
-                  }}
-                  className="px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
-                >
-                  Play
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleAnalyzeOpening(opening);
-                  }}
-                  className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
-                >
-                  Analyze
-                </button>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Opening Details Modal */}
-      {selectedOpening && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-card border border-border rounded-lg p-6 max-w-md w-full mx-4">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold">{selectedOpening.name}</h3>
-              <button
-                onClick={() => setSelectedOpening(null)}
-                className="text-muted-foreground hover:text-foreground"
-              >
-                ✕
-              </button>
-            </div>
-            
-            <div className="space-y-3">
-              <div>
-                <span className="text-sm font-medium">Category: </span>
-                <span className="text-sm text-muted-foreground">{selectedOpening.category}</span>
-              </div>
-              
-              <div>
-                <span className="text-sm font-medium">Description: </span>
-                <span className="text-sm text-muted-foreground">{selectedOpening.description}</span>
-              </div>
-              
-              <div>
-                <span className="text-sm font-medium">Moves: </span>
-                <div className="flex flex-wrap gap-1 mt-1">
-                  {selectedOpening.moves.map((move, index) => (
-                    <span
-                      key={index}
-                      className="text-sm bg-muted px-2 py-1 rounded font-mono"
+        {/* Openings List */}
+        <div className="max-h-64 overflow-y-auto space-y-2">
+          {filteredOpenings.map((opening, index) => (
+            <Card
+              key={index}
+              className="cursor-pointer hover:bg-muted/50 transition-colors"
+              onClick={() => setSelectedOpening(opening)}
+            >
+              <CardContent className="p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="font-medium text-sm">{opening.name}</h4>
+                  <Badge variant="secondary" className="text-xs">
+                    {opening.category}
+                  </Badge>
+                </div>
+                
+                <div className="text-xs text-muted-foreground mb-2">
+                  {opening.description}
+                </div>
+                
+                <div className="flex items-center justify-between">
+                  <div className="flex space-x-1">
+                    {opening.moves.map((move, moveIndex) => (
+                      <Badge
+                        key={moveIndex}
+                        variant="outline"
+                        className="text-xs font-mono"
+                      >
+                        {move}
+                      </Badge>
+                    ))}
+                  </div>
+                  
+                  <div className="flex space-x-1">
+                    <Button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handlePlayOpening(opening);
+                      }}
+                      size="sm"
+                      variant="default"
+                      className="text-xs px-2 py-1 h-auto"
                     >
-                      {index + 1}.{move}
-                    </span>
-                  ))}
+                      Play
+                    </Button>
+                    <Button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleAnalyzeOpening(opening);
+                      }}
+                      size="sm"
+                      variant="outline"
+                      className="text-xs px-2 py-1 h-auto"
+                    >
+                      Analyze
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        {/* Opening Details Modal */}
+        <Dialog open={!!selectedOpening} onOpenChange={(open: boolean) => !open && setSelectedOpening(null)}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>{selectedOpening?.name}</DialogTitle>
+              <DialogDescription>
+                Detailed information about this chess opening
+              </DialogDescription>
+            </DialogHeader>
+            
+            {selectedOpening && (
+              <div className="space-y-4">
+                <div>
+                  <span className="text-sm font-medium">Category: </span>
+                  <Badge variant="outline">{selectedOpening.category}</Badge>
+                </div>
+                
+                <div>
+                  <span className="text-sm font-medium">Description: </span>
+                  <p className="text-sm text-muted-foreground mt-1">{selectedOpening.description}</p>
+                </div>
+                
+                <div>
+                  <span className="text-sm font-medium">Moves: </span>
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {selectedOpening.moves.map((move, index) => (
+                      <Badge
+                        key={index}
+                        variant="outline"
+                        className="text-sm font-mono"
+                      >
+                        {index + 1}.{move}
+                      </Badge>
+                    ))}
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
             
-            <div className="flex space-x-3 mt-6">
-              <button
+            <DialogFooter>
+              <Button
                 onClick={() => {
-                  handlePlayOpening(selectedOpening);
+                  selectedOpening && handlePlayOpening(selectedOpening);
                   setSelectedOpening(null);
                 }}
-                className="flex-1 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"
+                className="flex-1"
               >
                 Play This Opening
-              </button>
-              <button
+              </Button>
+              <Button
                 onClick={() => setSelectedOpening(null)}
-                className="flex-1 px-4 py-2 bg-secondary text-secondary-foreground rounded-md hover:bg-secondary/90 transition-colors"
+                variant="outline"
+                className="flex-1"
               >
                 Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </CardContent>
+    </Card>
   );
 };

@@ -55,7 +55,7 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({ onPawnPromotion }) => {
   // Ensure we have a valid board and game state
   if (!backendGameState?.board || backendGameState.board.length === 0) {
     return (
-      <div className="chess-board w-96 h-96 mx-auto flex items-center justify-center border-2 border-gray-800">
+      <div className="chess-board w-[600px] h-[600px] max-w-[90vw] max-h-[90vh] mx-auto flex items-center justify-center border-2 border-gray-800">
         <div className="text-center">
           <p className="text-lg font-semibold text-blue-600">Loading Chess Board</p>
           <p className="text-sm text-gray-600">
@@ -75,7 +75,7 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({ onPawnPromotion }) => {
 
 
   return (
-    <div className="chess-board w-96 h-96 mx-auto">
+    <div className="chess-board w-[600px] h-[600px] max-w-[90vw] max-h-[90vh] mx-auto">
       {backendGameState.board.map((row, rowIndex) =>
         row.map((piece, colIndex) => {
           const isSelected = uiState.selectedSquare && 

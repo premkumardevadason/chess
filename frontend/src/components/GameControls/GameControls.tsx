@@ -1,5 +1,9 @@
 import React, { useState } from 'react';
 import useChessStore from '@/stores/chessStore';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Badge } from '@/components/ui/badge';
 
 export const GameControls: React.FC = () => {
   const { backendGameState, actions, isConnected } = useChessStore();
@@ -28,139 +32,179 @@ export const GameControls: React.FC = () => {
     setShowConfirmDialog(null);
   };
 
-  const getGameStatusColor = (status: string) => {
-    switch (status) {
-      case 'active': return 'text-green-600';
-      case 'checkmate': return 'text-red-600';
-      case 'stalemate': return 'text-yellow-600';
-      case 'draw': return 'text-blue-600';
-      default: return 'text-gray-600';
-    }
-  };
 
   const getCurrentPlayerDisplay = (player: string) => {
     return player === 'white' ? 'White ♔' : 'Black ♚';
   };
 
+  const getGameStateText = (gameStatus?: string, currentPlayer?: string) => {
+    if (!isConnected) return 'Offline';
+    
+    switch (gameStatus) {
+      case 'checkmate':
+        return 'Checkmate';
+      case 'stalemate':
+        return 'Stalemate';
+      case 'draw':
+        return 'Draw';
+      case 'resigned':
+        return 'Resigned';
+      case 'active':
+        return currentPlayer === 'white' ? 'White to Move' : 'Black to Move';
+      default:
+        return 'Ready';
+    }
+  };
+
+  const getGameStateVariant = (gameStatus?: string, _currentPlayer?: string) => {
+    if (!isConnected) return 'destructive';
+    
+    switch (gameStatus) {
+      case 'checkmate':
+      case 'resigned':
+        return 'destructive';
+      case 'stalemate':
+      case 'draw':
+        return 'secondary';
+      case 'active':
+        return 'default';
+      default:
+        return 'outline';
+    }
+  };
+
   return (
-    <div className="bg-card border border-border rounded-lg p-4 space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold">Game Controls</h3>
-        <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} 
-             title={isConnected ? 'Connected' : 'Disconnected'} />
-      </div>
-      
-      {/* Primary Controls */}
-      <div className="space-y-2">
-        <button
-          onClick={actions.resetGame}
-          className="w-full px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors font-medium"
+    <Card>
+      <CardHeader>
+        <CardTitle>Game Controls</CardTitle>
+        <Badge 
+          variant={getGameStateVariant(backendGameState?.gameStatus, backendGameState?.currentPlayer)}
+          className="bg-sky-500 text-white hover:bg-sky-600"
         >
-          New Game
-        </button>
-        
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            onClick={() => {}} // TODO: Implement undo via backend
-            disabled={true} // TODO: Backend should provide move history
-            className="px-3 py-2 bg-secondary text-secondary-foreground rounded-md hover:bg-secondary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-          >
-            ↶ Undo
-          </button>
-          
-          <button
-            onClick={() => {}} // TODO: Implement redo via backend
-            className="px-3 py-2 bg-secondary text-secondary-foreground rounded-md hover:bg-secondary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-          >
-            ↷ Redo
-          </button>
-        </div>
-      </div>
+          {getGameStateText(backendGameState?.gameStatus, backendGameState?.currentPlayer)}
+        </Badge>
+      </CardHeader>
       
-      {/* Game Status */}
-      <div className="pt-4 border-t border-border">
-        <div className="text-sm space-y-2">
-          <div className="flex justify-between">
-            <span>Current Player:</span>
-            <span className={`font-medium ${backendGameState?.currentPlayer === 'white' ? 'text-white' : 'text-gray-800'}`}>
-              {getCurrentPlayerDisplay(backendGameState?.currentPlayer || 'white')}
-            </span>
-          </div>
+      <CardContent className="space-y-4">
+        {/* Primary Controls */}
+        <div className="space-y-2">
+          <Button
+            onClick={actions.resetGame}
+            className="w-full"
+            size="lg"
+          >
+            New Game
+          </Button>
           
-          <div className="flex justify-between">
-            <span>Game Status:</span>
-            <span className={`font-medium ${getGameStatusColor(backendGameState?.gameStatus || 'active')}`}>
-              {(backendGameState?.gameStatus || 'active').charAt(0).toUpperCase() + (backendGameState?.gameStatus || 'active').slice(1)}
-            </span>
-          </div>
-          
-          <div className="flex justify-between">
-            <span>Moves:</span>
-            <span className="font-medium">0</span> {/* TODO: Backend should provide move count */}
-          </div>
-          
-          {/* TODO: Backend should provide last move information */}
-        </div>
-      </div>
-      
-      {/* Game Actions */}
-      {(backendGameState?.gameStatus || 'active') === 'active' && (
-        <div className="pt-4 border-t border-border">
           <div className="grid grid-cols-2 gap-2">
-            <button
-              onClick={handleResign}
-              className="px-3 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-sm"
+            <Button
+              onClick={() => {}} // TODO: Implement undo via backend
+              disabled={true} // TODO: Backend should provide move history
+              variant="secondary"
+              size="sm"
             >
-              Resign
-            </button>
+              ↶ Undo
+            </Button>
             
-            <button
-              onClick={handleOfferDraw}
-              className="px-3 py-2 bg-yellow-600 text-white rounded-md hover:bg-yellow-700 transition-colors text-sm"
+            <Button
+              onClick={() => {}} // TODO: Implement redo via backend
+              disabled={true} // TODO: Backend should provide move history
+              variant="secondary"
+              size="sm"
             >
-              Offer Draw
-            </button>
+              ↷ Redo
+            </Button>
           </div>
         </div>
-      )}
-      
-      {/* Confirmation Dialogs */}
-      {showConfirmDialog && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-card border border-border rounded-lg p-6 max-w-sm w-full mx-4">
-            <h4 className="text-lg font-semibold mb-4">
-              {showConfirmDialog === 'resign' ? 'Resign Game?' : 'Offer Draw?'}
-            </h4>
-            
-            <p className="text-sm text-muted-foreground mb-6">
-              {showConfirmDialog === 'resign' 
-                ? 'Are you sure you want to resign? This will end the game in your opponent\'s favor.'
-                : 'Do you want to offer a draw to your opponent?'
-              }
-            </p>
-            
-            <div className="flex space-x-3">
-              <button
-                onClick={showConfirmDialog === 'resign' ? confirmResign : confirmDraw}
-                className={`flex-1 px-4 py-2 rounded-md text-white transition-colors ${
-                  showConfirmDialog === 'resign' 
-                    ? 'bg-red-600 hover:bg-red-700' 
-                    : 'bg-yellow-600 hover:bg-yellow-700'
-                }`}
-              >
-                {showConfirmDialog === 'resign' ? 'Resign' : 'Offer Draw'}
-              </button>
+        
+        {/* Game Status */}
+        <div className="space-y-3 pt-4 border-t">
+          <div className="flex justify-between items-center">
+            <span className="text-sm text-muted-foreground">Current Player:</span>
+            <Badge variant="outline" className="text-sm">
+              {getCurrentPlayerDisplay(backendGameState?.currentPlayer || 'white')}
+            </Badge>
+          </div>
+          
+          <div className="flex justify-between items-center">
+            <span className="text-sm text-muted-foreground">Game Status:</span>
+            <Badge 
+              variant={backendGameState?.gameStatus === 'active' ? 'default' : 'secondary'}
+              className="text-sm"
+            >
+              {(backendGameState?.gameStatus || 'active').charAt(0).toUpperCase() + (backendGameState?.gameStatus || 'active').slice(1)}
+            </Badge>
+          </div>
+          
+          <div className="flex justify-between items-center">
+            <span className="text-sm text-muted-foreground">Moves:</span>
+            <span className="text-sm font-medium">0</span> {/* TODO: Backend should provide move count */}
+          </div>
+        </div>
+        
+        {/* Game Actions */}
+        {(backendGameState?.gameStatus || 'active') === 'active' && (
+          <div className="pt-4 border-t space-y-2">
+            <div className="grid grid-cols-2 gap-2">
+              <Dialog open={showConfirmDialog === 'resign'} onOpenChange={(open: boolean) => !open && setShowConfirmDialog(null)}>
+                <DialogTrigger asChild>
+                  <Button
+                    onClick={handleResign}
+                    variant="destructive"
+                    size="sm"
+                  >
+                    Resign
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Resign Game?</DialogTitle>
+                    <DialogDescription>
+                      Are you sure you want to resign? This will end the game in your opponent's favor.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={cancelDialog}>
+                      Cancel
+                    </Button>
+                    <Button variant="destructive" onClick={confirmResign}>
+                      Resign
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
               
-              <button
-                onClick={cancelDialog}
-                className="flex-1 px-4 py-2 bg-secondary text-secondary-foreground rounded-md hover:bg-secondary/90 transition-colors"
-              >
-                Cancel
-              </button>
+              <Dialog open={showConfirmDialog === 'draw'} onOpenChange={(open: boolean) => !open && setShowConfirmDialog(null)}>
+                <DialogTrigger asChild>
+                  <Button
+                    onClick={handleOfferDraw}
+                    variant="secondary"
+                    size="sm"
+                  >
+                    Offer Draw
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Offer Draw?</DialogTitle>
+                    <DialogDescription>
+                      Do you want to offer a draw to your opponent?
+                    </DialogDescription>
+                  </DialogHeader>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={cancelDialog}>
+                      Cancel
+                    </Button>
+                    <Button variant="secondary" onClick={confirmDraw}>
+                      Offer Draw
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
             </div>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+      </CardContent>
+    </Card>
   );
 };
