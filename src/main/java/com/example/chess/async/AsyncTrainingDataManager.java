@@ -169,14 +169,17 @@ public class AsyncTrainingDataManager {
     }
     
     public CompletableFuture<Void> saveOnTrainingStop() {
+        // Set stop flag FIRST to prevent new operations
+        trainingStopRequested = true;
+        // Cancel all queued operations
+        cancelQueuedOperations();
+        // Save dirty data, THEN shutdown executor
         return coordinator.executeAtomicFeature(AtomicFeatureCoordinator.AtomicFeature.TRAINING_STOP_SAVE, () -> {
-            // Cancel all queued operations first
-            cancelQueuedOperations();
-            // Save only dirty data that was marked before training stopped
             saveAllDirtyData().join();
-            // Set stop flag AFTER saving to allow final AI saves
-            trainingStopRequested = true;
-            logger.info("*** ASYNC I/O: Training stop save completed ***");
+        }).thenRun(() -> {
+            // Shutdown executor AFTER all saves are complete
+            ioExecutor.shutdown();
+            logger.info("*** ASYNC I/O: Training stop save completed - executor shutdown ***");
         });
     }
     
@@ -656,6 +659,10 @@ public class AsyncTrainingDataManager {
     }
     
     private CompletableFuture<Void> saveAllDirtyData() {
+        if (ioExecutor.isShutdown()) {
+            logger.info("*** ASYNC I/O: Executor shut down - skipping save ***");
+            return CompletableFuture.completedFuture(null);
+        }
         return CompletableFuture.runAsync(() -> {
             // CRITICAL: Only skip saves during application shutdown, allow final training saves
             if (coordinator.isShuttingDown()) {
