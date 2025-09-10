@@ -56,7 +56,7 @@ $Thresholds = @{
     COST_DAILY_HIGH = 100
 }
 
-show_usage() {
+function Show-Usage {
     Write-Host @"
 Usage: .\resource-monitor.ps1 -Environment <env> [-Action <action>] [-Resource <resource>] [options]
 

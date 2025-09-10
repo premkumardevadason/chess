@@ -106,6 +106,22 @@ run_terraform_operation() {
 # EKS UTILITIES
 # =============================================================================
 
+detect_eks_auto_mode() {
+    local cluster_name=$1
+    local region=$(get_aws_region)
+    
+    log_debug "Checking EKS Auto Mode for cluster: $cluster_name"
+    
+    local auto_mode=$(aws eks describe-cluster \
+        --name "$cluster_name" \
+        --region "$region" \
+        --query 'cluster.autoMode' \
+        --output text 2>/dev/null || echo "false")
+    
+    log_debug "EKS Auto Mode status: $auto_mode"
+    echo "$auto_mode"
+}
+
 scale_node_groups() {
     local direction=$1
     local environment=$2
@@ -113,6 +129,18 @@ scale_node_groups() {
     local region=$(get_aws_region)
     
     log_info "Scaling node groups $direction for cluster: $cluster_name"
+    
+    # Check if cluster uses EKS Auto Mode
+    local auto_mode=$(detect_eks_auto_mode "$cluster_name")
+    
+    if [[ "$auto_mode" == "true" ]]; then
+        log_info "EKS Auto Mode detected - scaling handled automatically by AWS"
+        log_info "Auto Mode provides automatic cost optimization and resource management"
+        log_info "No manual scaling required for EKS Auto Mode clusters"
+        return 0
+    else
+        log_info "Standard EKS mode detected - using manual scaling"
+    fi
     
     if [[ $direction == "up" ]]; then
         # Scale up node groups
@@ -295,6 +323,48 @@ check_vpc_status() {
     fi
 }
 
+create_s3_express_bucket() {
+    local bucket_name=$1
+    local availability_zone=$2
+    local region=$(get_aws_region)
+    
+    log_info "Creating S3 Express One Zone bucket: $bucket_name in AZ: $availability_zone"
+    
+    # Create directory bucket for S3 Express One Zone
+    aws s3api create-bucket \
+        --bucket "$bucket_name" \
+        --create-bucket-configuration LocationConstraint="$region" \
+        --region "$region" 2>/dev/null || {
+        log_error "Failed to create S3 Express One Zone bucket"
+        return 1
+    }
+    
+    # Configure for Express One Zone
+    aws s3api put-bucket-versioning \
+        --bucket "$bucket_name" \
+        --versioning-configuration Status=Enabled
+    
+    log_info "S3 Express One Zone bucket created successfully"
+}
+
+check_s3_express_status() {
+    local environment=$1
+    local project_name=${PROJECT_NAME:-"chess-app"}
+    
+    echo "=== S3 Express One Zone Status ==="
+    
+    # Check for Express One Zone buckets
+    local express_buckets=$(aws s3api list-buckets \
+        --query "Buckets[?contains(Name, 'express') && contains(Name, '$project_name-$environment')].{Name:Name,CreationDate:CreationDate}" \
+        --output table 2>/dev/null)
+    
+    if [[ -n "$express_buckets" ]]; then
+        echo "$express_buckets"
+    else
+        echo "No S3 Express One Zone buckets found"
+    fi
+}
+
 check_storage_status() {
     local environment=$1
     local project_name=${PROJECT_NAME:-"chess-app"}
@@ -309,6 +379,9 @@ check_storage_status() {
         echo "No S3 buckets found"
     fi
     
+    # Check S3 Express One Zone buckets
+    check_s3_express_status "$environment"
+    
     # Check ECR repositories
     if ! aws ecr describe-repositories \
         --repository-names "$project_name-$environment" \
@@ -316,6 +389,55 @@ check_storage_status() {
         --output text \
         --region "$region" 2>/dev/null; then
         echo "No ECR repositories found"
+    fi
+}
+
+check_aws_config_status() {
+    local environment=$1
+    local project_name=${PROJECT_NAME:-"chess-app"}
+    
+    echo "=== AWS Config Status ==="
+    
+    # Check Config Recorder
+    local config_recorder=$(aws configservice describe-configuration-recorders \
+        --query 'ConfigurationRecorders[0].name' \
+        --output text 2>/dev/null)
+    
+    if [[ "$config_recorder" != "None" && -n "$config_recorder" ]]; then
+        echo "AWS Config Recorder: $config_recorder"
+        
+        # Check recording status
+        local recording_status=$(aws configservice describe-configuration-recorder-status \
+            --configuration-recorder-names "$config_recorder" \
+            --query 'ConfigurationRecordersStatus[0].recording' \
+            --output text 2>/dev/null)
+        echo "Recording Status: $recording_status"
+    else
+        echo "AWS Config not configured"
+    fi
+}
+
+check_guardduty_status() {
+    local environment=$1
+    
+    echo "=== GuardDuty Status ==="
+    
+    # Check GuardDuty detectors
+    local detector_id=$(aws guardduty list-detectors \
+        --query 'DetectorIds[0]' \
+        --output text 2>/dev/null)
+    
+    if [[ "$detector_id" != "None" && -n "$detector_id" ]]; then
+        echo "GuardDuty Detector: $detector_id"
+        
+        # Check detector status
+        local detector_status=$(aws guardduty get-detector \
+            --detector-id "$detector_id" \
+            --query 'Status' \
+            --output text 2>/dev/null)
+        echo "Detector Status: $detector_status"
+    else
+        echo "GuardDuty not configured"
     fi
 }
 
@@ -345,6 +467,12 @@ check_security_status() {
         --region "$region" 2>/dev/null; then
         echo "No WAF found"
     fi
+    
+    # Check AWS Config
+    check_aws_config_status "$environment"
+    
+    # Check GuardDuty
+    check_guardduty_status "$environment"
 }
 
 check_compute_status() {
@@ -357,21 +485,37 @@ check_compute_status() {
     echo "=== Compute Status ==="
     
     # Check EKS cluster
-    if ! aws eks describe-cluster \
+    local cluster_status=$(aws eks describe-cluster \
         --name "$cluster_name" \
         --query 'cluster.status' \
         --output text \
-        --region "$region" 2>/dev/null; then
+        --region "$region" 2>/dev/null || echo "NOT_FOUND")
+    
+    if [[ "$cluster_status" != "NOT_FOUND" ]]; then
+        echo "EKS Cluster Status: $cluster_status"
+        
+        # Check EKS Auto Mode
+        local auto_mode=$(detect_eks_auto_mode "$cluster_name")
+        if [[ "$auto_mode" == "true" ]]; then
+            echo "EKS Auto Mode: Enabled (AWS-managed scaling)"
+        else
+            echo "EKS Auto Mode: Disabled (Manual scaling)"
+        fi
+    else
         echo "EKS cluster not found"
     fi
     
-    # Check node groups
-    if ! aws eks list-nodegroups \
-        --cluster-name "$cluster_name" \
-        --query 'nodegroups[]' \
-        --output table \
-        --region "$region" 2>/dev/null; then
-        echo "No node groups found"
+    # Check node groups (only for standard mode)
+    if [[ "$auto_mode" != "true" ]]; then
+        if ! aws eks list-nodegroups \
+            --cluster-name "$cluster_name" \
+            --query 'nodegroups[]' \
+            --output table \
+            --region "$region" 2>/dev/null; then
+            echo "No node groups found"
+        fi
+    else
+        echo "Node groups managed by EKS Auto Mode"
     fi
 }
 
@@ -401,6 +545,76 @@ check_network_status() {
     fi
 }
 
+check_xray_status() {
+    local environment=$1
+    
+    echo "=== X-Ray Tracing Status ==="
+    
+    # Check X-Ray service
+    local xray_tracing=$(aws xray get-trace-summaries \
+        --time-range-type TimeRangeByStartTime \
+        --start-time $(date -d '1 hour ago' -u +%Y-%m-%dT%H:%M:%S) \
+        --end-time $(date -u +%Y-%m-%dT%H:%M:%S) \
+        --query 'TraceSummaries[0].TraceId' \
+        --output text 2>/dev/null)
+    
+    if [[ "$xray_tracing" != "None" && -n "$xray_tracing" ]]; then
+        echo "X-Ray Tracing: Active (Recent traces found)"
+    else
+        echo "X-Ray Tracing: Not configured or no recent traces"
+    fi
+}
+
+check_cloudwatch_insights() {
+    local environment=$1
+    
+    echo "=== CloudWatch Insights Status ==="
+    
+    # Check CloudWatch Insights queries
+    local insights_queries=$(aws logs describe-query-definitions \
+        --query 'queryDefinitions[0].queryDefinitionId' \
+        --output text 2>/dev/null)
+    
+    if [[ "$insights_queries" != "None" && -n "$insights_queries" ]]; then
+        echo "CloudWatch Insights: Configured"
+    else
+        echo "CloudWatch Insights: Not configured"
+    fi
+}
+
+check_cost_optimization_status() {
+    local environment=$1
+    local project_name=${PROJECT_NAME:-"chess-app"}
+    
+    echo "=== Cost Optimization Status ==="
+    
+    # Check AWS Budgets
+    local budget_name="${project_name}-${environment}-budget"
+    local account_id=$(aws sts get-caller-identity --query Account --output text)
+    
+    local budget_exists=$(aws budgets describe-budgets \
+        --account-id "$account_id" \
+        --query "Budgets[?BudgetName=='$budget_name'].BudgetName" \
+        --output text 2>/dev/null)
+    
+    if [[ "$budget_exists" == "$budget_name" ]]; then
+        echo "AWS Budget: $budget_name (Configured)"
+    else
+        echo "AWS Budget: Not configured"
+    fi
+    
+    # Check Cost Anomaly Detection
+    local anomaly_detectors=$(aws ce get-anomaly-detectors \
+        --query 'AnomalyDetectors[0].AnomalyDetectorArn' \
+        --output text 2>/dev/null)
+    
+    if [[ "$anomaly_detectors" != "None" && -n "$anomaly_detectors" ]]; then
+        echo "Cost Anomaly Detection: Enabled"
+    else
+        echo "Cost Anomaly Detection: Not configured"
+    fi
+}
+
 check_apps_status() {
     local environment=$1
     
@@ -417,6 +631,11 @@ check_apps_status() {
     else
         echo "Kubernetes cluster not accessible"
     fi
+    
+    # Check enhanced monitoring
+    check_xray_status "$environment"
+    check_cloudwatch_insights "$environment"
+    check_cost_optimization_status "$environment"
 }
 
 # =============================================================================
@@ -557,8 +776,11 @@ rollback_apps_installation() {
 # =============================================================================
 
 export -f get_terraform_targets run_terraform_operation
-export -f scale_node_groups wait_for_cluster_ready update_kubeconfig
+export -f detect_eks_auto_mode scale_node_groups wait_for_cluster_ready update_kubeconfig
 export -f scale_deployments wait_for_deployment_ready wait_for_nodes_ready
+export -f create_s3_express_bucket check_s3_express_status
+export -f check_aws_config_status check_guardduty_status
+export -f check_xray_status check_cloudwatch_insights check_cost_optimization_status
 export -f check_vpc_status check_storage_status check_security_status
 export -f check_compute_status check_network_status check_apps_status
 export -f install_resources_parallel
