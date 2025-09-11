@@ -12,6 +12,7 @@ import org.springframework.boot.web.servlet.context.ServletWebServerApplicationC
 import org.springframework.web.socket.server.standard.ServerEndpointExporter;
 import org.springframework.context.annotation.Bean;
 import java.io.*;
+import java.util.Map;
 import java.util.UUID;
 import java.net.InetSocketAddress;
 import org.java_websocket.WebSocket;
@@ -99,6 +100,7 @@ public class MCPTransportService {
         private final ChessMCPServer mcpServer;
         private final ObjectMapper objectMapper;
         private final ConcurrentHashMap<WebSocket, String> connectionAgentMap = new ConcurrentHashMap<>();
+        private final com.example.chess.mcp.security.MCPDoubleRatchetService doubleRatchetService = new com.example.chess.mcp.security.MCPDoubleRatchetService();
         private static final Logger logger = LogManager.getLogger(MCPWebSocketServer.class);
         
         public MCPWebSocketServer(InetSocketAddress address, ChessMCPServer mcpServer, ObjectMapper objectMapper) {
@@ -111,28 +113,83 @@ public class MCPTransportService {
         public void onOpen(WebSocket conn, ClientHandshake handshake) {
             String agentId = "mcp-agent-" + UUID.randomUUID().toString().substring(0, 8);
             connectionAgentMap.put(conn, agentId);
+            // Don't establish encryption here - wait for first encrypted message
             logger.info("MCP WebSocket connection opened - Agent: {}", agentId);
         }
         
         @Override
         public void onClose(WebSocket conn, int code, String reason, boolean remote) {
             String agentId = connectionAgentMap.remove(conn);
+            if (agentId != null) {
+                doubleRatchetService.removeSession(agentId);
+            }
             logger.info("MCP WebSocket connection closed - Agent: {}, Reason: {}", agentId, reason);
         }
         
         @Override
         public void onMessage(WebSocket conn, String message) {
             String agentId = connectionAgentMap.get(conn);
-            logger.info("MCP WebSocket received message from {}: {}", agentId, message);
+            logger.info("MCP WebSocket received message from {}: {}", agentId, message.substring(0, Math.min(100, message.length())) + "...");
             try {
                 JsonRpcRequest request = objectMapper.readValue(message, JsonRpcRequest.class);
-                logger.info("MCP WebSocket request from {}: {} (ID: {})", agentId, request.getMethod(), request.getId());
+                
+                // Check if message is encrypted
+                if (request.isEncrypted()) {
+                    logger.info("🔒 Received encrypted MCP message from {}: decrypting...", agentId);
+                    
+                    try {
+                        // Establish session on first encrypted message using agent ID
+                        if (!doubleRatchetService.hasSession(agentId)) {
+                            doubleRatchetService.establishSession(agentId, true); // Server mode
+                            logger.info("🔐 HKDF Double Ratchet SERVER session established for: {}", agentId);
+                        }
+                        
+                        // Extract encryption details
+                        String ciphertext = request.getCiphertext();
+                        
+                        // Create encrypted message object
+                        com.example.chess.mcp.security.EncryptedMCPMessage encMsg = 
+                            new com.example.chess.mcp.security.EncryptedMCPMessage(ciphertext, true);
+                        
+                        // Decrypt using HKDF Double Ratchet
+                        String decryptedJson = doubleRatchetService.decryptMessage(agentId, encMsg);
+                        request = objectMapper.readValue(decryptedJson, JsonRpcRequest.class);
+                        logger.info("🔓 HKDF Double Ratchet decrypted message from {}: {} (ID: {})", agentId, request.getMethod(), request.getId());
+                        
+                    } catch (Exception e) {
+                        logger.error("❌ Failed to decrypt message from {}: {}", agentId, e.getMessage());
+                        JsonRpcResponse errorResponse = JsonRpcResponse.error(
+                            request.getId(), 
+                            -32002, 
+                            "Decryption failed: " + e.getMessage()
+                        );
+                        String errorJson = objectMapper.writeValueAsString(errorResponse);
+                        conn.send(errorJson);
+                        return;
+                    }
+                } else {
+                    logger.info("📝 Received plaintext MCP message from {}: {} (ID: {})", agentId, request.getMethod(), request.getId());
+                }
                 
                 JsonRpcResponse response = mcpServer.handleJsonRpcRequest(request, agentId);
                 String responseJson = objectMapper.writeValueAsString(response);
                 
-                logger.info("MCP WebSocket sending response to {}: {}", agentId, responseJson);
-                conn.send(responseJson);
+                // Encrypt response if original message was encrypted
+                if (request.isEncrypted()) {
+                    com.example.chess.mcp.security.EncryptedMCPMessage encResponse = 
+                        doubleRatchetService.encryptMessage(agentId, responseJson);
+                    
+                    String encryptedJson = String.format(
+                        "{\"jsonrpc\":\"2.0\",\"encrypted\":true,\"ciphertext\":\"%s\"}",
+                        encResponse.getCiphertext()
+                    );
+                    
+                    logger.info("🔒 Sending Signal Protocol encrypted response to {}", agentId);
+                    conn.send(encryptedJson);
+                } else {
+                    logger.info("MCP WebSocket sending response to {}: {}", agentId, responseJson.substring(0, Math.min(100, responseJson.length())) + "...");
+                    conn.send(responseJson);
+                }
                 
             } catch (Exception e) {
                 logger.error("Error processing MCP WebSocket message: {}", e.getMessage(), e);

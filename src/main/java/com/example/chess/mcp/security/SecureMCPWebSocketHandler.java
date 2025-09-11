@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.*;
 
@@ -14,6 +15,7 @@ import org.springframework.web.socket.*;
  * Secure WebSocket handler with Double Ratchet encryption
  */
 @Component
+@ConditionalOnProperty(name = "mcp.encryption.enabled", havingValue = "true", matchIfMissing = false)
 public class SecureMCPWebSocketHandler extends MCPWebSocketHandler {
     
     private static final Logger logger = LogManager.getLogger(SecureMCPWebSocketHandler.class);

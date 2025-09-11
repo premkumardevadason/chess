@@ -14,7 +14,7 @@ import java.util.List;
 /**
  * Encrypts AI training data before it reaches AI systems
  */
-@Component
+// @Component - Disabled: MCP encryption is separate from AI training
 public class EncryptedTrainingDataPipeline {
     
     private static final Logger logger = LogManager.getLogger(EncryptedTrainingDataPipeline.class);

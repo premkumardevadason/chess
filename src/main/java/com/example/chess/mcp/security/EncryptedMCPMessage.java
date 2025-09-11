@@ -1,7 +1,7 @@
 package com.example.chess.mcp.security;
 
 /**
- * Encrypted MCP message wrapper for Double Ratchet protocol
+ * Encrypted MCP message wrapper for Signal Protocol Double Ratchet
  */
 public class EncryptedMCPMessage {
     
@@ -10,6 +10,7 @@ public class EncryptedMCPMessage {
     private final RatchetHeader header;
     private final boolean encrypted;
     
+    // Constructor for Signal Protocol messages (no IV needed)
     public EncryptedMCPMessage(String ciphertext, boolean encrypted) {
         this.ciphertext = ciphertext;
         this.iv = null;
@@ -17,6 +18,7 @@ public class EncryptedMCPMessage {
         this.encrypted = encrypted;
     }
     
+    // Constructor for custom Double Ratchet messages (with IV)
     public EncryptedMCPMessage(String ciphertext, String iv, RatchetHeader header, boolean encrypted) {
         this.ciphertext = ciphertext;
         this.iv = iv;

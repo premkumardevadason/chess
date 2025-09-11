@@ -1,5 +1,6 @@
 package com.example.chess.mcp.security;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Bean;
@@ -9,6 +10,7 @@ import org.springframework.context.annotation.Primary;
  * Configuration for MCP Double Ratchet encryption
  */
 @Configuration
+@ConditionalOnProperty(name = "mcp.encryption.enabled", havingValue = "true", matchIfMissing = false)
 @ConfigurationProperties(prefix = "mcp.encryption")
 public class SecureMCPConfiguration {
     
@@ -26,7 +28,7 @@ public class SecureMCPConfiguration {
     private double encryptionOverheadFactor = 1.25;
     
     @Bean
-    @Primary
+    @ConditionalOnProperty(name = "mcp.encryption.enabled", havingValue = "true", matchIfMissing = false)
     public SecureMCPWebSocketHandler secureMCPWebSocketHandler() {
         return new SecureMCPWebSocketHandler();
     }

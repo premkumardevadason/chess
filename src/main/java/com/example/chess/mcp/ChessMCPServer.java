@@ -45,10 +45,15 @@ public class ChessMCPServer {
     
     private final ObjectMapper objectMapper = new ObjectMapper();
     
+    private static final ThreadLocal<String> currentAgentId = new ThreadLocal<>();
+    
     public JsonRpcResponse handleJsonRpcRequest(JsonRpcRequest request, String agentId) {
         long startTime = System.currentTimeMillis();
         
         try {
+            // Set current agent ID for this thread
+            currentAgentId.set(agentId);
+            
             // Rate limiting
             if (!rateLimiter.allowRequest(agentId, "general")) {
                 return JsonRpcResponse.error(request.getId(), -32099, "Rate limit exceeded");
@@ -80,7 +85,13 @@ public class ChessMCPServer {
         } finally {
             long responseTime = System.currentTimeMillis() - startTime;
             metricsService.recordRequest(agentId, request.getMethod(), responseTime);
+            // Clean up thread local
+            currentAgentId.remove();
         }
+    }
+    
+    private String getCurrentAgentId() {
+        return currentAgentId.get();
     }
     
     private JsonRpcResponse handleInitialize(JsonRpcRequest request) {
@@ -91,6 +102,9 @@ public class ChessMCPServer {
             Map<String, Object> clientInfoMap = (Map<String, Object>) request.getParams().get("clientInfo");
             clientInfo = (String) clientInfoMap.getOrDefault("name", "unknown");
         }
+        
+        // Get agent ID from transport layer (passed via thread local or similar)
+        String currentAgentId = getCurrentAgentId();
         
         Map<String, Object> result = Map.of(
             "protocolVersion", "2024-11-05",
@@ -106,7 +120,8 @@ public class ChessMCPServer {
             "serverInfo", Map.of(
                 "name", "chess-mcp-server",
                 "version", "1.0.0",
-                "description", "Advanced Chess AI MCP Server with 12 AI Systems"
+                "description", "Advanced Chess AI MCP Server with 12 AI Systems",
+                "agentId", currentAgentId  // Include agent ID for client synchronization
             )
         );
         

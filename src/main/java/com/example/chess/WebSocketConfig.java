@@ -34,8 +34,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     
     @Override
     public void configureWebSocketTransport(WebSocketTransportRegistration registry) {
-        registry.addDecoratorFactory(handler -> new WebSocketExceptionHandler(handler))
-                .setMessageSizeLimit(512 * 1024) // 512KB max message size for training data
+        registry.setMessageSizeLimit(512 * 1024) // 512KB max message size for training data
                 .setSendBufferSizeLimit(8 * 1024 * 1024) // 8MB send buffer for training
                 .setSendTimeLimit(60 * 1000) // 60 second send timeout for training
                 .setTimeToFirstMessage(30 * 1000); // 30 second timeout for first message

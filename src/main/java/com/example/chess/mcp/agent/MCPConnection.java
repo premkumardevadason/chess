@@ -14,6 +14,7 @@ public class MCPConnection {
     private final WebSocket webSocket;
     private final ConcurrentHashMap<Long, CompletableFuture<JsonNode>> pendingRequests = new ConcurrentHashMap<>();
     private volatile boolean healthy = true;
+    private volatile String agentId;
     
     public MCPConnection(String sessionId, WebSocket webSocket) {
         this.sessionId = sessionId;
@@ -38,6 +39,14 @@ public class MCPConnection {
     
     public boolean isHealthy() {
         return healthy && !webSocket.isOutputClosed() && !webSocket.isInputClosed();
+    }
+    
+    public String getAgentId() {
+        return agentId;
+    }
+    
+    public void setAgentId(String agentId) {
+        this.agentId = agentId;
     }
     
     public void close() {
