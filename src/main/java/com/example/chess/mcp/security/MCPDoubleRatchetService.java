@@ -35,7 +35,7 @@ public class MCPDoubleRatchetService {
         
         try {
             RatchetState ratchet = getOrCreateRatchet(agentId);
-            SecretKey messageKey = ratchet.getNextMessageKey();
+            SecretKey messageKey = ratchet.advanceSendingRatchet();
             
             Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
             byte[] iv = new byte[12];
@@ -77,11 +77,11 @@ public class MCPDoubleRatchetService {
                 ratchet.advanceDHRatchet(encryptedMessage.getHeader().getDhPublicKey());
             }
             
-            // Get the message key that was used for encryption
+            // Use receiving chain to derive or retrieve message key
             int messageCounter = encryptedMessage.getHeader().getMessageCounter();
-            SecretKey messageKey = ratchet.getMessageKey(messageCounter);
+            SecretKey messageKey = ratchet.advanceReceivingRatchet(messageCounter);
             if (messageKey == null) {
-                throw new RuntimeException("Message key not found for counter: " + messageCounter);
+                throw new RuntimeException("Failed to derive message key for counter: " + messageCounter);
             }
             
             Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
@@ -154,7 +154,7 @@ public class MCPDoubleRatchetService {
             this.dhPublicKey = generateDHPublicKey();
         }
         
-        public SecretKey getNextMessageKey() throws Exception {
+        public SecretKey advanceSendingRatchet() throws Exception {
             SecretKey messageKey = deriveMessageKey(sendingChainKey);
             sendingCounter++;
             messageKeys.put(sendingCounter, messageKey);
@@ -162,7 +162,24 @@ public class MCPDoubleRatchetService {
             return messageKey;
         }
         
-        public SecretKey getMessageKey(int counter) {
+        public SecretKey advanceReceivingRatchet(int expectedCounter) throws Exception {
+            // For proper Double Ratchet, we need to handle out-of-order messages
+            // and maintain separate receiving chain
+            SecretKey messageKey = messageKeys.get(expectedCounter);
+            if (messageKey == null) {
+                // Generate keys up to expected counter if needed
+                while (receivingCounter < expectedCounter) {
+                    receivingCounter++;
+                    SecretKey key = deriveMessageKey(receivingChainKey);
+                    messageKeys.put(receivingCounter, key);
+                    receivingChainKey = deriveChainKey(receivingChainKey);
+                }
+                messageKey = messageKeys.get(expectedCounter);
+            }
+            return messageKey;
+        }
+        
+        public SecretKey getStoredMessageKey(int counter) {
             return messageKeys.get(counter);
         }
         
