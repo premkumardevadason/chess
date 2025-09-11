@@ -8,8 +8,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
-import org.springframework.web.socket.TextMessage;
-import org.springframework.web.socket.WebSocketSession;
+import org.springframework.web.socket.*;
 
 /**
  * Secure WebSocket handler with Double Ratchet encryption
@@ -22,10 +21,13 @@ public class SecureMCPWebSocketHandler extends MCPWebSocketHandler {
     @Autowired
     private MCPDoubleRatchetService doubleRatchetService;
     
+    @Autowired
+    private com.example.chess.mcp.ChessMCPServer mcpServer;
+    
     private final ObjectMapper objectMapper = new ObjectMapper();
     
     @Override
-    public void afterConnectionEstablished(WebSocketSession session) {
+    public void afterConnectionEstablished(WebSocketSession session) throws Exception {
         super.afterConnectionEstablished(session);
         
         String agentId = getAgentId(session);
@@ -36,71 +38,73 @@ public class SecureMCPWebSocketHandler extends MCPWebSocketHandler {
     }
     
     @Override
-    protected void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
+    public void handleMessage(WebSocketSession session, WebSocketMessage<?> message) throws Exception {
+        if (!(message instanceof TextMessage)) {
+            super.handleMessage(session, message);
+            return;
+        }
+        
         String agentId = getAgentId(session);
         if (agentId == null) {
-            super.handleTextMessage(session, message);
+            super.handleMessage(session, message);
             return;
         }
         
         try {
+            String payload = ((TextMessage) message).getPayload();
+            
             // Try to parse as encrypted message
-            EncryptedMCPMessage encryptedMessage = parseEncryptedMessage(message.getPayload());
+            EncryptedMCPMessage encryptedMessage = parseEncryptedMessage(payload);
             
             if (encryptedMessage.isEncrypted()) {
-                // Decrypt message
+                // Decrypt message and process
                 String decryptedPayload = doubleRatchetService.decryptMessage(agentId, encryptedMessage);
-                TextMessage decryptedMessage = new TextMessage(decryptedPayload);
-                super.handleTextMessage(session, decryptedMessage);
+                processDecryptedMessage(session, agentId, decryptedPayload);
             } else {
                 // Handle as plaintext for backward compatibility
-                super.handleTextMessage(session, message);
+                super.handleMessage(session, message);
             }
             
         } catch (Exception e) {
             logger.warn("Failed to decrypt message from agent {}, treating as plaintext: {}", agentId, e.getMessage());
-            super.handleTextMessage(session, message);
+            super.handleMessage(session, message);
         }
     }
     
-    @Override
-    protected void sendMessage(WebSocketSession session, JsonRpcResponse response) throws Exception {
-        String agentId = getAgentId(session);
-        if (agentId == null) {
-            super.sendMessage(session, response);
-            return;
-        }
-        
+    private void processDecryptedMessage(WebSocketSession session, String agentId, String payload) throws Exception {
         try {
-            String responseJson = objectMapper.writeValueAsString(response);
+            JsonRpcRequest request = objectMapper.readValue(payload, JsonRpcRequest.class);
+            logger.debug("Decrypted MCP request from {}: {}", agentId, request.getMethod());
+            
+            JsonRpcResponse response = mcpServer.handleJsonRpcRequest(request, agentId);
             
             // Encrypt response
+            String responseJson = objectMapper.writeValueAsString(response);
             EncryptedMCPMessage encryptedResponse = doubleRatchetService.encryptMessage(agentId, responseJson);
             
             if (encryptedResponse.isEncrypted()) {
-                // Send encrypted response
                 String encryptedJson = createEncryptedJsonResponse(encryptedResponse);
                 session.sendMessage(new TextMessage(encryptedJson));
             } else {
-                // Send plaintext for backward compatibility
-                super.sendMessage(session, response);
+                session.sendMessage(new TextMessage(responseJson));
             }
             
         } catch (Exception e) {
-            logger.warn("Failed to encrypt response for agent {}, sending plaintext: {}", agentId, e.getMessage());
-            super.sendMessage(session, response);
+            logger.error("Error processing decrypted MCP message: {}", e.getMessage());
+            JsonRpcResponse errorResponse = JsonRpcResponse.error(null, -32700, "Parse error");
+            session.sendMessage(new TextMessage(objectMapper.writeValueAsString(errorResponse)));
         }
     }
     
     @Override
-    public void afterConnectionClosed(WebSocketSession session, org.springframework.web.socket.CloseStatus status) {
+    public void afterConnectionClosed(WebSocketSession session, CloseStatus closeStatus) throws Exception {
         String agentId = getAgentId(session);
         if (agentId != null) {
             doubleRatchetService.removeSession(agentId);
             logger.info("Removed secure session for agent: {}", agentId);
         }
         
-        super.afterConnectionClosed(session, status);
+        super.afterConnectionClosed(session, closeStatus);
     }
     
     private EncryptedMCPMessage parseEncryptedMessage(String payload) throws Exception {
@@ -158,6 +162,7 @@ public class SecureMCPWebSocketHandler extends MCPWebSocketHandler {
     }
     
     private String getAgentId(WebSocketSession session) {
-        return (String) session.getAttributes().get("agentId");
+        // Access the sessionAgentMap from parent class via reflection or use session ID
+        return "mcp-agent-" + session.getId().substring(0, 8);
     }
 }

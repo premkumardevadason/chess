@@ -35,7 +35,7 @@ public class MCPDoubleRatchetService {
         
         try {
             RatchetState ratchet = getOrCreateRatchet(agentId);
-            SecretKey messageKey = ratchet.advanceSymmetricRatchet();
+            SecretKey messageKey = ratchet.getNextMessageKey();
             
             Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
             byte[] iv = new byte[12];
@@ -77,7 +77,12 @@ public class MCPDoubleRatchetService {
                 ratchet.advanceDHRatchet(encryptedMessage.getHeader().getDhPublicKey());
             }
             
-            SecretKey messageKey = ratchet.advanceSymmetricRatchet();
+            // Get the message key that was used for encryption
+            int messageCounter = encryptedMessage.getHeader().getMessageCounter();
+            SecretKey messageKey = ratchet.getMessageKey(messageCounter);
+            if (messageKey == null) {
+                throw new RuntimeException("Message key not found for counter: " + messageCounter);
+            }
             
             Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
             byte[] iv = Base64.getDecoder().decode(encryptedMessage.getIv());
@@ -127,10 +132,13 @@ public class MCPDoubleRatchetService {
     private static class RatchetState {
         private final String agentId;
         private SecretKey rootKey;
-        private SecretKey chainKey;
+        private SecretKey sendingChainKey;
+        private SecretKey receivingChainKey;
         private String dhPublicKey;
-        private int messageCounter = 0;
+        private int sendingCounter = 0;
+        private int receivingCounter = 0;
         private int previousCounter = 0;
+        private final java.util.Map<Integer, SecretKey> messageKeys = new java.util.concurrent.ConcurrentHashMap<>();
         
         public RatchetState(String agentId) throws Exception {
             this.agentId = agentId;
@@ -141,37 +149,45 @@ public class MCPDoubleRatchetService {
             KeyGenerator keyGen = KeyGenerator.getInstance("AES");
             keyGen.init(256);
             this.rootKey = keyGen.generateKey();
-            this.chainKey = keyGen.generateKey();
+            this.sendingChainKey = keyGen.generateKey();
+            this.receivingChainKey = keyGen.generateKey();
             this.dhPublicKey = generateDHPublicKey();
         }
         
-        public SecretKey advanceSymmetricRatchet() throws Exception {
-            SecretKey messageKey = deriveMessageKey(chainKey);
-            chainKey = deriveChainKey(chainKey);
-            messageCounter++;
+        public SecretKey getNextMessageKey() throws Exception {
+            SecretKey messageKey = deriveMessageKey(sendingChainKey);
+            sendingCounter++;
+            messageKeys.put(sendingCounter, messageKey);
+            sendingChainKey = deriveChainKey(sendingChainKey);
             return messageKey;
         }
         
+        public SecretKey getMessageKey(int counter) {
+            return messageKeys.get(counter);
+        }
+        
         public void advanceDHRatchet(String remoteDHPublicKey) throws Exception {
-            previousCounter = messageCounter;
-            messageCounter = 0;
+            previousCounter = sendingCounter;
+            sendingCounter = 0;
+            receivingCounter = 0;
             
             KeyGenerator keyGen = KeyGenerator.getInstance("AES");
             keyGen.init(256);
             rootKey = keyGen.generateKey();
-            chainKey = keyGen.generateKey();
+            sendingChainKey = keyGen.generateKey();
+            receivingChainKey = keyGen.generateKey();
             
             dhPublicKey = generateDHPublicKey();
         }
         
         private SecretKey deriveMessageKey(SecretKey chainKey) throws Exception {
-            byte[] keyBytes = chainKey.getEncoded();
+            byte[] keyBytes = chainKey.getEncoded().clone();
             keyBytes[0] ^= 0x01;
             return new SecretKeySpec(keyBytes, "AES");
         }
         
         private SecretKey deriveChainKey(SecretKey chainKey) throws Exception {
-            byte[] keyBytes = chainKey.getEncoded();
+            byte[] keyBytes = chainKey.getEncoded().clone();
             keyBytes[0] ^= 0x02;
             return new SecretKeySpec(keyBytes, "AES");
         }
@@ -183,12 +199,13 @@ public class MCPDoubleRatchetService {
         }
         
         public String getDHPublicKey() { return dhPublicKey; }
-        public int getMessageCounter() { return messageCounter; }
+        public int getMessageCounter() { return sendingCounter; }
         public int getPreviousCounter() { return previousCounter; }
         
         public void cleanup() {
             rootKey = null;
-            chainKey = null;
+            sendingChainKey = null;
+            receivingChainKey = null;
             dhPublicKey = null;
         }
     }
