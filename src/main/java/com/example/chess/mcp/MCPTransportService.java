@@ -23,6 +23,9 @@ public class MCPTransportService {
     @Autowired
     private ChessMCPServer mcpServer;
     
+    @Autowired
+    private com.example.chess.mcp.security.DoubleRatchetService doubleRatchetService;
+    
     private final ObjectMapper objectMapper = new ObjectMapper();
     
     public void startStdioTransport() {
@@ -65,7 +68,7 @@ public class MCPTransportService {
         logger.info("Starting MCP Chess server via WebSocket transport on port {}", port);
         
         try {
-            MCPWebSocketServer server = new MCPWebSocketServer(new InetSocketAddress(port), mcpServer, objectMapper);
+            MCPWebSocketServer server = new MCPWebSocketServer(new InetSocketAddress(port), mcpServer, objectMapper, doubleRatchetService);
             server.start();
             
             logger.info("MCP WebSocket server started successfully on port {}", port);
@@ -95,13 +98,14 @@ public class MCPTransportService {
         private final ChessMCPServer mcpServer;
         private final ObjectMapper objectMapper;
         private final ConcurrentHashMap<WebSocket, String> connectionAgentMap = new ConcurrentHashMap<>();
-        private final com.example.chess.mcp.security.DoubleRatchetService doubleRatchetService = new com.example.chess.mcp.security.MCPDoubleRatchetService();
+        private final com.example.chess.mcp.security.DoubleRatchetService doubleRatchetService;
         private static final Logger logger = LogManager.getLogger(MCPWebSocketServer.class);
         
-        public MCPWebSocketServer(InetSocketAddress address, ChessMCPServer mcpServer, ObjectMapper objectMapper) {
+        public MCPWebSocketServer(InetSocketAddress address, ChessMCPServer mcpServer, ObjectMapper objectMapper, com.example.chess.mcp.security.DoubleRatchetService doubleRatchetService) {
             super(address);
             this.mcpServer = mcpServer;
             this.objectMapper = objectMapper;
+            this.doubleRatchetService = doubleRatchetService;
         }
         
         @Override
