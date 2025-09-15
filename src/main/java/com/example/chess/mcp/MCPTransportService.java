@@ -7,12 +7,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.web.embedded.tomcat.TomcatServletWebServerFactory;
-import org.springframework.boot.web.servlet.context.ServletWebServerApplicationContext;
-import org.springframework.web.socket.server.standard.ServerEndpointExporter;
-import org.springframework.context.annotation.Bean;
 import java.io.*;
-import java.util.Map;
 import java.util.UUID;
 import java.net.InetSocketAddress;
 import org.java_websocket.WebSocket;
@@ -100,7 +95,7 @@ public class MCPTransportService {
         private final ChessMCPServer mcpServer;
         private final ObjectMapper objectMapper;
         private final ConcurrentHashMap<WebSocket, String> connectionAgentMap = new ConcurrentHashMap<>();
-        private final com.example.chess.mcp.security.MCPDoubleRatchetService doubleRatchetService = new com.example.chess.mcp.security.MCPDoubleRatchetService();
+        private final com.example.chess.mcp.security.DoubleRatchetService doubleRatchetService = new com.example.chess.mcp.security.MCPDoubleRatchetService();
         private static final Logger logger = LogManager.getLogger(MCPWebSocketServer.class);
         
         public MCPWebSocketServer(InetSocketAddress address, ChessMCPServer mcpServer, ObjectMapper objectMapper) {
@@ -146,10 +141,20 @@ public class MCPTransportService {
                         
                         // Extract encryption details
                         String ciphertext = request.getCiphertext();
+                        String iv = request.getIv();
+                        java.util.Map<String, Object> hdr = request.getRatchet_header();
+                        com.example.chess.mcp.security.RatchetHeader header = null;
+                        if (hdr != null) {
+                            header = new com.example.chess.mcp.security.RatchetHeader(
+                                (String) hdr.get("dh_public_key"),
+                                hdr.get("previous_counter") == null ? 0 : ((Number) hdr.get("previous_counter")).intValue(),
+                                hdr.get("message_counter") == null ? 0 : ((Number) hdr.get("message_counter")).intValue()
+                            );
+                        }
                         
                         // Create encrypted message object
                         com.example.chess.mcp.security.EncryptedMCPMessage encMsg = 
-                            new com.example.chess.mcp.security.EncryptedMCPMessage(ciphertext, true);
+                            new com.example.chess.mcp.security.EncryptedMCPMessage(ciphertext, iv, header, true);
                         
                         // Decrypt using HKDF Double Ratchet
                         String decryptedJson = doubleRatchetService.decryptMessage(agentId, encMsg);
@@ -179,12 +184,21 @@ public class MCPTransportService {
                     com.example.chess.mcp.security.EncryptedMCPMessage encResponse = 
                         doubleRatchetService.encryptMessage(agentId, responseJson);
                     
-                    String encryptedJson = String.format(
-                        "{\"jsonrpc\":\"2.0\",\"encrypted\":true,\"ciphertext\":\"%s\"}",
-                        encResponse.getCiphertext()
-                    );
+                    java.util.Map<String, Object> resp = new java.util.HashMap<>();
+                    resp.put("jsonrpc", "2.0");
+                    resp.put("encrypted", true);
+                    resp.put("ciphertext", encResponse.getCiphertext());
+                    resp.put("iv", encResponse.getIv());
+                    if (encResponse.getHeader() != null) {
+                        java.util.Map<String, Object> headerMap = new java.util.HashMap<>();
+                        headerMap.put("dh_public_key", encResponse.getHeader().getDhPublicKey());
+                        headerMap.put("previous_counter", encResponse.getHeader().getPreviousCounter());
+                        headerMap.put("message_counter", encResponse.getHeader().getMessageCounter());
+                        resp.put("ratchet_header", headerMap);
+                    }
+                    String encryptedJson = objectMapper.writeValueAsString(resp);
                     
-                    logger.info("🔒 Sending Signal Protocol encrypted response to {}", agentId);
+                    logger.info("🔒 Sending Double Ratchet encrypted response to {}", agentId);
                     conn.send(encryptedJson);
                 } else {
                     logger.info("MCP WebSocket sending response to {}: {}", agentId, responseJson.substring(0, Math.min(100, responseJson.length())) + "...");

@@ -21,7 +21,7 @@ public class SecureMCPWebSocketHandler extends MCPWebSocketHandler {
     private static final Logger logger = LogManager.getLogger(SecureMCPWebSocketHandler.class);
     
     @Autowired
-    private MCPDoubleRatchetService doubleRatchetService;
+    private DoubleRatchetService doubleRatchetService;
     
     @Autowired
     private com.example.chess.mcp.ChessMCPServer mcpServer;

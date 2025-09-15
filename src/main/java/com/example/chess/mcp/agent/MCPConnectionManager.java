@@ -22,8 +22,9 @@ public class MCPConnectionManager {
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final AtomicLong requestIdCounter = new AtomicLong(1);
     private final HttpClient httpClient;
-    private final com.example.chess.mcp.security.MCPDoubleRatchetService doubleRatchetService = new com.example.chess.mcp.security.MCPDoubleRatchetService();
-    private final boolean encryptionEnabled = true; // Signal Protocol Double Ratchet enabled
+    private final com.example.chess.mcp.security.DoubleRatchetService doubleRatchetService = new com.example.chess.mcp.security.MCPDoubleRatchetService();
+    private final boolean encryptionEnabled = true; // encryption enabled
+    private final boolean useSignal = Boolean.parseBoolean(System.getProperty("mcp.encryption.signal", "false"));
     
     public MCPConnectionManager(AgentConfiguration config) {
         this.config = config;
@@ -138,9 +139,38 @@ public class MCPConnectionManager {
                 }
                 
                 if (agentId != null) {
-                    doubleRatchetService.establishSession(agentId, false); // Client mode
                     connection.setAgentId(agentId);
-                    System.out.println("✅ HKDF Double Ratchet CLIENT established with server agent ID: " + agentId);
+                    if (useSignal) {
+                        // Fetch PreKey bundle from server and initialize Signal session
+                        String preKeyUrl = ("http://" + config.getServerHost() + ":" + config.getServerPort() + "/mcp/keys/prekey?agentId=" + agentId);
+                        var req = java.net.http.HttpRequest.newBuilder()
+                            .uri(java.net.URI.create(preKeyUrl))
+                            .GET()
+                            .build();
+                        var resp = httpClient.send(req, java.net.http.HttpResponse.BodyHandlers.ofString());
+                        if (resp.statusCode() / 100 != 2) {
+                            throw new RuntimeException("Failed to fetch PreKey bundle: HTTP " + resp.statusCode());
+                        }
+                        com.fasterxml.jackson.databind.JsonNode preKeyJson = objectMapper.readTree(resp.body());
+                        com.example.chess.mcp.security.PreKeyBundleDto dto = new com.example.chess.mcp.security.PreKeyBundleDto(
+                            preKeyJson.get("registrationId").asInt(),
+                            preKeyJson.get("deviceId").asInt(),
+                            preKeyJson.get("preKeyId").asInt(),
+                            preKeyJson.get("preKeyPublic").asText(),
+                            preKeyJson.get("signedPreKeyId").asInt(),
+                            preKeyJson.get("signedPreKeyPublic").asText(),
+                            preKeyJson.get("signedPreKeySignature").asText(),
+                            preKeyJson.get("identityKey").asText()
+                        );
+
+                        if (doubleRatchetService instanceof com.example.chess.mcp.security.SignalDoubleRatchetService s) {
+                            s.initializeWithPreKeyBundle(agentId, dto);
+                        }
+                        System.out.println("✅ Signal session initialized with PreKey bundle for agent: " + agentId);
+                    } else {
+                        doubleRatchetService.establishSession(agentId, false); // HKDF client mode
+                        System.out.println("✅ HKDF Double Ratchet CLIENT established with server agent ID: " + agentId);
+                    }
                 } else {
                     System.err.println("❌ No agent ID found in server response - using fallback");
                     // Fallback: use session ID
@@ -176,10 +206,28 @@ public class MCPConnectionManager {
                 com.example.chess.mcp.security.EncryptedMCPMessage encMsg = 
                     doubleRatchetService.encryptMessage(connection.getAgentId(), requestJson);
                 
-                messageToSend = String.format(
-                    "{\"jsonrpc\":\"2.0\",\"encrypted\":true,\"ciphertext\":\"%s\"}",
-                    encMsg.getCiphertext()
-                );
+                if (useSignal) {
+                    // Signal path: ciphertext only
+                    messageToSend = String.format(
+                        "{\"jsonrpc\":\"2.0\",\"encrypted\":true,\"ciphertext\":\"%s\"}",
+                        encMsg.getCiphertext()
+                    );
+                } else {
+                    // HKDF path: include iv and header
+                    String iv = encMsg.getIv();
+                    String header = encMsg.getHeader() == null ? null : String.format(
+                        "\"ratchet_header\":{\"dh_public_key\":\"%s\",\"previous_counter\":%d,\"message_counter\":%d}",
+                        encMsg.getHeader().getDhPublicKey(),
+                        encMsg.getHeader().getPreviousCounter(),
+                        encMsg.getHeader().getMessageCounter()
+                    );
+                    messageToSend = String.format(
+                        "{\"jsonrpc\":\"2.0\",\"encrypted\":true,\"ciphertext\":\"%s\",\"iv\":\"%s\"%s}",
+                        encMsg.getCiphertext(),
+                        iv,
+                        header == null ? "" : "," + header
+                    );
+                }
             }
             
             connection.getWebSocket().sendText(messageToSend, true);
