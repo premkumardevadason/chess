@@ -145,15 +145,13 @@ public class MCPDoubleRatchetService implements DoubleRatchetService {
 	 */
 	public void establishSession(String agentId, boolean isServer) {
 		try {
-			// Random root key per session (no predictable derivation)
-			byte[] rootKey = new byte[32];
-			secureRandom.nextBytes(rootKey);
+			// Use agent ID as deterministic seed for shared root key
+			byte[] rootKey = deriveSharedRootKey(agentId);
 
-			// Initial X25519 key pair
+			// Initial X25519 key pair (deterministic for synchronization)
 			byte[] dhPrivate = new byte[X25519.SCALAR_SIZE];
 			byte[] dhPublic = new byte[X25519.POINT_SIZE];
-			X25519.generatePrivateKey(secureRandom, dhPrivate);
-			X25519.generatePublicKey(dhPrivate, 0, dhPublic, 0);
+			generateDeterministicDHKeyPair(agentId, isServer, dhPrivate, dhPublic);
 
 			// Initialize chain keys based on role
 			byte[] sendingChainKey = deriveChainKey(rootKey, isServer ? "server-to-client" : "client-to-server");
@@ -167,6 +165,39 @@ public class MCPDoubleRatchetService implements DoubleRatchetService {
 		} catch (Exception e) {
 			throw new RuntimeException("Failed to establish session for " + agentId, e);
 		}
+	}
+
+	/**
+	 * Derives shared root key from agent ID for deterministic key synchronization
+	 */
+	private byte[] deriveSharedRootKey(String agentId) {
+		// Use HKDF with fixed salt and agent ID as input key material
+		byte[] salt = "mcp-chess-root-key-salt".getBytes(StandardCharsets.UTF_8);
+		byte[] ikm = agentId.getBytes(StandardCharsets.UTF_8);
+		return hkdfExtractAndExpand(salt, ikm, "shared-root-key", 32);
+	}
+
+	/**
+	 * Derives deterministic DH key pair from agent ID and role for initial synchronization
+	 */
+	private void generateDeterministicDHKeyPair(String agentId, boolean isServer, byte[] dhPrivate, byte[] dhPublic) {
+		// Generate deterministic seed from agent ID and role
+		byte[] seed = hkdfExtractAndExpand(
+			"mcp-dh-seed".getBytes(StandardCharsets.UTF_8),
+			(agentId + (isServer ? "-server" : "-client")).getBytes(StandardCharsets.UTF_8),
+			"dh-keypair",
+			32
+		);
+		
+		// Use seed to generate deterministic private key
+		System.arraycopy(seed, 0, dhPrivate, 0, X25519.SCALAR_SIZE);
+		// Clamp the private key for X25519
+		dhPrivate[0] &= 248;
+		dhPrivate[31] &= 127;
+		dhPrivate[31] |= 64;
+		
+		// Generate corresponding public key
+		X25519.generatePublicKey(dhPrivate, 0, dhPublic, 0);
 	}
 
 	public void removeSession(String agentId) {
@@ -249,6 +280,12 @@ public class MCPDoubleRatchetService implements DoubleRatchetService {
 		}
 
 		void performDhRatchet(byte[] newRemoteDhPublic) {
+			// Store the remote DH key without performing full ratchet for first message
+			if (this.remoteDhPublicKey == null) {
+				this.remoteDhPublicKey = newRemoteDhPublic;
+				return;
+			}
+
 			// 1) RK', CKr = KDF(RK, DH(ourPriv, theirPub))
 			byte[] shared1 = new byte[32];
 			X25519.scalarMult(dhPrivateKey, 0, newRemoteDhPublic, 0, shared1, 0);

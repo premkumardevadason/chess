@@ -10,7 +10,7 @@ import org.whispersystems.libsignal.state.SignalProtocolStore;
 import org.whispersystems.libsignal.state.SignedPreKeyRecord;
 import org.whispersystems.libsignal.util.KeyHelper;
 
-import java.security.InvalidKeyException;
+import org.whispersystems.libsignal.InvalidKeyException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
