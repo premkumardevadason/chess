@@ -86,7 +86,11 @@ public class TrainingDataIOWrapper {
     
     public void saveOnTrainingStop() {
         if (useAsync) {
-            asyncManager.saveOnTrainingStop().join();
+            // PERFORMANCE FIX: Don't block on save completion
+            asyncManager.saveOnTrainingStop().exceptionally(ex -> {
+                logger.error("Error during training stop save: {}", ex.getMessage());
+                return null;
+            });
         } else {
             // Existing synchronous save logic
         }
@@ -94,7 +98,11 @@ public class TrainingDataIOWrapper {
     
     public void saveOnGameReset() {
         if (useAsync) {
-            asyncManager.saveOnGameReset().join();
+            // PERFORMANCE FIX: Don't block on save completion
+            asyncManager.saveOnGameReset().exceptionally(ex -> {
+                logger.error("Error during game reset save: {}", ex.getMessage());
+                return null;
+            });
         } else {
             // Existing synchronous save logic
         }

@@ -14,6 +14,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.apache.logging.log4j.LogManager;
@@ -141,7 +143,11 @@ public class AsyncTrainingDataManager {
                         }
                     });
                     
-                    writeFuture.join();
+                    // PERFORMANCE FIX: Remove .join() for async operation
+                    writeFuture.exceptionally(ex -> {
+                        logger.error("Error during model save: {}", ex.getMessage());
+                        return null;
+                    });
                     
                 } catch (Exception e) {
                     String aiName = filename.replace(".dat", "");
@@ -162,7 +168,16 @@ public class AsyncTrainingDataManager {
     public CompletableFuture<Void> shutdown() {
         return coordinator.executeAtomicFeature(AtomicFeatureCoordinator.AtomicFeature.SHUTDOWN, () -> {
             logger.info("*** ASYNC I/O: NIO.2 AsynchronousFileChannel system SHUTDOWN - saving all data ***");
-            saveAllDirtyData().join();
+            
+            // PERFORMANCE FIX: For shutdown, we do need to wait but use a timeout
+            try {
+                saveAllDirtyData().get(10, TimeUnit.SECONDS);
+            } catch (TimeoutException e) {
+                logger.error("*** ASYNC I/O: Shutdown save timeout after 10 seconds ***");
+            } catch (Exception e) {
+                logger.error("*** ASYNC I/O: Error during shutdown save: {} ***", e.getMessage());
+            }
+            
             closeAllChannels();
             ioExecutor.shutdown();
             logger.info("*** ASYNC I/O: NIO.2 system shutdown complete ***");
@@ -174,9 +189,17 @@ public class AsyncTrainingDataManager {
         trainingStopRequested = true;
         // Cancel all queued operations
         cancelQueuedOperations();
+        
+        // PERFORMANCE FIX: Remove .join() to avoid blocking
         // Save dirty data, THEN shutdown executor
         return coordinator.executeAtomicFeature(AtomicFeatureCoordinator.AtomicFeature.TRAINING_STOP_SAVE, () -> {
-            saveAllDirtyData().join();
+            // Fire and forget - let saves complete asynchronously
+            saveAllDirtyData().thenRun(() -> {
+                logger.info("*** ASYNC I/O: All dirty data saved ***");
+            }).exceptionally(ex -> {
+                logger.error("Error saving dirty data: {}", ex.getMessage());
+                return null;
+            });
         }).thenRun(() -> {
             // Shutdown executor AFTER all saves are complete
             ioExecutor.shutdown();
@@ -217,8 +240,13 @@ public class AsyncTrainingDataManager {
     }
     
     public CompletableFuture<Void> saveOnGameReset() {
+        // PERFORMANCE FIX: Remove .join() to avoid blocking
         return coordinator.executeAtomicFeature(AtomicFeatureCoordinator.AtomicFeature.GAME_RESET_SAVE, () -> {
-            saveAllDirtyData().join();
+            // Fire and forget - let saves complete asynchronously
+            saveAllDirtyData().exceptionally(ex -> {
+                logger.error("Error during game reset save: {}", ex.getMessage());
+                return null;
+            });
         });
     }
     
@@ -432,30 +460,28 @@ public class AsyncTrainingDataManager {
                     
                     ByteBuffer buffer = ByteBuffer.wrap(data.toString().getBytes());
                     
-                    CompletableFuture<Integer> writeFuture = new CompletableFuture<>();
+                    long startTime = System.currentTimeMillis();
+                    
+                    // PERFORMANCE FIX: Remove .join() to make truly asynchronous
                     channel.write(buffer, 0, null, new CompletionHandler<Integer, Void>() {
                         @Override
                         public void completed(Integer result, Void attachment) {
                             dirtyFlags.computeIfAbsent(filename, k -> new AtomicBoolean()).set(false);
                             String aiName = filename.replace(".dat", "");
                             logger.info("*** ASYNC I/O: {} saved using NIO.2 AsynchronousFileChannel ({} bytes) - RACE CONDITION PROTECTED ***", aiName, result);
-                            writeFuture.complete(result);
+                            
+                            // Record metrics in completion handler
+                            long duration = System.currentTimeMillis() - startTime;
+                            metrics.recordSaveTime(aiName, duration);
                         }
                         
                         @Override
                         public void failed(Throwable exc, Void attachment) {
                             String aiName = filename.replace(".dat", "");
                             logger.error("*** ASYNC I/O: {} save FAILED using NIO.2 - {} ***", aiName, exc.getMessage());
-                            writeFuture.completeExceptionally(exc);
+                            metrics.recordError(aiName);
                         }
                     });
-                    
-                    long startTime = System.currentTimeMillis();
-                    writeFuture.join();
-                    long duration = System.currentTimeMillis() - startTime;
-                    
-                    String aiName = filename.replace(".dat", "");
-                    metrics.recordSaveTime(aiName, duration);
                 } catch (Exception e) {
                     String aiName = filename.replace(".dat", "");
                     metrics.recordError(aiName);
@@ -511,6 +537,7 @@ public class AsyncTrainingDataManager {
                 ByteBuffer buffer = ByteBuffer.wrap(serializedData);
                 CompletableFuture<Integer> writeFuture = new CompletableFuture<>();
                 
+                // PERFORMANCE FIX: Remove .join() to make truly asynchronous
                 channel.write(buffer, 0, null, new CompletionHandler<Integer, Void>() {
                     @Override
                     public void completed(Integer result, Void attachment) {
@@ -518,9 +545,8 @@ public class AsyncTrainingDataManager {
                             channel.close();
                             String aiName = filename.replace(".dat", "").replace("ga_models/", "");
                             logger.info("*** ASYNC I/O: {} saved using NIO.2 AsynchronousFileChannel ({} bytes) - RACE CONDITION PROTECTED ***", aiName, result);
-                            writeFuture.complete(result);
                         } catch (Exception e) {
-                            writeFuture.completeExceptionally(e);
+                            logger.error("Error closing channel: {}", e.getMessage());
                         }
                     }
                     
@@ -531,11 +557,8 @@ public class AsyncTrainingDataManager {
                         } catch (Exception e) {}
                         String aiName = filename.replace(".dat", "").replace("ga_models/", "");
                         logger.error("*** ASYNC I/O: {} save FAILED using NIO.2 - {} ***", aiName, exc.getMessage());
-                        writeFuture.completeExceptionally(exc);
                     }
                 });
-                
-                writeFuture.join();
                 
             } catch (Exception e) {
                 String aiName = filename.replace(".dat", "").replace("ga_models/", "");
@@ -735,9 +758,16 @@ public class AsyncTrainingDataManager {
                     }
                 });
             
-            // Wait for all saves to complete
-            CompletableFuture.allOf(saveTasks.toArray(new CompletableFuture[0])).join();
-            logger.info("*** ASYNC I/O: All dirty data flushed successfully ***");
+            // PERFORMANCE FIX: Don't wait for completion, return the combined future
+            CompletableFuture<Void> allSaves = CompletableFuture.allOf(saveTasks.toArray(new CompletableFuture[0]));
+            
+            // Log when all saves complete
+            allSaves.thenRun(() -> {
+                logger.info("*** ASYNC I/O: All dirty data flushed successfully ***");
+            }).exceptionally(ex -> {
+                logger.error("*** ASYNC I/O: Error flushing dirty data: {} ***", ex.getMessage());
+                return null;
+            });
         }, ioExecutor);
     }
     
@@ -829,7 +859,16 @@ public class AsyncTrainingDataManager {
                     }
                 });
                 
-                readFuture.join();
+                // PERFORMANCE FIX: Use get with timeout for reads
+                try {
+                    readFuture.get(5, java.util.concurrent.TimeUnit.SECONDS);
+                } catch (TimeoutException e) {
+                    logger.error("*** ASYNC I/O: Read timeout for {} ***", filename);
+                    throw new RuntimeException("Read timeout", e);
+                } catch (Exception e) {
+                    logger.error("*** ASYNC I/O: Read error for {} - {} ***", filename, e.getMessage());
+                    throw new RuntimeException("Read error", e);
+                }
                 buffer.flip();
                 
                 // Convert buffer to string for text-based files
@@ -992,7 +1031,11 @@ public class AsyncTrainingDataManager {
                     }
                 });
                 
-                writeFuture.join();
+                // PERFORMANCE FIX: Don't block on write completion
+                writeFuture.exceptionally(ex -> {
+                    logger.error("Error during DL4J model save: {}", ex.getMessage());
+                    return null;
+                });
                 
             } catch (Exception e) {
                 logger.error("*** ASYNC I/O: Q-table compression FAILED - {} ***", e.getMessage());

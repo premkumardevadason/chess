@@ -24,17 +24,32 @@ public class AtomicFeatureCoordinator {
     }
     
     public CompletableFuture<Void> executeAtomicFeature(AtomicFeature feature, Runnable operation) {
-        return CompletableFuture.runAsync(() -> {
-            globalLock.writeLock().lock();
-            try {
+        // PERFORMANCE FIX: Only use write lock for SHUTDOWN to prevent blocking during saves
+        if (feature == AtomicFeature.SHUTDOWN) {
+            return CompletableFuture.runAsync(() -> {
+                globalLock.writeLock().lock();
+                try {
+                    activeFeature.set(feature);
+                    aiTracker.waitForAllAICompletion();
+                    operation.run();
+                } finally {
+                    activeFeature.set(null);
+                    globalLock.writeLock().unlock();
+                }
+            });
+        } else {
+            // For regular saves (TRAINING_STOP_SAVE, GAME_RESET_SAVE), allow parallel execution
+            return CompletableFuture.runAsync(() -> {
                 activeFeature.set(feature);
-                aiTracker.waitForAllAICompletion();
-                operation.run();
-            } finally {
-                activeFeature.set(null);
-                globalLock.writeLock().unlock();
-            }
-        });
+                try {
+                    // Still wait for AI completion but without blocking other operations
+                    aiTracker.waitForAllAICompletion();
+                    operation.run();
+                } finally {
+                    activeFeature.set(null);
+                }
+            });
+        }
     }
     
     public CompletableFuture<Void> executeAsyncIO(String aiName, Supplier<CompletableFuture<Void>> ioOperation) {

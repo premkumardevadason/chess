@@ -31,7 +31,8 @@ public class AICompletionTracker {
         try {
             boolean allComplete = false;
             int attempts = 0;
-            while (!allComplete && attempts < 30) {
+            // PERFORMANCE FIX: Reduced timeout from 30 seconds to 5 seconds
+            while (!allComplete && attempts < 5) {
                 allComplete = aiActiveStatus.values().stream()
                     .noneMatch(AtomicBoolean::get);
                 
@@ -39,6 +40,13 @@ public class AICompletionTracker {
                     Thread.sleep(1000);
                     attempts++;
                 }
+            }
+            
+            if (!allComplete) {
+                // Log which AIs are still active after timeout
+                aiActiveStatus.entrySet().stream()
+                    .filter(e -> e.getValue().get())
+                    .forEach(e -> System.out.println("*** AI still active after timeout: " + e.getKey() + " ***"));
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();

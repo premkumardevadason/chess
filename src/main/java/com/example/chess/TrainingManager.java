@@ -411,16 +411,19 @@ public class TrainingManager {
                 
                 if (saveTaskResult instanceof java.util.concurrent.CompletableFuture) {
                     java.util.concurrent.CompletableFuture<?> saveTask = (java.util.concurrent.CompletableFuture<?>) saveTaskResult;
-                    saveTask.get(30, java.util.concurrent.TimeUnit.SECONDS);
-                    logger.info("*** GAME RESET SAVE: Completed ***");
+                    // PERFORMANCE FIX: Don't block on save completion
+                    saveTask.thenRun(() -> {
+                        logger.info("*** GAME RESET SAVE: Completed ***");
+                    }).exceptionally(ex -> {
+                        logger.error("*** GAME RESET SAVE: Failed - {} ***", ex.getMessage());
+                        return null;
+                    });
                 } else {
                     logger.info("*** GAME RESET SAVE: Completed (synchronous) ***");
                 }
             } else {
                 logger.warn("*** GAME RESET SAVE: AsyncManager not available ***");
             }
-        } catch (java.util.concurrent.TimeoutException e) {
-            logger.warn("*** GAME RESET SAVE: Timed out after 30 seconds ***");
         } catch (Exception e) {
             logger.error("*** GAME RESET SAVE: Failed - {} ***", e.getMessage());
         }
