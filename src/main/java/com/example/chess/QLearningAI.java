@@ -13,6 +13,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.security.SecureRandom;
+import java.util.zip.GZIPInputStream;
+import java.io.ByteArrayInputStream;
+import java.io.InputStreamReader;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -180,25 +183,116 @@ public class QLearningAI {
         this.qTableFile = filePath;
     }
     
-    // P0 Fix: Automatic migration on startup - converts legacy data to Zobrist format
+    // P0 Fix: Automatic migration on startup - handles GZIP compressed legacy data
     private void performAutomaticMigrationIfNeeded() {
-        if (!shouldUseLegacyFormat()) {
-            logger.info("Q-Learning: Q-table already using Zobrist format ({} entries)", qTable.size());
+        // Check if compressed legacy file exists
+        java.nio.file.Path legacyGzPath = java.nio.file.Paths.get(qTableFile + ".gz");
+        java.nio.file.Path currentPath = java.nio.file.Paths.get(qTableFile);
+        
+        boolean hasLegacyGzFile = java.nio.file.Files.exists(legacyGzPath);
+        boolean hasCurrentFile = java.nio.file.Files.exists(currentPath) && 
+                                 java.nio.file.Files.size(currentPath) > 0;
+        
+        if (!hasLegacyGzFile) {
+            if (!qTable.isEmpty() && shouldUseLegacyFormat()) {
+                logger.info("Q-Learning: Legacy format detected in memory, but no .gz file found");
+            } else {
+                logger.info("Q-Learning: Q-table already using Zobrist format ({} entries)", qTable.size());
+            }
             return;
         }
         
-        logger.info("Q-Learning: LEGACY DATA DETECTED - Starting automatic migration to Zobrist format...");
-        logger.info("Q-Learning: Current Q-table size: {} entries", qTable.size());
+        if (hasCurrentFile && !shouldUseLegacyFormat()) {
+            logger.info("Q-Learning: Zobrist format already active, skipping migration");
+            return;
+        }
         
-        // Step 1: Backup existing data file
-        backupLegacyQTable();
+        logger.info("Q-Learning: COMPRESSED LEGACY DATA DETECTED - Starting automatic migration...");
+        logger.info("Q-Learning: Legacy file: {} ({} bytes)", legacyGzPath, 
+                   java.nio.file.Files.size(legacyGzPath));
         
-        // Step 2: Convert all entries to new format
+        try {
+            // Step 1: Load and decompress legacy data
+            Map<String, Double> legacyQTable = loadCompressedLegacyQTable(legacyGzPath);
+            if (legacyQTable.isEmpty()) {
+                logger.error("Q-Learning: Failed to load legacy compressed data");
+                return;
+            }
+            
+            logger.info("Q-Learning: Loaded {} entries from compressed legacy file", legacyQTable.size());
+            
+            // Step 2: Backup original compressed file
+            backupLegacyQTable();
+            
+            // Step 3: Convert to Zobrist format
+            Map<String, Double> newQTable = convertLegacyToZobrist(legacyQTable);
+            
+            if (!newQTable.isEmpty()) {
+                // Step 4: Replace in-memory Q-table
+                qTable.clear();
+                qTable.putAll(newQTable);
+                
+                logger.info("Q-Learning: MIGRATION COMPLETED - {} entries converted", newQTable.size());
+                logger.info("Q-Learning: Memory usage reduced by ~67% with Zobrist hashing");
+                
+                // Step 5: Save in new compressed format
+                saveQTable();
+                logger.info("Q-Learning: Migrated Q-table saved in Zobrist format");
+                
+                // Step 6: Rename original .gz file to indicate migration completed
+                java.nio.file.Path migratedPath = java.nio.file.Paths.get(qTableFile + ".gz.migrated");
+                java.nio.file.Files.move(legacyGzPath, migratedPath);
+                logger.info("Q-Learning: Original legacy file renamed to: {}", migratedPath);
+                
+            } else {
+                logger.error("Q-Learning: MIGRATION FAILED - no entries could be converted");
+                logger.error("Q-Learning: Original data preserved in: {}", legacyGzPath);
+            }
+            
+        } catch (Exception e) {
+            logger.error("Q-Learning: MIGRATION ERROR - {} - Original data preserved", e.getMessage());
+        }
+    }
+    
+    // Load compressed legacy Q-table from .gz file
+    private Map<String, Double> loadCompressedLegacyQTable(java.nio.file.Path gzPath) throws Exception {
+        Map<String, Double> qTable = new ConcurrentHashMap<>();
+        
+        byte[] compressedData = java.nio.file.Files.readAllBytes(gzPath);
+        
+        try (java.util.zip.GZIPInputStream gzipIn = new java.util.zip.GZIPInputStream(
+                new java.io.ByteArrayInputStream(compressedData));
+             java.io.BufferedReader reader = new java.io.BufferedReader(
+                new java.io.InputStreamReader(gzipIn, "UTF-8"))) {
+            
+            String line;
+            int loaded = 0;
+            while ((line = reader.readLine()) != null) {
+                line = line.trim();
+                if (line.contains("=") && !line.startsWith("#")) {
+                    String[] parts = line.split("=", 2);
+                    if (parts.length == 2) {
+                        try {
+                            qTable.put(parts[0], Double.parseDouble(parts[1]));
+                            loaded++;
+                        } catch (NumberFormatException ignored) {}
+                    }
+                }
+            }
+            
+            logger.info("Q-Learning: Decompressed {} entries from legacy file", loaded);
+        }
+        
+        return qTable;
+    }
+    
+    // Convert legacy Q-table entries to Zobrist format
+    private Map<String, Double> convertLegacyToZobrist(Map<String, Double> legacyQTable) {
         Map<String, Double> newQTable = new ConcurrentHashMap<>();
         int migratedCount = 0;
         int failedCount = 0;
         
-        for (Map.Entry<String, Double> entry : qTable.entrySet()) {
+        for (Map.Entry<String, Double> entry : legacyQTable.entrySet()) {
             String oldKey = entry.getKey();
             Double value = entry.getValue();
             
@@ -229,21 +323,9 @@ public class QLearningAI {
             }
         }
         
-        // Step 3: Replace Q-table with migrated data
-        if (migratedCount > 0) {
-            qTable.clear();
-            qTable.putAll(newQTable);
-            logger.info("Q-Learning: MIGRATION COMPLETED - {} entries migrated, {} failed", 
-                migratedCount, failedCount);
-            logger.info("Q-Learning: Memory usage reduced by ~67% with Zobrist hashing");
-            
-            // Step 4: Save in new format
-            saveQTable();
-            logger.info("Q-Learning: Migrated Q-table saved in Zobrist format");
-        } else {
-            logger.error("Q-Learning: MIGRATION FAILED - no entries could be converted");
-            logger.error("Q-Learning: Reverting to legacy format to preserve data");
-        }
+        logger.info("Q-Learning: Conversion completed - {} entries migrated, {} failed", 
+            migratedCount, failedCount);
+        return newQTable;
     }
     
     // Check if Q-table contains legacy format data

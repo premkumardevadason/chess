@@ -16,6 +16,12 @@ target/**
 *.gz
 *.class
 
+# Backup files - never commit
+*.backup
+*.legacy.backup
+*.gz.backup
+*.dat.backup
+
 # AI training directories
 ga_models/
 leela_models/
