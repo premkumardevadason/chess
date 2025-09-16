@@ -190,8 +190,13 @@ public class QLearningAI {
         java.nio.file.Path currentPath = java.nio.file.Paths.get(qTableFile);
         
         boolean hasLegacyGzFile = java.nio.file.Files.exists(legacyGzPath);
-        boolean hasCurrentFile = java.nio.file.Files.exists(currentPath) && 
-                                 java.nio.file.Files.size(currentPath) > 0;
+        boolean hasCurrentFile = false;
+        try {
+            hasCurrentFile = java.nio.file.Files.exists(currentPath) && 
+                            java.nio.file.Files.size(currentPath) > 0;
+        } catch (IOException e) {
+            hasCurrentFile = java.nio.file.Files.exists(currentPath);
+        }
         
         if (!hasLegacyGzFile) {
             if (!qTable.isEmpty() && shouldUseLegacyFormat()) {
@@ -208,8 +213,12 @@ public class QLearningAI {
         }
         
         logger.info("Q-Learning: COMPRESSED LEGACY DATA DETECTED - Starting automatic migration...");
-        logger.info("Q-Learning: Legacy file: {} ({} bytes)", legacyGzPath, 
-                   java.nio.file.Files.size(legacyGzPath));
+        try {
+            logger.info("Q-Learning: Legacy file: {} ({} bytes)", legacyGzPath, 
+                       java.nio.file.Files.size(legacyGzPath));
+        } catch (IOException e) {
+            logger.warn("Q-Learning: Could not get file size: {}", e.getMessage());
+        }
         
         try {
             // Step 1: Load and decompress legacy data
@@ -258,7 +267,12 @@ public class QLearningAI {
     private Map<String, Double> loadCompressedLegacyQTable(java.nio.file.Path gzPath) throws Exception {
         Map<String, Double> qTable = new ConcurrentHashMap<>();
         
-        byte[] compressedData = java.nio.file.Files.readAllBytes(gzPath);
+        byte[] compressedData;
+        try {
+            compressedData = java.nio.file.Files.readAllBytes(gzPath);
+        } catch (IOException e) {
+            throw new Exception("Failed to read compressed file: " + e.getMessage(), e);
+        }
         
         try (java.util.zip.GZIPInputStream gzipIn = new java.util.zip.GZIPInputStream(
                 new java.io.ByteArrayInputStream(compressedData));
@@ -2293,19 +2307,55 @@ public class QLearningAI {
         // Clear move history
         recentMoveHistory.clear();
         
-        // Force final save Q-table (bypass shutdown check)
-        synchronized (fileLock) {
-            try (PrintWriter writer = new PrintWriter(new FileWriter(qTableFile))) {
-                for (Map.Entry<String, Double> entry : qTable.entrySet()) {
-                    writer.println(entry.getKey() + "=" + entry.getValue());
-                }
-                logger.info("Q-Learning: Final shutdown save - Q-table saved with " + qTable.size() + " entries");
-            } catch (IOException e) {
-            	logger.error("Failed to save Q-table during shutdown: " + e.getMessage());
+        // Force final save Q-table using compressed format (consistent with normal saves)
+        try {
+            // Temporarily bypass shutdown check for final save
+            boolean wasShutdown = isShutdown;
+            isShutdown = false;
+            
+            // Use the same compressed save path as normal operations
+            if (ioWrapper.isAsyncEnabled()) {
+                ioWrapper.saveQTable(qTable, qTableFile);
+                logger.info("Q-Learning: Final shutdown save - Q-table saved with " + qTable.size() + " entries (COMPRESSED)");
+            } else {
+                // Fallback to compressed manual save if async is disabled
+                saveQTableCompressedManual();
+                logger.info("Q-Learning: Final shutdown save - Q-table saved with " + qTable.size() + " entries (MANUAL COMPRESSED)");
             }
+            
+            // Restore shutdown state
+            isShutdown = wasShutdown;
+            
+        } catch (Exception e) {
+            logger.error("Failed to save Q-table during shutdown: " + e.getMessage());
         }
         
         logger.info("Advanced Q-Learning: Shutdown complete");
+    }
+    
+    private void saveQTableCompressedManual() {
+        try {
+            java.nio.file.Path filePath = java.nio.file.Paths.get(qTableFile + ".gz");
+            if (filePath.getParent() != null) {
+                java.nio.file.Files.createDirectories(filePath.getParent());
+            }
+            
+            // Compress Q-table data manually
+            java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+            try (java.util.zip.GZIPOutputStream gzipOut = new java.util.zip.GZIPOutputStream(baos)) {
+                for (Map.Entry<String, Double> entry : qTable.entrySet()) {
+                    String line = entry.getKey() + "=" + entry.getValue() + "\n";
+                    gzipOut.write(line.getBytes("UTF-8"));
+                }
+            }
+            
+            // Write compressed data to file
+            java.nio.file.Files.write(filePath, baos.toByteArray());
+            
+        } catch (Exception e) {
+            logger.error("Manual compressed save failed: " + e.getMessage());
+            throw new RuntimeException("Manual compressed save failed", e);
+        }
     }
     
     private double getOptionValue(String state, int[] move) {
