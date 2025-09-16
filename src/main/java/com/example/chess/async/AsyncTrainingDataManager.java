@@ -201,9 +201,8 @@ public class AsyncTrainingDataManager {
                 return null;
             });
         }).thenRun(() -> {
-            // Shutdown executor AFTER all saves are complete
-            ioExecutor.shutdown();
-            logger.info("*** ASYNC I/O: Training stop save completed - executor shutdown ***");
+            // DO NOT shutdown executor here - only on application shutdown
+            logger.info("*** ASYNC I/O: Training stop save completed ***");
         });
     }
     
@@ -473,6 +472,9 @@ public class AsyncTrainingDataManager {
                             // Record metrics in completion handler
                             long duration = System.currentTimeMillis() - startTime;
                             metrics.recordSaveTime(aiName, duration);
+                            
+                            // CRITICAL: Decrement counter when operation actually completes
+                            activeIOOperations.decrementAndGet();
                         }
                         
                         @Override
@@ -480,14 +482,19 @@ public class AsyncTrainingDataManager {
                             String aiName = filename.replace(".dat", "");
                             logger.error("*** ASYNC I/O: {} save FAILED using NIO.2 - {} ***", aiName, exc.getMessage());
                             metrics.recordError(aiName);
+                            
+                            // CRITICAL: Decrement counter on failure too
+                            activeIOOperations.decrementAndGet();
                         }
                     });
                 } catch (Exception e) {
                     String aiName = filename.replace(".dat", "");
                     metrics.recordError(aiName);
+                    // Decrement on exception since completion handlers won't run
+                    activeIOOperations.decrementAndGet();
                     throw new RuntimeException(e);
                 } finally {
-                    activeIOOperations.decrementAndGet();
+                    // Decrement moved to completion handlers
                 }
             }
         }, ioExecutor);
@@ -548,6 +555,8 @@ public class AsyncTrainingDataManager {
                         } catch (Exception e) {
                             logger.error("Error closing channel: {}", e.getMessage());
                         }
+                        // CRITICAL: Decrement counter when operation actually completes
+                        activeIOOperations.decrementAndGet();
                     }
                     
                     @Override
@@ -557,15 +566,19 @@ public class AsyncTrainingDataManager {
                         } catch (Exception e) {}
                         String aiName = filename.replace(".dat", "").replace("ga_models/", "");
                         logger.error("*** ASYNC I/O: {} save FAILED using NIO.2 - {} ***", aiName, exc.getMessage());
+                        // CRITICAL: Decrement counter on failure too
+                        activeIOOperations.decrementAndGet();
                     }
                 });
                 
             } catch (Exception e) {
                 String aiName = filename.replace(".dat", "").replace("ga_models/", "");
                 logger.error("*** ASYNC I/O: {} save FAILED - {} ***", aiName, e.getMessage());
+                // Decrement on exception since completion handlers won't run
+                activeIOOperations.decrementAndGet();
                 throw new RuntimeException("Serializable object save failed", e);
             } finally {
-                activeIOOperations.decrementAndGet();
+                // Decrement moved to completion handlers
             }
         }
     }
@@ -1021,6 +1034,8 @@ public class AsyncTrainingDataManager {
                         } catch (Exception e) {
                             writeFuture.completeExceptionally(e);
                         }
+                        // CRITICAL: Decrement counter when operation actually completes
+                        activeIOOperations.decrementAndGet();
                     }
                     
                     @Override
@@ -1028,6 +1043,8 @@ public class AsyncTrainingDataManager {
                         try { channel.close(); } catch (Exception e) {}
                         logger.error("*** ASYNC I/O: Q-table compressed save FAILED - {} ***", exc.getMessage());
                         writeFuture.completeExceptionally(exc);
+                        // CRITICAL: Decrement counter on failure too
+                        activeIOOperations.decrementAndGet();
                     }
                 });
                 
@@ -1039,9 +1056,11 @@ public class AsyncTrainingDataManager {
                 
             } catch (Exception e) {
                 logger.error("*** ASYNC I/O: Q-table compression FAILED - {} ***", e.getMessage());
+                // Decrement on exception since completion handlers won't run
+                activeIOOperations.decrementAndGet();
                 throw new RuntimeException("Q-table compression failed", e);
             } finally {
-                activeIOOperations.decrementAndGet();
+                // Decrement moved to completion handlers
             }
         }
     }
