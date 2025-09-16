@@ -54,7 +54,7 @@ Right-click `ChessApplication.java` → Run As → Spring Boot App
 }
 ```
 
-## 🛠️ Chess Tools (8 Available)
+## 🛠️ Chess Tools (9 Available)
 
 1. **create_chess_game** - Create new game with AI opponent selection
 2. **make_chess_move** - Execute moves and get AI responses
@@ -64,6 +64,7 @@ Right-click `ChessApplication.java` → Run As → Spring Boot App
 6. **get_move_hint** - Get AI move suggestions with explanations
 7. **create_tournament** - Play against all 12 AI systems simultaneously
 8. **get_tournament_status** - Monitor tournament progress and results
+9. **fetch_current_board** - Get ASCII representation of current chess board
 
 ## 📚 Chess Resources (5 Available)
 

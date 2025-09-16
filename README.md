@@ -28,7 +28,7 @@ A sophisticated browser-based Chess game and **Model Context Protocol (MCP) Serv
 ### **🎯 Model Context Protocol (MCP) Server**
 - **Stateful Multi-Agent Architecture**: Support for 100 concurrent MCP clients with 1,000 total active sessions
 - **JSON-RPC 2.0 Compliance**: Complete protocol implementation with stdio and WebSocket transport
-- **8 Chess Tools**: create_chess_game, make_chess_move, get_board_state, analyze_position, get_legal_moves, get_move_hint, create_tournament, get_tournament_status
+- **9 Chess Tools**: create_chess_game, make_chess_move, get_board_state, analyze_position, get_legal_moves, get_move_hint, create_tournament, get_tournament_status, fetch_current_board
 - **5 Chess Resources**: AI systems, opening book, game sessions, training stats, tactical patterns
 - **Enterprise Security**: Input validation, rate limiting, session isolation, and DoS protection
 - **Tournament Mode**: Simultaneous gameplay against all 12 AI systems for research and analysis
@@ -111,7 +111,7 @@ The Chess application serves as a **stateful MCP Server**, exposing all 12 AI sy
 - **Transport Options**: stdio and WebSocket transport layers
 - **Request Validation**: Comprehensive input schema validation and security checks
 
-#### **Chess Tools (8 Available)**
+#### **Chess Tools (9 Available)**
 1. **create_chess_game** - Create new game with AI opponent selection
 2. **make_chess_move** - Execute moves and get AI responses
 3. **get_board_state** - Retrieve current game state and position
@@ -120,6 +120,7 @@ The Chess application serves as a **stateful MCP Server**, exposing all 12 AI sy
 6. **get_move_hint** - Get AI move suggestions with explanations
 7. **create_tournament** - Play against all 12 AI systems simultaneously
 8. **get_tournament_status** - Monitor tournament progress and results
+9. **fetch_current_board** - Get ASCII representation of current chess board
 
 #### **Chess Resources (5 Available)**
 1. **chess://ai-systems** - All 12 AI systems with capabilities and status
@@ -827,7 +828,7 @@ The Chess application now serves as a **stateful MCP Server**, exposing all 12 A
 - **Transport Options**: stdio and WebSocket transport layers
 - **Request Validation**: Comprehensive input schema validation and security checks
 
-#### **Chess Tools (8 Available)**
+#### **Chess Tools (9 Available)**
 1. **create_chess_game** - Create new game with AI opponent selection
 2. **make_chess_move** - Execute moves and get AI responses
 3. **get_board_state** - Retrieve current game state and position
@@ -836,6 +837,7 @@ The Chess application now serves as a **stateful MCP Server**, exposing all 12 A
 6. **get_move_hint** - Get AI move suggestions with explanations
 7. **create_tournament** - Play against all 12 AI systems simultaneously
 8. **get_tournament_status** - Monitor tournament progress and results
+9. **fetch_current_board** - Get ASCII representation of current chess board
 
 #### **Chess Resources (5 Available)**
 1. **chess://ai-systems** - All 12 AI systems with capabilities and status
