@@ -151,6 +151,12 @@ public class LeelaChessZeroAI {
         if (executorService != null) {
             logger.info("*** LeelaZero: Stopping thread ***");
             executorService.shutdownNow();
+            // P0 Fix: Reinitialize executor for next use
+            this.executorService = Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "LeelaZero-Thread");
+                t.setDaemon(true);
+                return t;
+            });
         }
     }
     

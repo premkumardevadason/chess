@@ -491,17 +491,27 @@ public class LeelaChessZeroNetwork {
     private void updateTemperature() {
         moveNumber++;
         
-        // Temperature scaling: high early game, low endgame
-        if (moveNumber < 10) {
-            temperature = 1.2; // Explore more in opening
-        } else if (moveNumber < 30) {
-            temperature = 1.0; // Standard middle game
+        // P0 Fix: Adaptive temperature scaling based on game phase and position complexity
+        double gamePhase = Math.min(1.0, moveNumber / 40.0); // Normalize to 0-1 over 40 moves
+        double complexityFactor = 0.5 + positionComplexity; // 0.5-1.5 range
+        
+        // Base temperature decreases smoothly with game progression
+        double baseTemp = 1.3 - (gamePhase * 0.6); // 1.3 -> 0.7 over game
+        
+        // Adjust for position complexity and game phase
+        if (moveNumber < 8) {
+            // Opening: Higher exploration with complexity consideration
+            temperature = baseTemp * complexityFactor * 1.1;
+        } else if (moveNumber < 25) {
+            // Middle game: Balanced approach with tactical awareness
+            temperature = baseTemp * complexityFactor;
         } else {
-            temperature = 0.8; // More focused in endgame
+            // Endgame: Lower temperature but still responsive to complexity
+            temperature = Math.max(0.5, baseTemp * complexityFactor * 0.9);
         }
         
-        // Adjust for position complexity
-        temperature *= (0.5 + positionComplexity);
+        // Clamp temperature to reasonable bounds
+        temperature = Math.max(0.3, Math.min(2.0, temperature));
     }
     
     private double[] applyTemperatureScaling(INDArray policyOutput, double temp) {

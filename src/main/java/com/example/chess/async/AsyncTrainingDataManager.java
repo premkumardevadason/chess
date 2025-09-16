@@ -19,6 +19,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import com.example.chess.async.AsyncIOMetrics;
+import com.example.chess.exceptions.ChessAIException;
 
 public class AsyncTrainingDataManager {
     private static final Logger logger = LogManager.getLogger(AsyncTrainingDataManager.class);
@@ -588,7 +589,27 @@ public class AsyncTrainingDataManager {
                 // Verify saved file integrity
                 if (!verifyModelFile(tempPath, model)) {
                     java.nio.file.Files.deleteIfExists(tempPath);
-                    throw new RuntimeException("Model save verification failed - file corrupted");
+                    // P0 Fix: Proper exception handling with recovery
+                    String aiName = filename.contains("deeplearning") ? "DeepLearning" : 
+                                   filename.contains("cnn") ? "CNN" : 
+                                   filename.contains("dqn") ? "DQN" : "Unknown";
+                    logger.error("*** ASYNC I/O: Model verification failed for {} - attempting backup recovery ***", aiName);
+                    
+                    // Try to recover from backup if available
+                    Path backupPath = Paths.get(filename + ".backup");
+                    if (java.nio.file.Files.exists(backupPath)) {
+                        try {
+                            java.nio.file.Files.copy(backupPath, filePath, 
+                                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                            logger.info("*** ASYNC I/O: Successfully recovered {} from backup ***", aiName);
+                            return;
+                        } catch (Exception backupError) {
+                            logger.warn("*** ASYNC I/O: Backup recovery failed for {} ***", aiName);
+                        }
+                    }
+                    
+                    throw new ChessAIException(ChessAIException.ErrorType.MODEL_SAVE_FAILED, 
+                        aiName, "Model save verification failed - file corrupted and no backup available");
                 }
                 
                 // ATOMIC MOVE: Replace original file atomically

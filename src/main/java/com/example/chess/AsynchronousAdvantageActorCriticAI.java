@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -57,6 +58,10 @@ public class AsynchronousAdvantageActorCriticAI {
     private final double valueCoeff = 0.5;
     private final int syncFrequency = 50; // Sync every 50 steps instead of 1000
     private volatile double rewardShapingScale = 1.0; // Anneal tactical rewards over time
+    
+    // P0 Fix: Parameter server synchronization
+    private final ReentrantReadWriteLock parameterLock = new ReentrantReadWriteLock();
+    private final Object gradientSync = new Object();
     
     // State management with clean shutdown
     private volatile boolean isTraining = false;
@@ -334,16 +339,22 @@ public class AsynchronousAdvantageActorCriticAI {
         logger.info("*** A3C AI: Training stopped cleanly ***");
     }
     
-    // TRUE A3C: Thread-safe updates with advantage normalization
+    // P0 Fix: TRUE A3C with proper parameter server synchronization
     private void updateGlobalNetworks(INDArray states, INDArray actions, INDArray advantages, INDArray returns) {
         INDArray normalizedAdvantages = normalizeAdvantages(advantages);
         INDArray actorLabels = createPolicyGradientLabels(actions, normalizedAdvantages);
         INDArray valueTargets = returns.reshape(returns.length(), 1);
         
-        // Single synchronized block for actor/critic consistency
-        synchronized (this) {
-            globalActorNetwork.fit(states, actorLabels);
-            globalCriticNetwork.fit(states, valueTargets);
+        // P0 Fix: Proper gradient synchronization with write lock
+        synchronized (gradientSync) {
+            parameterLock.writeLock().lock();
+            try {
+                globalActorNetwork.fit(states, actorLabels);
+                globalCriticNetwork.fit(states, valueTargets);
+                globalSteps.incrementAndGet();
+            } finally {
+                parameterLock.writeLock().unlock();
+            }
         }
     }
     
@@ -431,10 +442,15 @@ public class AsynchronousAdvantageActorCriticAI {
         }
         
         private void syncWithGlobalNetworks() {
-            // Thread-safe parameter sync
-            synchronized (AsynchronousAdvantageActorCriticAI.this) {
-                localActorNetwork.setParams(globalActorNetwork.params().dup());
-                localCriticNetwork.setParams(globalCriticNetwork.params().dup());
+            // P0 Fix: Thread-safe parameter sync with proper locking
+            parameterLock.readLock().lock();
+            try {
+                synchronized (AsynchronousAdvantageActorCriticAI.this) {
+                    localActorNetwork.setParams(globalActorNetwork.params().dup());
+                    localCriticNetwork.setParams(globalCriticNetwork.params().dup());
+                }
+            } finally {
+                parameterLock.readLock().unlock();
             }
         }
         

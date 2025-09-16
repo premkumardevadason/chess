@@ -51,7 +51,9 @@ public class DeepQNetworkAI {
     private LeelaChessZeroOpeningBook openingBook;
     
     // Rainbow DQN parameters
-    private double epsilon = 0.1;
+    private double epsilon = 1.0; // P0 Fix: Start with high exploration
+    private final double epsilonMin = 0.01;
+    private final double epsilonDecay = 0.995;
     private double gamma = 0.95;
     private int targetUpdateFreq = 1000;
     private int trainingSteps = 0;
@@ -363,6 +365,11 @@ public class DeepQNetworkAI {
             }
             
             trainingSteps++;
+            
+            // P0 Fix: Adaptive epsilon decay
+            if (epsilon > epsilonMin) {
+                epsilon = Math.max(epsilonMin, epsilon * epsilonDecay);
+            }
             
             // Soft target network update (Rainbow DQN)
             if (trainingSteps % 4 == 0) {

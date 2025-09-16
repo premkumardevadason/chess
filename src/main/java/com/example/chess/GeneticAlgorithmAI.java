@@ -42,9 +42,10 @@ public class GeneticAlgorithmAI {
     
     // GA Parameters
     private static final int POPULATION_SIZE = 50;
-    private double baseMutationRate = 0.1;  // Adaptive mutation base rate
+    private double baseMutationRate = 0.15;  // P0 Fix: Higher base mutation rate for better exploration
     private static final double CROSSOVER_RATE = 0.8;
     private static final int ELITE_SIZE = 5;
+    private static final int TOURNAMENT_SIZE = 3; // P0 Fix: Tournament selection size
     private static final int CHROMOSOME_LENGTH = 64; // 8x8 position weights
     
     // Multi-objective optimization weights
@@ -503,6 +504,55 @@ public class GeneticAlgorithmAI {
         }
         
         return new Chromosome[]{offspring1, offspring2};
+    }
+    
+    // P0 Fix: Improved tournament selection for better parent selection
+    private Chromosome tournamentSelection() {
+        if (population.isEmpty()) {
+            initializePopulation();
+            if (population.isEmpty()) return new Chromosome();
+        }
+        
+        Chromosome best = null;
+        double bestFitness = Double.NEGATIVE_INFINITY;
+        
+        // Select TOURNAMENT_SIZE random individuals and pick the best
+        for (int i = 0; i < TOURNAMENT_SIZE; i++) {
+            int randomIndex = (int) (Math.random() * population.size());
+            Chromosome candidate = population.get(randomIndex);
+            
+            if (candidate.fitness > bestFitness) {
+                bestFitness = candidate.fitness;
+                best = candidate;
+            }
+        }
+        
+        return best != null ? best : population.get(0);
+    }
+    
+    // P0 Fix: Enhanced mutation with multiple strategies
+    private void mutateChromosome(Chromosome chromosome) {
+        double mutationRate = calculateAdaptiveMutationRate();
+        
+        for (int i = 0; i < CHROMOSOME_LENGTH; i++) {
+            if (Math.random() < mutationRate) {
+                // Multiple mutation strategies
+                double strategy = Math.random();
+                if (strategy < 0.6) {
+                    // Gaussian mutation (most common)
+                    chromosome.genes[i] += (Math.random() - 0.5) * 0.2;
+                } else if (strategy < 0.8) {
+                    // Uniform mutation
+                    chromosome.genes[i] = Math.random() * 2.0 - 1.0;
+                } else {
+                    // Creep mutation (small changes)
+                    chromosome.genes[i] += (Math.random() - 0.5) * 0.05;
+                }
+                
+                // Clamp to bounds
+                chromosome.genes[i] = Math.max(-1.0, Math.min(1.0, chromosome.genes[i]));
+            }
+        }
     }
     
     private Chromosome getBestChromosome() {
@@ -976,8 +1026,12 @@ public class GeneticAlgorithmAI {
     }
     
     private double calculateAdaptiveMutationRate() {
-        // Higher mutation when diversity is low, lower when diversity is high
-        return baseMutationRate + (1.0 - populationDiversity) * 0.2;
+        // P0 Fix: Enhanced adaptive mutation based on diversity and generation
+        double diversityFactor = (1.0 - populationDiversity) * 0.3; // Increased impact
+        double generationFactor = Math.max(0.0, (50 - generation) / 100.0); // Higher early generations
+        double stagnationFactor = (generation > 10 && bestFitness < 0.5) ? 0.1 : 0.0; // Boost if stagnant
+        
+        return Math.min(0.5, baseMutationRate + diversityFactor + generationFactor + stagnationFactor);
     }
     
     private MultiObjective evaluateMultiObjective(String[][] board, int[] move) {

@@ -8,6 +8,8 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -26,6 +28,11 @@ public class AlphaZeroTrainer {
     private ExecutorService parallelExecutor;
     private volatile boolean stopRequested = false;
     private final ChessLegalMoveAdapter moveAdapter;
+    
+    // P0 Fix: Add proper synchronization for parallel training
+    private final ReentrantReadWriteLock trainingLock = new ReentrantReadWriteLock();
+    private final AtomicInteger activeWorkers = new AtomicInteger(0);
+    private final Object gradientSync = new Object();
     
     public AlphaZeroTrainer(AlphaZeroInterfaces.NeuralNetwork neuralNetwork, AlphaZeroInterfaces.MCTSEngine mcts, LeelaChessZeroOpeningBook openingBook, boolean debugEnabled) {
         this.neuralNetwork = neuralNetwork;
@@ -62,14 +69,19 @@ public class AlphaZeroTrainer {
             parallelExecutor = Executors.newVirtualThreadPerTaskExecutor();
         }
         
-        // Launch parallel self-play batches
+        // Launch parallel self-play batches with proper synchronization
         for (int batch = 0; batch < parallelGames && !stopRequested; batch++) {
             final int batchId = batch;
             final int batchGames = (batch == parallelGames - 1) ? 
                 (games - batch * gamesPerBatch) : gamesPerBatch;
             
             CompletableFuture<GameResult> future = CompletableFuture.supplyAsync(() -> {
-                return runParallelGameBatch(batchId, batchGames);
+                activeWorkers.incrementAndGet();
+                try {
+                    return runParallelGameBatch(batchId, batchGames);
+                } finally {
+                    activeWorkers.decrementAndGet();
+                }
             }, parallelExecutor);
             
             futures.add(future);
@@ -103,11 +115,27 @@ public class AlphaZeroTrainer {
             }
             
             if (!batchData.isEmpty()) {
-                neuralNetwork.train(batchData);
-                synchronized (neuralNetwork) {
-                    neuralNetwork.saveModel(); // Save after training with synchronization
+                // P0 Fix: Synchronized gradient updates
+                synchronized (gradientSync) {
+                    // Wait for all active workers to complete before training
+                    while (activeWorkers.get() > 0) {
+                        try {
+                            Thread.sleep(10);
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            break;
+                        }
+                    }
+                    
+                    trainingLock.writeLock().lock();
+                    try {
+                        neuralNetwork.train(batchData);
+                        neuralNetwork.saveModel(); // Save after training with synchronization
+                        logger.debug("*** AlphaZero: Enhanced training completed with {} examples and saved model ***", batchData.size());
+                    } finally {
+                        trainingLock.writeLock().unlock();
+                    }
                 }
-                logger.debug("*** AlphaZero: Enhanced training completed with {} examples and saved model ***", batchData.size());
             }
         }
         
@@ -139,11 +167,14 @@ public class AlphaZeroTrainer {
                     performIncrementalTraining();
                 }
                 
-                // Save neural network every 25 games with synchronization
+                // Save neural network every 25 games with proper synchronization
                 if (completed % 25 == 0) {
-                    synchronized (neuralNetwork) {
+                    trainingLock.readLock().lock();
+                    try {
                         neuralNetwork.saveModel();
                         logger.debug("*** AlphaZero: Neural network saved at game {} ***", completed);
+                    } finally {
+                        trainingLock.readLock().unlock();
                     }
                     
                     // Add 1 second pause after every 25 games
