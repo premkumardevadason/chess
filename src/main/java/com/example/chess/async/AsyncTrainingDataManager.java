@@ -831,7 +831,8 @@ public class AsyncTrainingDataManager {
                     allSaves.get(10, TimeUnit.SECONDS);
                     logger.info("*** ASYNC I/O: All dirty data flushed successfully ***");
                 } catch (Exception e) {
-                    logger.error("*** ASYNC I/O: Error flushing dirty data: {} ***", e.getMessage());
+                    String errorMsg = e != null ? (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()) : "Unknown error";
+                    logger.error("*** ASYNC I/O: Error flushing dirty data: {} ***", errorMsg);
                 }
             } else {
                 // Non-blocking for normal operations
