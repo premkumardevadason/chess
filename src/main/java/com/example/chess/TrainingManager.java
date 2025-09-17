@@ -113,11 +113,8 @@ public class TrainingManager {
                 cancelMethod.invoke(asyncManager);
                 logger.info("*** ASYNC I/O: Queued operations cancelled ***");
                 
-                // CRITICAL: Also clear all dirty flags to prevent any further saves
-                java.lang.reflect.Method clearDirtyMethod = asyncManager.getClass().getDeclaredMethod("clearAllDirtyFlags");
-                clearDirtyMethod.setAccessible(true);
-                clearDirtyMethod.invoke(asyncManager);
-                logger.info("*** ASYNC I/O: All dirty flags cleared ***");
+                // CRITICAL FIX: DO NOT clear dirty flags here - let final training saves complete first
+                // Dirty flags will be cleared after final saves in the async manager
             }
         } catch (Exception e) {
             logger.debug("Could not cancel queued operations: {}", e.getMessage());

@@ -574,7 +574,10 @@ public class AlphaZeroNeuralNetwork implements AlphaZeroInterfaces.NeuralNetwork
     public void incrementEpisodes(int episodes) {
         trainingEpisodes += episodes;
         logger.info("*** AlphaZero NN: Episodes incremented by {} to total {} ***", episodes, trainingEpisodes);
-        // Centralized periodic save in TrainingManager handles all AI systems
+        
+        // CRITICAL FIX: Don't force immediate save - let async manager handle it
+        // This prevents multiple concurrent saves during training completion
+        logger.debug("*** AlphaZero NN: Episode data will be saved by async manager ***");
     }
     
     private volatile long lastModelSaveTime = 0;
@@ -583,8 +586,8 @@ public class AlphaZeroNeuralNetwork implements AlphaZeroInterfaces.NeuralNetwork
     public void saveModel() {
         long currentTime = System.currentTimeMillis();
         
-        // Debounce: Skip save if we saved recently (within 3 seconds)
-        if (currentTime - lastModelSaveTime < MODEL_SAVE_DEBOUNCE_MS) {
+        // CRITICAL FIX: Increase debounce time to prevent multiple concurrent saves
+        if (currentTime - lastModelSaveTime < 10000) { // 10 second debounce
             logger.debug("*** AlphaZero NN: Skipping redundant model save (last save {}ms ago) ***", currentTime - lastModelSaveTime);
             return;
         }
@@ -594,9 +597,18 @@ public class AlphaZeroNeuralNetwork implements AlphaZeroInterfaces.NeuralNetwork
     }
     
     public void shutdown() {
-        saveModelData();
-        positionCache.clear();
-        logger.debug("*** AlphaZero NN: Model saved and shutdown complete ***");
+        // CRITICAL FIX: Save data BEFORE clearing cache to prevent data loss
+        try {
+            logger.debug("*** AlphaZero NN: Saving {} episodes and {} positions before shutdown ***", trainingEpisodes, positionCache.size());
+            saveModelData();
+            logger.debug("*** AlphaZero NN: Data saved successfully before shutdown ***");
+            // Only clear cache AFTER successful save
+            positionCache.clear();
+            logger.debug("*** AlphaZero NN: Shutdown complete ***");
+        } catch (Exception e) {
+            logger.error("*** AlphaZero NN: Failed to save during shutdown: {} - preserving cache ***", e.getMessage());
+            // Don't clear cache if save failed - preserve data for next startup
+        }
     }
     
     private void loadModelData() {

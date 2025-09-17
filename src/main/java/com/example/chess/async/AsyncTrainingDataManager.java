@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.AsynchronousFileChannel;
 import java.nio.channels.CompletionHandler;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
@@ -169,11 +170,14 @@ public class AsyncTrainingDataManager {
         return coordinator.executeAtomicFeature(AtomicFeatureCoordinator.AtomicFeature.SHUTDOWN, () -> {
             logger.info("*** ASYNC I/O: NIO.2 AsynchronousFileChannel system SHUTDOWN - saving all data ***");
             
+            // CRITICAL FIX: Cancel any queued operations to prevent duplicate saves
+            cancelQueuedOperations();
+            
             // PERFORMANCE FIX: For shutdown, we do need to wait but use a timeout
             try {
-                saveAllDirtyData().get(10, TimeUnit.SECONDS);
+                saveAllDirtyData().get(15, TimeUnit.SECONDS); // Increased timeout for large saves
             } catch (TimeoutException e) {
-                logger.error("*** ASYNC I/O: Shutdown save timeout after 10 seconds ***");
+                logger.error("*** ASYNC I/O: Shutdown save timeout after 15 seconds ***");
             } catch (Exception e) {
                 logger.error("*** ASYNC I/O: Error during shutdown save: {} ***", e.getMessage());
             }
@@ -196,8 +200,12 @@ public class AsyncTrainingDataManager {
             // Fire and forget - let saves complete asynchronously
             saveAllDirtyData().thenRun(() -> {
                 logger.info("*** ASYNC I/O: All dirty data saved ***");
+                // CRITICAL FIX: Reset counter after saves complete to prevent training restart blocking
+                resetActiveOperationsCounter();
             }).exceptionally(ex -> {
                 logger.error("Error saving dirty data: {}", ex.getMessage());
+                // Reset counter even on error to prevent permanent blocking
+                resetActiveOperationsCounter();
                 return null;
             });
         }).thenRun(() -> {
@@ -231,10 +239,10 @@ public class AsyncTrainingDataManager {
                 logger.info("*** ASYNC I/O: Cleared dirty flag for {} ***", entry.getKey());
             }
         }
-        // Also clear the data cache to prevent any future saves
-        dataCache.clear();
+        // CRITICAL FIX: Don't clear data cache - let final operations complete
+        // dataCache.clear(); // Removed - causes race condition
         if (clearedCount > 0) {
-            logger.info("*** ASYNC I/O: Cleared {} dirty flags and data cache due to training stop ***", clearedCount);
+            logger.info("*** ASYNC I/O: Cleared {} dirty flags (cache preserved for final operations) ***", clearedCount);
         }
     }
     
@@ -256,12 +264,22 @@ public class AsyncTrainingDataManager {
             return CompletableFuture.completedFuture(null);
         }
         
-        // Mark this AI's save as in progress to ensure atomicity
-        aiSaveInProgress.computeIfAbsent(aiName, k -> new AtomicBoolean(false)).set(true);
+        // CRITICAL FIX: Check if this AI already has a save in progress to prevent duplicates
+        AtomicBoolean saveInProgress = aiSaveInProgress.computeIfAbsent(aiName, k -> new AtomicBoolean(false));
+        if (saveInProgress.get()) {
+            logger.debug("*** ASYNC I/O: {} save already in progress - skipping duplicate ***", aiName);
+            return CompletableFuture.completedFuture(null);
+        }
         
-        // Cache the data for potential flush during shutdown
+        // Mark this AI's save as in progress to ensure atomicity
+        saveInProgress.set(true);
+        
+        // CRITICAL FIX: Cache the data and force dirty marking for training completion
         dataCache.put(filename, data);
-        markDirty(filename);
+        // MEMORY SAFETY: Avoid toString() on large collections that could cause OOM
+        String dataInfo = getDataInfo(data);
+        logger.debug("*** ASYNC I/O: Caching {} ({}) for {} - forcing dirty mark ***", filename, dataInfo, aiName);
+        dirtyFlags.computeIfAbsent(filename, k -> new AtomicBoolean()).set(true);
         
         CompletableFuture<Void> operation = coordinator.executeAsyncIO(aiName, () -> {
             aiTracker.markAIActive(aiName);
@@ -270,18 +288,9 @@ public class AsyncTrainingDataManager {
             } finally {
                 aiTracker.markAIComplete(aiName);
                 queuedOperations.remove(filename); // Remove from tracking when complete
-                // Check if this was the last file for this AI (handle all multi-file AIs)
-                boolean hasMoreFiles = queuedOperations.keySet().stream().anyMatch(f -> 
-                    f.startsWith(aiName.toLowerCase()) || 
-                    (aiName.equals("DQN") && (f.contains("dqn_") || f.contains("DQN_"))) ||
-                    (aiName.equals("A3C") && f.contains("a3c_")) ||
-                    (aiName.equals("LeelaZero") && f.contains("leela_")) ||
-                    (aiName.equals("Genetic") && f.contains("ga_"))
-                );
-                if (!hasMoreFiles && aiSaveInProgress.containsKey(aiName)) {
-                    aiSaveInProgress.get(aiName).set(false); // Mark AI save as complete
-                    logger.info("*** ASYNC I/O: {} atomic save completed - all files saved ***", aiName);
-                }
+                // Mark AI save as complete
+                saveInProgress.set(false);
+                logger.info("*** ASYNC I/O: {} atomic save completed - all files saved ***", aiName);
             }
         });
         
@@ -327,6 +336,13 @@ public class AsyncTrainingDataManager {
             return;
         }
         
+        // CRITICAL FIX: Always mark dirty when data is cached (training completion scenario)
+        if (dataCache.containsKey(filename)) {
+            logger.debug("*** ASYNC I/O: Marking {} dirty - data cached and needs save ***", filename);
+            dirtyFlags.computeIfAbsent(filename, k -> new AtomicBoolean()).set(true);
+            return;
+        }
+        
         // Only mark dirty if actual state changes occurred
         if (shouldMarkDirty()) {
             dirtyFlags.computeIfAbsent(filename, k -> new AtomicBoolean()).set(true);
@@ -334,9 +350,22 @@ public class AsyncTrainingDataManager {
     }
     
     private boolean shouldMarkDirty() {
+        // CRITICAL FIX: Allow saves when cached data exists (training stop scenario)
+        if (!dataCache.isEmpty()) {
+            logger.debug("State change check: cached data exists ({} items) - allowing save", dataCache.size());
+            return true;
+        }
+        
+        // CRITICAL FIX: Always allow saves during training stop to capture final episode data
+        if (coordinator.isExecutingFeature(AtomicFeatureCoordinator.AtomicFeature.TRAINING_STOP_SAVE)) {
+            logger.debug("State change check: TRAINING_STOP_SAVE active - forcing save to capture final data");
+            return true;
+        }
+        
         // Don't mark dirty for periodic saves if training has stopped
         // But allow shutdown and game reset saves
         if (trainingStopRequested && !coordinator.isShuttingDown()) {
+            logger.debug("*** TRAINING STOP: Blocking dirty mark - training stopped and not shutting down ***");
             return false;
         }
         
@@ -394,12 +423,13 @@ public class AsyncTrainingDataManager {
                     // Check if application is shutting down before expensive I/O
                     if (coordinator.isShuttingDown()) {
                         logger.info("*** ASYNC I/O: Training operation cancelled - application shutting down ***");
+                        activeIOOperations.decrementAndGet(); // CRITICAL FIX: Decrement on early return
                         return;
                     }
                     
-                    // Enhanced deduplication check
+                    // Enhanced deduplication check with memory safety
                     long currentTime = System.currentTimeMillis();
-                    int dataHash = data.hashCode();
+                    int dataHash = getDataHashSafely(data);
                     
                     Long lastTime = lastSaveTime.get(filename);
                     Integer lastHash = lastSaveHash.get(filename);
@@ -411,6 +441,10 @@ public class AsyncTrainingDataManager {
                         logger.debug("*** ASYNC I/O: Skipping duplicate save for {} (debounced) ***", filename);
                         return;
                     }
+                    
+                    // Update tracking
+                    lastSaveTime.put(filename, currentTime);
+                    lastSaveHash.put(filename, dataHash);
                     
                     // PERFORMANCE FIX: Reduce AlphaZero debounce to allow more frequent saves
                     if (filename.endsWith(".zip") && lastTime != null && !trainingStopRequested) {
@@ -431,6 +465,7 @@ public class AsyncTrainingDataManager {
                         // Check shutdown flag before expensive model save
                         if (coordinator.isShuttingDown()) {
                             logger.info("*** ASYNC I/O: DeepLearning4J training save cancelled - application shutting down ***");
+                            activeIOOperations.decrementAndGet(); // CRITICAL FIX: Decrement on early return
                             return;
                         }
                         saveDeepLearning4JModel(filename, data);
@@ -448,6 +483,7 @@ public class AsyncTrainingDataManager {
                         // Check shutdown flag before expensive serialization
                         if (coordinator.isShuttingDown()) {
                             logger.info("*** ASYNC I/O: Training serialization cancelled - application shutting down ***");
+                            activeIOOperations.decrementAndGet(); // CRITICAL FIX: Decrement on early return
                             return;
                         }
                         saveSerializableObject(filename, data);
@@ -512,8 +548,7 @@ public class AsyncTrainingDataManager {
         
         synchronized (fileLock) {
             try {
-                // Increment active operations counter at the start
-                activeIOOperations.incrementAndGet();
+                // NOTE: activeIOOperations already incremented in writeDataAsync
                 Path filePath = Paths.get(filename);
                 
                 // Create parent directories
@@ -540,6 +575,12 @@ public class AsyncTrainingDataManager {
                 
                 AsynchronousFileChannel channel = AsynchronousFileChannel.open(filePath, 
                     StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING);
+                
+                // OOM FIX: Check data size and use streaming for large objects
+                if (isLargeObject(dataSnapshot)) {
+                    saveLargeObjectStreaming(filename, dataSnapshot);
+                    return;
+                }
                 
                 // Serialize snapshot to byte array (compression disabled due to corruption issues)
                 java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
@@ -582,8 +623,7 @@ public class AsyncTrainingDataManager {
             } catch (Exception e) {
                 String aiName = filename.replace(".dat", "").replace("ga_models/", "");
                 logger.error("*** ASYNC I/O: {} save FAILED - {} ***", aiName, e.getMessage());
-                // Decrement on exception since completion handlers won't run
-                activeIOOperations.decrementAndGet();
+                // NOTE: activeIOOperations decremented in writeDataAsync exception handler
                 throw new RuntimeException("Serializable object save failed", e);
             }
         }
@@ -595,8 +635,7 @@ public class AsyncTrainingDataManager {
         
         synchronized (fileLock) {
             try {
-                // Increment active operations counter at the start
-                activeIOOperations.incrementAndGet();
+                // NOTE: activeIOOperations already incremented in writeDataAsync
                 // Check available memory before large model save
                 Runtime runtime = Runtime.getRuntime();
                 long freeMemory = runtime.freeMemory();
@@ -675,8 +714,7 @@ public class AsyncTrainingDataManager {
                 long fileSize = java.nio.file.Files.size(filePath);
                 logger.info("*** ASYNC I/O: {} model saved using ATOMIC FILE OPERATIONS ({} bytes) - CORRUPTION PROTECTED ***", aiName, fileSize);
                 
-                // Decrement on successful completion
-                activeIOOperations.decrementAndGet();
+                // NOTE: activeIOOperations decremented in writeDataAsync completion handler
                 
             } catch (Exception e) {
                 logger.error("*** ASYNC I/O: DeepLearning4J model save FAILED - {} ***", e.getMessage());
@@ -686,8 +724,7 @@ public class AsyncTrainingDataManager {
                 } catch (Exception cleanupEx) {
                     logger.debug("Failed to cleanup temp file: {}", cleanupEx.getMessage());
                 }
-                // Decrement on exception
-                activeIOOperations.decrementAndGet();
+                // NOTE: activeIOOperations decremented in writeDataAsync exception handler
                 throw new RuntimeException("DeepLearning4J atomic save failed", e);
             }
         }
@@ -754,44 +791,57 @@ public class AsyncTrainingDataManager {
             
             java.util.List<CompletableFuture<Void>> saveTasks = new java.util.ArrayList<>();
             
-            dirtyFlags.entrySet().parallelStream()
+            // CRITICAL FIX: Use sequential processing during shutdown to prevent race conditions
+            dirtyFlags.entrySet().stream()
                 .filter(entry -> entry.getValue().get())
                 .forEach(entry -> {
-                    // CRITICAL: Only skip files during application shutdown
-                    if (coordinator.isShuttingDown()) {
-                        logger.debug("*** ASYNC I/O: Processing dirty file {} during shutdown ***", entry.getKey());
-                    }
-                    
                     String filename = entry.getKey();
                     Object cachedData = dataCache.get(filename);
                     
                     if (cachedData != null) {
                         logger.info("*** ASYNC I/O: Flushing dirty file: {} ***", filename);
-                        CompletableFuture<Void> task = writeDataAsyncForShutdown(filename, cachedData)
-                            .thenRun(() -> {
-                                entry.getValue().set(false);
-                                // Clear cache after successful save to prevent memory leaks
-                                dataCache.remove(filename);
-                            });
-                        synchronized(saveTasks) {
-                            saveTasks.add(task);
+                        
+                        // CRITICAL FIX: Use synchronized save during shutdown to prevent corruption
+                        CompletableFuture<Void> task;
+                        if (coordinator.isShuttingDown()) {
+                            task = writeDataAsyncForShutdown(filename, cachedData);
+                        } else {
+                            task = writeDataAsync(filename, cachedData);
                         }
+                        
+                        task = task.thenRun(() -> {
+                            entry.getValue().set(false);
+                            // Clear cache after successful save to prevent memory leaks
+                            dataCache.remove(filename);
+                        });
+                        
+                        saveTasks.add(task);
                     } else {
                         logger.warn("*** ASYNC I/O: No cached data for dirty file: {} - marking clean ***", filename);
                         entry.getValue().set(false);
                     }
                 });
             
-            // PERFORMANCE FIX: Don't wait for completion, return the combined future
+            // Wait for all saves to complete during shutdown
             CompletableFuture<Void> allSaves = CompletableFuture.allOf(saveTasks.toArray(new CompletableFuture[0]));
             
-            // Log when all saves complete
-            allSaves.thenRun(() -> {
-                logger.info("*** ASYNC I/O: All dirty data flushed successfully ***");
-            }).exceptionally(ex -> {
-                logger.error("*** ASYNC I/O: Error flushing dirty data: {} ***", ex.getMessage());
-                return null;
-            });
+            // CRITICAL FIX: Block during shutdown to ensure all saves complete
+            if (coordinator.isShuttingDown()) {
+                try {
+                    allSaves.get(10, TimeUnit.SECONDS);
+                    logger.info("*** ASYNC I/O: All dirty data flushed successfully ***");
+                } catch (Exception e) {
+                    logger.error("*** ASYNC I/O: Error flushing dirty data: {} ***", e.getMessage());
+                }
+            } else {
+                // Non-blocking for normal operations
+                allSaves.thenRun(() -> {
+                    logger.info("*** ASYNC I/O: All dirty data flushed successfully ***");
+                }).exceptionally(ex -> {
+                    logger.error("*** ASYNC I/O: Error flushing dirty data: {} ***", ex.getMessage());
+                    return null;
+                });
+            }
         }, ioExecutor);
     }
     
@@ -818,7 +868,19 @@ public class AsyncTrainingDataManager {
      * Check if any async I/O operations are currently in progress
      */
     public boolean isIOInProgress() {
-        return activeIOOperations.get() > 0;
+        int activeOps = activeIOOperations.get();
+        logger.debug("*** ASYNC I/O: Active operations count: {} ***", activeOps);
+        return activeOps > 0;
+    }
+    
+    /**
+     * Reset active operations counter - used when training stops to prevent blocking
+     */
+    public void resetActiveOperationsCounter() {
+        int previousCount = activeIOOperations.getAndSet(0);
+        if (previousCount > 0) {
+            logger.info("*** ASYNC I/O: Reset active operations counter from {} to 0 ***", previousCount);
+        }
     }
     
     /**
@@ -1014,6 +1076,7 @@ public class AsyncTrainingDataManager {
         
         synchronized (fileLock) {
             try {
+                // NOTE: activeIOOperations already incremented in writeDataAsync
                 Path filePath = Paths.get(filename + ".gz");
                 if (filePath.getParent() != null) {
                     java.nio.file.Files.createDirectories(filePath.getParent());
@@ -1067,11 +1130,10 @@ public class AsyncTrainingDataManager {
                 
             } catch (Exception e) {
                 logger.error("*** ASYNC I/O: Q-table compression FAILED - {} ***", e.getMessage());
-                // Decrement on exception since completion handlers won't run
-                activeIOOperations.decrementAndGet();
+                // NOTE: activeIOOperations decremented in writeDataAsync exception handler
                 throw new RuntimeException("Q-table compression failed", e);
             } finally {
-                // Decrement moved to completion handlers
+                // NOTE: activeIOOperations decremented in completion handlers
             }
         }
     }
@@ -1189,7 +1251,7 @@ public class AsyncTrainingDataManager {
             buffer.flip();
             channel.close();
             
-            // Deserialize object (compression disabled)
+            // Deserialize object with compression support
             byte[] data = new byte[buffer.remaining()];
             buffer.get(data);
             
@@ -1205,6 +1267,60 @@ public class AsyncTrainingDataManager {
             String aiName = filename.replace(".dat", "").replace("ga_models/", "");
             logger.error("*** ASYNC I/O: {} load FAILED - {} ***", aiName, e.getMessage());
             return null;
+        }
+    }
+    
+    // MEMORY SAFETY: Get data info without toString() that could cause OOM
+    private String getDataInfo(Object data) {
+        if (data == null) return "null";
+        
+        if (data instanceof Map) {
+            Map<?, ?> map = (Map<?, ?>) data;
+            return "Map[" + map.size() + " entries]";
+        } else if (data instanceof java.util.Collection) {
+            java.util.Collection<?> collection = (java.util.Collection<?>) data;
+            return "Collection[" + collection.size() + " items]";
+        } else if (data.getClass().getName().contains("AlphaZeroSaveData")) {
+            return "AlphaZeroSaveData";
+        } else {
+            return data.getClass().getSimpleName();
+        }
+    }
+    
+    // MEMORY SAFETY: Use size-based hash for large collections
+    private int getDataHashSafely(Object data) {
+        if (data == null) return 0;
+        
+        if (data instanceof Map) {
+            Map<?, ?> map = (Map<?, ?>) data;
+            return map.size() * 31 + map.getClass().hashCode();
+        } else if (data instanceof java.util.Collection) {
+            java.util.Collection<?> collection = (java.util.Collection<?>) data;
+            return collection.size() * 31 + collection.getClass().hashCode();
+        } else {
+            return data.hashCode();
+        }
+    }
+    
+    // OOM FIX: Check if object is too large for direct buffer allocation
+    private boolean isLargeObject(Object data) {
+        if (data instanceof Map) {
+            Map<?, ?> map = (Map<?, ?>) data;
+            return map.size() > 10000; // Large maps like AlphaZero cache
+        }
+        return false;
+    }
+    
+    // OOM FIX: Stream large objects to avoid direct buffer allocation
+    private void saveLargeObjectStreaming(String filename, Object data) throws Exception {
+        Path filePath = Paths.get(filename);
+        Files.createDirectories(filePath.getParent());
+        
+        // Use traditional FileOutputStream to avoid direct buffer allocation
+        try (java.io.FileOutputStream fos = new java.io.FileOutputStream(filePath.toFile());
+             java.io.ObjectOutputStream oos = new java.io.ObjectOutputStream(fos)) {
+            oos.writeObject(data);
+            logger.info("*** ASYNC I/O: {} saved via streaming (large object) ***", filename);
         }
     }
 }

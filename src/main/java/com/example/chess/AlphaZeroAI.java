@@ -214,14 +214,14 @@ public class AlphaZeroAI {
                 
                 double trainingTimeMinutes = (endTime - startTime) / (1000.0 * 60.0);
                 
-                // CRITICAL FIX: Get latest episode count from neural network after training
-                int finalEpisodes = neuralNetwork.getTrainingEpisodes();
-                
                 logger.info("*** AlphaZero: Training completed successfully ***");
+                
+                // CRITICAL FIX: Get episode count BEFORE any potential clearing
+                int finalEpisodes = neuralNetwork.getTrainingEpisodes();
                 logger.info("Training statistics: {} episodes, {} minutes, {} episodes/min", 
                     finalEpisodes, String.format("%.1f", trainingTimeMinutes), String.format("%.1f", finalGames / Math.max(trainingTimeMinutes, 0.1)));
                 
-                // Provide effectiveness assessment using latest episodes count
+                // Provide effectiveness assessment using captured episodes count
                 assessTrainingEffectiveness(finalEpisodes);
                 
                 // Note: Neural network already saved by training service - no need to save again
@@ -300,7 +300,15 @@ public class AlphaZeroAI {
     }
     
     public int getTrainingEpisodes() {
-        return neuralNetwork.getTrainingEpisodes();
+        try {
+            // CRITICAL FIX: Get the most current episode count safely
+            int episodes = neuralNetwork.getTrainingEpisodes();
+            logger.debug("*** AlphaZero AI: Current episode count: {} ***", episodes);
+            return episodes;
+        } catch (Exception e) {
+            logger.warn("*** AlphaZero AI: Error getting episode count: {} ***", e.getMessage());
+            return 0;
+        }
     }
     
     public boolean isTrainingEffective() {

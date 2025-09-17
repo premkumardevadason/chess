@@ -53,6 +53,7 @@ public class AlphaZeroTrainingService {
                     // CRITICAL FIX: Increment episode counter for each completed game
                     if (neuralNetwork instanceof AlphaZeroNeuralNetwork) {
                         ((AlphaZeroNeuralNetwork) neuralNetwork).incrementEpisodes(1);
+                        logger.debug("*** AlphaZero Training: Episode {} completed, total now {} ***", completedGames, neuralNetwork.getTrainingEpisodes());
                     }
                     
                     // PERFORMANCE FIX: Train more frequently to prevent memory buildup
@@ -79,9 +80,17 @@ public class AlphaZeroTrainingService {
             neuralNetwork.train(trainingData);
         }
         
-        // TrainingManager handles training lifecycle saves - no need to save here
-        logger.info("*** AlphaZero Training: Completed with {} total episodes (TrainingManager will handle save) ***", neuralNetwork.getTrainingEpisodes());
+        // CRITICAL FIX: Force final save to ensure episode data is persisted
+        try {
+            if (neuralNetwork instanceof AlphaZeroNeuralNetwork) {
+                ((AlphaZeroNeuralNetwork) neuralNetwork).saveModel();
+                logger.info("*** AlphaZero Training: Final model save completed ***");
+            }
+        } catch (Exception e) {
+            logger.error("*** AlphaZero Training: Failed to save final model: {} ***", e.getMessage());
+        }
         
+        logger.info("*** AlphaZero Training: Completed with {} total episodes ***", neuralNetwork.getTrainingEpisodes());
         logger.info("*** AlphaZero Training: Completed {} games, Total episodes: {} ***", 
             completedGames, neuralNetwork.getTrainingEpisodes());
     }

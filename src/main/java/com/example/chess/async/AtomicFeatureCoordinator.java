@@ -23,6 +23,10 @@ public class AtomicFeatureCoordinator {
         return activeFeature.get() == AtomicFeature.SHUTDOWN;
     }
     
+    public boolean isExecutingFeature(AtomicFeature feature) {
+        return activeFeature.get() == feature;
+    }
+    
     public CompletableFuture<Void> executeAtomicFeature(AtomicFeature feature, Runnable operation) {
         // PERFORMANCE FIX: Only use write lock for SHUTDOWN to prevent blocking during saves
         if (feature == AtomicFeature.SHUTDOWN) {

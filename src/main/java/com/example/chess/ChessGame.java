@@ -3313,8 +3313,11 @@ public class ChessGame {
             logger.warn("TrainingManager is null - cannot stop training");
         }
         
-        // Reset board to fresh game state after training
-        if (isQLearningEnabled() && qLearningAI != null) {
+        // CRITICAL FIX: Reset async I/O counter to prevent training restart blocking
+        resetAsyncIOCounter();
+        
+        // Reset board to fresh game state after training (only if not shutting down)
+        if (!ChessApplication.shutdownInProgress && isQLearningEnabled() && qLearningAI != null) {
             logger.info("*** Resetting board to fresh state after Q-Learning training ***");
             initializeBoard();
             whiteTurn = true;
@@ -3326,7 +3329,8 @@ public class ChessGame {
             broadcastGameState();
         }
         
-        if (trainingManager != null) {
+        // CRITICAL FIX: Don't trigger additional saves during shutdown
+        if (!ChessApplication.shutdownInProgress && trainingManager != null) {
             trainingManager.saveOnGameReset(this);
         }
     }
@@ -3582,130 +3586,31 @@ public class ChessGame {
         // Set the shutdown flag to prevent duplicate shutdown
         ChessApplication.shutdownInProgress = true;
         
-        logger.info("*** CHESS APPLICATION SHUTDOWN INITIATED - SAVING ALL TRAINING DATA ***");
+        logger.info("*** CHESS APPLICATION SHUTDOWN INITIATED - DELEGATING TO ASYNC MANAGER ***");
         
         try {
             // CRITICAL FIX: Process current game data for AI learning before shutdown
             logger.info("*** SHUTDOWN: Checking moveHistory.size() = {} ***", moveHistory.size());
             if (moveHistory.size() > 0) {
                 logger.info("*** PROCESSING CURRENT GAME DATA FOR AI LEARNING BEFORE SHUTDOWN ***");
-                logger.info("*** ADDING USER GAME HISTORY TO ALL ENABLED AI SYSTEMS ***");
                 processGameDataForAILearning();
-                logger.info("*** USER GAME HISTORY PROCESSING COMPLETE - NOW SAVING AI STATES ***");
+                logger.info("*** USER GAME HISTORY PROCESSING COMPLETE ***");
             } else {
                 logger.info("*** NO MOVES IN CURRENT GAME - SKIPPING USER GAME HISTORY PROCESSING ***");
             }
             
-            // Stop training first with timeout
+            // Stop training first
             stopTraining();
+            
+            // CRITICAL FIX: Let AsyncTrainingDataManager handle all saves during shutdown
+            // This prevents multiple concurrent save operations that cause data corruption
+            logger.info("*** DELEGATING ALL SHUTDOWN SAVES TO ASYNC MANAGER ***");
             
             // Give training threads time to stop gracefully
             Thread.sleep(1000);
             
-            // AlphaZero and LeelaZero training will stop when threads are interrupted
-            logger.info("*** AlphaZero and LeelaZero: Training will stop via thread interruption ***");
-            
-            // CRITICAL: Save all training data before shutdown - comprehensive save
-            logger.info("*** SAVING ALL AI TRAINING DATA TO DISK ***");
-            
-            // Save Q-Learning data
-            if (isQLearningEnabled()) {
-                try {
-                    qLearningAI.saveQTable();
-                    logger.info("Q-Learning: Training data saved successfully");
-                } catch (Exception e) {
-                    logger.error("Q-Learning: Failed to save training data - {}", e.getMessage());
-                }
-            }
-            
-            // Save Deep Learning models
-            if (isDeepLearningEnabled()) {
-                try {
-                    deepLearningAI.saveModelNow();
-                    logger.info("Deep Learning: Model saved successfully");
-                } catch (Exception e) {
-                    logger.error("Deep Learning: Failed to save model - {}", e.getMessage());
-                }
-            }
-            
-            // Save CNN Deep Learning models
-            if (isDeepLearningCNNEnabled()) {
-                try {
-                    deepLearningCNNAI.saveModelNow();
-                    logger.info("CNN Deep Learning: Model saved successfully");
-                } catch (Exception e) {
-                    logger.error("CNN Deep Learning: Failed to save model - {}", e.getMessage());
-                }
-            }
-            
-            // Save DQN data
-            if (isDQNEnabled()) {
-                try {
-                    dqnAI.saveModels();
-                    dqnAI.saveExperiences();
-                    logger.info("DQN: Models and experiences saved successfully");
-                } catch (Exception e) {
-                    logger.error("DQN: Failed to save training data - {}", e.getMessage());
-                }
-            }
-            
-            // Save AlphaZero neural network
-            if (isAlphaZeroEnabled()) {
-                try {
-                    alphaZeroAI.saveNeuralNetwork();
-                    logger.info("AlphaZero: Neural network saved successfully");
-                } catch (Exception e) {
-                    logger.error("AlphaZero: Failed to save neural network - {}", e.getMessage());
-                }
-            }
-            
-            // Save LeelaZero state
-            if (isLeelaZeroEnabled()) {
-                try {
-                    leelaZeroAI.saveState();
-                    logger.info("LeelaZero: State saved successfully");
-                } catch (Exception e) {
-                    logger.error("LeelaZero: Failed to save state - {}", e.getMessage());
-                }
-            }
-            
-            // Save Genetic Algorithm population
-            if (isGeneticEnabled()) {
-                try {
-                    geneticAI.savePopulation();
-                    logger.info("Genetic Algorithm: Population saved successfully");
-                } catch (Exception e) {
-                    logger.error("Genetic Algorithm: Failed to save population - {}", e.getMessage());
-                }
-            }
-            
-            // Save AlphaFold3 state
-            if (isAlphaFold3Enabled()) {
-                try {
-                    alphaFold3AI.saveState();
-                    logger.info("AlphaFold3: State saved successfully");
-                } catch (Exception e) {
-                    logger.error("AlphaFold3: Failed to save state - {}", e.getMessage());
-                }
-            }
-            
-            // Save A3C state
-            if (isA3CEnabled()) {
-                try {
-                    a3cAI.shutdown(); // A3C handles its own saving in shutdown
-                    logger.info("A3C: State saved successfully");
-                } catch (Exception e) {
-                    logger.error("A3C: Failed to save state - {}", e.getMessage());
-                }
-            }
-            
-            logger.info("*** ALL TRAINING DATA SAVED SUCCESSFULLY ***");
-            
-            // Give additional time for file I/O to complete
-            Thread.sleep(500);
-            
         } catch (Exception e) {
-            logger.error("Error during training data save: {}", e.getMessage());
+            logger.error("Error during shutdown preparation: {}", e.getMessage());
         }
         
         // Shutdown TrainingManager first to stop periodic save thread
@@ -3713,57 +3618,45 @@ public class ChessGame {
             trainingManager.shutdown();
         }
         
-        // Shutdown all AI systems gracefully (only enabled AIs)
+        // CRITICAL FIX: Only stop AI systems, don't trigger individual saves
+        // All saves are handled by AsyncTrainingDataManager.shutdown()
         try {
-            if (isQLearningEnabled()) {
-                qLearningAI.shutdown();
-            }
-            if (isDeepLearningEnabled()) {
-                deepLearningAI.shutdown();
-            }
-            if (isDeepLearningCNNEnabled()) {
-                deepLearningCNNAI.shutdown();
-            }
-            if (isDQNEnabled()) {
-                dqnAI.shutdown();
-            }
-            
-            // Stop threaded AIs
             if (isMCTSEnabled()) {
                 mctsAI.stopThinking();
             }
             if (isAlphaZeroEnabled()) {
-                logger.info("*** AlphaZero: Shutting down ***");
-                alphaZeroAI.shutdown();
+                logger.info("*** AlphaZero: Shutting down (no individual save) ***");
+                alphaZeroAI.stopTraining(); // Only stop, don't save
             }
             if (isNegamaxEnabled()) {
                 negamaxAI.clearCache();
             }
             if (isLeelaZeroEnabled()) {
-                logger.info("*** LeelaZero: Shutting down ***");
-                leelaZeroAI.shutdown(); // Proper shutdown with thread cleanup
+                logger.info("*** LeelaZero: Shutting down (no individual save) ***");
+                leelaZeroAI.stopTraining(); // Only stop, don't save
             }
-            
             if (isGeneticEnabled()) {
-                logger.info("*** Genetic Algorithm: Shutting down ***");
-                geneticAI.stopTraining(); // Ensure training is stopped and saved
+                logger.info("*** Genetic Algorithm: Shutting down (no individual save) ***");
+                geneticAI.stopTraining(); // Only stop, don't save
             }
-            
             if (isAlphaFold3Enabled()) {
-                logger.info("*** AlphaFold3: Shutting down ***");
-                alphaFold3AI.shutdown();
+                logger.info("*** AlphaFold3: Shutting down (no individual save) ***");
+                alphaFold3AI.stopTraining(); // Only stop, don't save
+            }
+            if (isA3CEnabled()) {
+                logger.info("*** A3C: Shutting down (no individual save) ***");
+                a3cAI.stopTraining(); // Only stop, don't save
             }
             
-            if (isA3CEnabled()) {
-                logger.info("*** A3C: Shutting down ***");
-                a3cAI.shutdown();
-            }
+            // CRITICAL FIX: Don't call individual AI shutdown methods that trigger saves
+            // Let AsyncTrainingDataManager handle all saves atomically
             
         } catch (Exception e) {
             logger.error("Error during AI system shutdown: {}", e.getMessage());
         }
         
-        logger.info("*** CHESS APPLICATION SHUTDOWN COMPLETE (11 AI SYSTEMS) ***");
+        logger.info("*** CHESS APPLICATION SHUTDOWN COMPLETE (saves delegated to AsyncTrainingDataManager) ***");
+        logger.info("*** NOTE: Final saves will be handled by AsyncTrainingDataManager.shutdown() ***");
     }
     
     public boolean deleteAllTrainingData() {
@@ -3947,12 +3840,30 @@ public class ChessGame {
             Object asyncManager = ChessApplication.getAsyncManager();
             if (asyncManager != null) {
                 java.lang.reflect.Method isIOInProgressMethod = asyncManager.getClass().getMethod("isIOInProgress");
-                return (Boolean) isIOInProgressMethod.invoke(asyncManager);
+                boolean inProgress = (Boolean) isIOInProgressMethod.invoke(asyncManager);
+                logger.debug("*** ASYNC I/O STATUS CHECK: inProgress={} ***", inProgress);
+                return inProgress;
             }
         } catch (Exception e) {
             logger.debug("Could not check async I/O status: {}", e.getMessage());
         }
         return false; // Default to false if we can't determine status
+    }
+    
+    /**
+     * Reset async I/O operations counter to prevent training restart blocking
+     */
+    private void resetAsyncIOCounter() {
+        try {
+            Object asyncManager = ChessApplication.getAsyncManager();
+            if (asyncManager != null) {
+                java.lang.reflect.Method resetMethod = asyncManager.getClass().getMethod("resetActiveOperationsCounter");
+                resetMethod.invoke(asyncManager);
+                logger.info("*** ASYNC I/O: Operations counter reset to prevent training restart blocking ***");
+            }
+        } catch (Exception e) {
+            logger.debug("Could not reset async I/O counter: {}", e.getMessage());
+        }
     }
     
     public int[] getKingInCheckPosition() {
