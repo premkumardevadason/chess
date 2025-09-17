@@ -437,7 +437,13 @@ public class AsyncTrainingDataManager {
                         return;
                     }
                     
-                    // Handle Java serializable objects (like GeneticAlgorithm population)
+                    // Handle Q-table with compression
+                    if (filename.contains("qtable")) {
+                        saveQTableCompressed(filename, data);
+                        return;
+                    }
+                    
+                    // Handle Java serializable objects (like GeneticAlgorithm population and AlphaZero cache)
                     if (data instanceof java.io.Serializable && !data.getClass().equals(String.class)) {
                         // Check shutdown flag before expensive serialization
                         if (coordinator.isShuttingDown()) {
@@ -506,6 +512,8 @@ public class AsyncTrainingDataManager {
         
         synchronized (fileLock) {
             try {
+                // Increment active operations counter at the start
+                activeIOOperations.incrementAndGet();
                 Path filePath = Paths.get(filename);
                 
                 // Create parent directories
@@ -577,8 +585,6 @@ public class AsyncTrainingDataManager {
                 // Decrement on exception since completion handlers won't run
                 activeIOOperations.decrementAndGet();
                 throw new RuntimeException("Serializable object save failed", e);
-            } finally {
-                // Decrement moved to completion handlers
             }
         }
     }
@@ -589,6 +595,8 @@ public class AsyncTrainingDataManager {
         
         synchronized (fileLock) {
             try {
+                // Increment active operations counter at the start
+                activeIOOperations.incrementAndGet();
                 // Check available memory before large model save
                 Runtime runtime = Runtime.getRuntime();
                 long freeMemory = runtime.freeMemory();
@@ -667,6 +675,9 @@ public class AsyncTrainingDataManager {
                 long fileSize = java.nio.file.Files.size(filePath);
                 logger.info("*** ASYNC I/O: {} model saved using ATOMIC FILE OPERATIONS ({} bytes) - CORRUPTION PROTECTED ***", aiName, fileSize);
                 
+                // Decrement on successful completion
+                activeIOOperations.decrementAndGet();
+                
             } catch (Exception e) {
                 logger.error("*** ASYNC I/O: DeepLearning4J model save FAILED - {} ***", e.getMessage());
                 // Clean up temporary file if it exists
@@ -675,9 +686,9 @@ public class AsyncTrainingDataManager {
                 } catch (Exception cleanupEx) {
                     logger.debug("Failed to cleanup temp file: {}", cleanupEx.getMessage());
                 }
-                throw new RuntimeException("DeepLearning4J atomic save failed", e);
-            } finally {
+                // Decrement on exception
                 activeIOOperations.decrementAndGet();
+                throw new RuntimeException("DeepLearning4J atomic save failed", e);
             }
         }
     }
