@@ -75,8 +75,6 @@ jobs:
 
       - name: OWASP Dependency Check (CHESS Backend)
         uses: dependency-check/Dependency-Check_Action@main
-        env:
-          JAVA_HOME: ''
         with:
           project: "chess-ai-mcp-server"
           path: "."
@@ -86,6 +84,7 @@ jobs:
             --enableExperimental
             --exclude "**/target/**"
             --exclude "**/state/**"
+            --disableJar
 
       - name: Setup Node.js for Frontend Audit
         uses: actions/setup-node@v4

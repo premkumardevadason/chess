@@ -46,7 +46,7 @@ export class ErrorBoundary extends Component<Props, State> {
     console.error('Chess Error Boundary caught an error:', error, errorInfo);
     
     // Send to error tracking service
-    if (window.Sentry) {
+    if ((window as any).Sentry) {
       (window as any).Sentry.captureException(error, {
         contexts: {
           react: {
@@ -97,7 +97,7 @@ export class ErrorBoundary extends Component<Props, State> {
               </button>
             </div>
             
-            {process.env.NODE_ENV === 'development' && this.state.error && (
+            {(process as any).env.NODE_ENV === 'development' && this.state.error && (
               <details className="mt-6 text-left">
                 <summary className="cursor-pointer text-sm text-gray-500 hover:text-gray-700">
                   Error Details (Development)
