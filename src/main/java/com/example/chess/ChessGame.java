@@ -1163,7 +1163,7 @@ public class ChessGame {
                             String piece = board[move[0]][move[1]];
                             if (move[2] == attacker[0] && move[3] == attacker[1]) {
                                 if (isValidMove(move[0], move[1], move[2], move[3])) {
-                                    System.out.println("CAPTURE VALUABLE ATTACKER: " + piece + " captures " + attackerPiece + " (" + attackerValue + ") threatening Queen");
+                                    logger.debug("CAPTURE VALUABLE ATTACKER: {} captures {} ({}) threatening Queen", piece, attackerPiece, attackerValue);
                                     criticalDefenseMove = move;
                                     break;
                                 }
@@ -2855,11 +2855,11 @@ public class ChessGame {
         List<int[]> attackers = findAttackersOfSquare(piecePos[0], piecePos[1], true);
         
         if (attackers.isEmpty()) {
-            System.out.println("ERROR: Queen protection called but no attackers found!");
+            logger.debug("ERROR: Queen protection called but no attackers found!");
             return null;
         }
         
-        System.out.println("Queen at [" + piecePos[0] + "," + piecePos[1] + "] is attacked by " + attackers.size() + " piece(s)");
+        logger.debug("Queen at [{},{}] is attacked by {} piece(s)", piecePos[0], piecePos[1], attackers.size());
         
         List<int[]> moves = getAllValidMoves(false);
         
@@ -2873,12 +2873,12 @@ public class ChessGame {
                         String piece = board[move[0]][move[1]];
                         String captured = board[move[2]][move[3]];
                         
-                        System.out.println("FOUND LEGAL CAPTURE: " + piece + " can capture attacker " + captured + " at [" + attacker[0] + "," + attacker[1] + "]");
+                        logger.debug("FOUND LEGAL CAPTURE: {} can capture attacker {} at [{},{}]", piece, captured, attacker[0], attacker[1]);
                         return move;
                     } else {
                         String piece = board[move[0]][move[1]];
                         String captured = board[move[2]][move[3]];
-                        System.out.println("REJECTED ILLEGAL CAPTURE: " + piece + " capturing " + captured + " would expose King to check");
+                        logger.debug("REJECTED ILLEGAL CAPTURE: {} capturing {} would expose King to check", piece, captured);
                     }
                 }
             }
@@ -2904,11 +2904,11 @@ public class ChessGame {
                     board[move[2]][move[3]] = captured;
                     
                     if (queenSafeAtNewPos) {
-                        System.out.println("QUEEN ESCAPE: Moving Queen to safe square [" + move[2] + "," + move[3] + "]");
+                        logger.debug("QUEEN ESCAPE: Moving Queen to safe square [{},{}]", move[2], move[3]);
                         return move;
                     }
                 } else {
-                    System.out.println("REJECTED ILLEGAL QUEEN MOVE: Would expose King to check");
+                    logger.debug("REJECTED ILLEGAL QUEEN MOVE: Would expose King to check");
                 }
             }
         }
@@ -2933,17 +2933,17 @@ public class ChessGame {
                     if (!queenStillThreatened) {
                         // CRITICAL: Validate blocking move is legal
                         if (isValidMove(move[0], move[1], move[2], move[3])) {
-                            System.out.println("QUEEN PROTECTION BY BLOCKING: " + piece + " blocks attack from " + attackerPiece);
+                            logger.debug("QUEEN PROTECTION BY BLOCKING: {} blocks attack from {}", piece, attackerPiece);
                             return move;
                         } else {
-                            System.out.println("REJECTED ILLEGAL BLOCK: Would expose King to check");
+                            logger.debug("REJECTED ILLEGAL BLOCK: Would expose King to check");
                         }
                     }
                 }
             }
         }
         
-        System.out.println("NO QUEEN PROTECTION FOUND - Queen may be lost!");
+        logger.debug("NO QUEEN PROTECTION FOUND - Queen may be lost!");
         return null;
     }
     
