@@ -40,7 +40,7 @@ jobs:
 
       - name: Run CHESS Unit Tests
         run: |
-          mvn test -Dtest="Chess*Test,com.example.chess.unit.**,com.example.chess.mcp.**"
+          mvn test -Dtest="Chess*Test,com.example.chess.unit.**,com.example.chess.mcp.**" -Dspring.profiles.active=test
           echo "✅ CHESS AI and MCP tests completed"
 
       - name: Setup Node.js ${{ env.NODE_VERSION }}
