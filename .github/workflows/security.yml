@@ -95,8 +95,12 @@ jobs:
       - name: CHESS AI Model Security Check
         run: |
           echo "🔍 Checking CHESS AI training data security..."
-          find state/ -name "*.zip" -size +100M -exec echo "⚠️ Large AI model detected: {}" \;
-          find state/ -name "*.dat" -size +50M -exec echo "⚠️ Large training data detected: {}" \;
+          if [ -d "state/" ]; then
+            find state/ -name "*.zip" -size +100M -exec echo "⚠️ Large AI model detected: {}" \; || true
+            find state/ -name "*.dat" -size +50M -exec echo "⚠️ Large training data detected: {}" \; || true
+          else
+            echo "ℹ️ No AI training data directory found (likely in .gitignore)"
+          fi
           echo "✅ CHESS AI model security check completed"
 
   codeql-analysis:
