@@ -5,6 +5,10 @@ on:
     branches: [ "main" ]
   push:
     branches: [ "main" ]
+    paths-ignore:
+      - '.github/workflows/**'
+      - '*.md'
+      - 'docs/**'
 
 jobs:
   build-and-test:
