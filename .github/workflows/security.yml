@@ -28,7 +28,7 @@ jobs:
           distribution: 'temurin'
 
       - name: Build & Test Backend
-        run: mvn clean compile
+        run: mvn clean compile -DskipTests
 
       # Setup Node for React frontend
       - name: Setup Node.js
