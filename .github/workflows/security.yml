@@ -175,9 +175,11 @@ jobs:
           echo "🔍 Checking AI training data security..."
           if [ -d "state/" ]; then
             echo "📊 AI training data directory exists"
+            find state/ -name "*.zip" -size +100M -exec echo "⚠️ Large AI model detected: {}" \; || true
+            find state/ -name "*.dat" -size +50M -exec echo "⚠️ Large training data detected: {}" \; || true
             ls -la state/ | head -10
           else
-            echo "ℹ️ No AI training data directory found"
+            echo "ℹ️ No AI training data directory found (likely in .gitignore)"
           fi
           echo "✅ AI data security check completed"
 
