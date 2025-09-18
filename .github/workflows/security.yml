@@ -1,0 +1,89 @@
+name: Security & Build Checks
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build-and-test:
+    name: Build & Test (Java + React)
+    runs-on: ubuntu-latest
+
+    steps:
+      # Checkout repo
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Setup Java for Spring Boot backend
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Build & Test Backend
+        run: mvn clean verify --file backend/pom.xml
+
+      # Setup Node for React frontend
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install & Test Frontend
+        run: |
+          cd frontend
+          npm ci
+          npm test -- --watchAll=false
+
+  dependency-scan:
+    name: Dependency Vulnerability Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Scan Java (Maven) dependencies
+      - name: OWASP Dependency Check
+        uses: dependency-check/Dependency-Check_Action@main
+        with:
+          project: "chess-backend"
+          path: "./backend"
+          format: "ALL"
+
+      # Scan Node (frontend) dependencies
+      - name: npm Audit
+        run: |
+          cd frontend
+          npm audit --audit-level=moderate
+
+  codeql-analysis:
+    name: CodeQL Static Analysis
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [ 'java', 'javascript' ]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+
+      - name: Build
+        run: |
+          if [ -f "./backend/pom.xml" ]; then mvn clean compile --file backend/pom.xml; fi
+          if [ -f "./frontend/package.json" ]; then cd frontend && npm install; fi
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
