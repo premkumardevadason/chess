@@ -24,7 +24,7 @@ jobs:
           distribution: 'temurin'
 
       - name: Build & Test Backend
-        run: mvn clean verify --file backend/pom.xml
+        run: mvn clean verify
 
       # Setup Node for React frontend
       - name: Setup Node.js
@@ -50,7 +50,7 @@ jobs:
         uses: dependency-check/Dependency-Check_Action@main
         with:
           project: "chess-backend"
-          path: "./backend"
+          path: "."
           format: "ALL"
 
       # Scan Node (frontend) dependencies
@@ -82,7 +82,7 @@ jobs:
 
       - name: Build
         run: |
-          if [ -f "./backend/pom.xml" ]; then mvn clean compile --file backend/pom.xml; fi
+          if [ -f "./pom.xml" ]; then mvn clean compile; fi
           if [ -f "./frontend/package.json" ]; then cd frontend && npm install; fi
 
       - name: Perform CodeQL Analysis
