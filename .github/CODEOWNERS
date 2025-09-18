@@ -1,0 +1,18 @@
+# CODEOWNERS for premkumardevadason/chess
+# Automatically assigns reviewers for PRs and security advisories.
+
+# Entire repository
+*   @premkumardevadason
+
+# Backend (Spring Boot)
+backend/**   @premkumardevadason
+
+# Frontend (React/JS)
+frontend/**  @premkumardevadason
+
+# AI Engines integration
+engines/**   @premkumardevadason
+
+# Docs and policies
+SECURITY.md  @premkumardevadason
+CODEOWNERS   @premkumardevadason
