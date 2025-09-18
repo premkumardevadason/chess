@@ -162,12 +162,17 @@ public class MCPInputValidator {
     }
     
     private boolean isValidSessionId(String sessionId) {
-        return sessionId != null && sessionId.matches("^chess-session-[a-zA-Z0-9-]+$");
+        if (sessionId == null) return false;
+        // Accept both chess-session-* format and UUID format
+        return sessionId.matches("^chess-session-[a-zA-Z0-9-]+$") || 
+               sessionId.matches("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
     }
     
     private boolean isValidMoveFormat(String move) {
         if (move == null) return false;
-        // Accept only UCI format (e.g., e2e4, g1f3, e7e8q for promotion)
-        return move.matches("^[a-h][1-8][a-h][1-8][qrbn]?$");
+        // Accept both algebraic notation (e4, Nf3, O-O) and UCI format (e2e4, g1f3)
+        return move.matches("^[a-h][1-8][a-h][1-8][qrbn]?$") ||  // UCI format
+               move.matches("^[KQRBN]?[a-h]?[1-8]?x?[a-h][1-8](=[QRBN])?[+#]?$") || // Algebraic
+               move.matches("^O-O(-O)?[+#]?$"); // Castling
     }
 }

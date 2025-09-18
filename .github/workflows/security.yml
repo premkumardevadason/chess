@@ -20,7 +20,7 @@ jobs:
   build-and-test:
     name: Build & Test CHESS Application
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 10
 
     steps:
       - name: Checkout code
@@ -60,7 +60,7 @@ jobs:
   security-scan:
     name: CHESS Security Vulnerability Scan
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
     
     steps:
       - name: Checkout code
@@ -75,6 +75,8 @@ jobs:
 
       - name: OWASP Dependency Check (CHESS Backend)
         uses: dependency-check/Dependency-Check_Action@main
+        env:
+          JAVA_HOME: ''
         with:
           project: "chess-ai-mcp-server"
           path: "."
@@ -108,7 +110,7 @@ jobs:
   codeql-analysis:
     name: CHESS CodeQL Security Analysis
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 10
     permissions:
       actions: read
       contents: read
@@ -163,7 +165,7 @@ jobs:
   chess-specific-security:
     name: CHESS-Specific Security Checks
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     
     steps:
       - name: Checkout code

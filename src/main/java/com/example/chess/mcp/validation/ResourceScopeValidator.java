@@ -61,7 +61,12 @@ public class ResourceScopeValidator {
     }
     
     private boolean isValidResourceUri(String uri) {
-        return uri != null && uri.startsWith("chess://") && !uri.contains("..") && !uri.contains("//");
+        if (uri == null || !uri.startsWith("chess://")) {
+            return false;
+        }
+        // Allow chess:// but prevent path traversal and double slashes after the protocol
+        String path = uri.substring(8); // Remove "chess://"
+        return !path.contains("..") && !path.contains("//");
     }
     
     private AccessValidationResult validateGameSessionAccess(String agentId, String resourceUri) {
