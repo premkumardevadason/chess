@@ -2,7 +2,8 @@ import React from 'react';
 import useChessStore from '@/stores/chessStore';
 
 export const ChessBoardTest: React.FC = () => {
-  const { gameState } = useChessStore();
+  const store = useChessStore();
+  const gameState = (store as any).gameState || store;
 
   return (
     <div className="p-4 border border-gray-300 rounded">

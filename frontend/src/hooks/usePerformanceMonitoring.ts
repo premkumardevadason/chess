@@ -32,7 +32,7 @@ export const usePerformanceMonitoring = () => {
       // First Input Delay
       const fidObserver = new PerformanceObserver((list) => {
         for (const entry of list.getEntries()) {
-          const fid = entry.processingStart - entry.startTime;
+          const fid = (entry as any).processingStart - entry.startTime;
           // FID measured
         }
       });
