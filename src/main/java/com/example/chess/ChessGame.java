@@ -1133,7 +1133,7 @@ public class ChessGame {
                             if (!"♛".equals(piece) && move[2] == attacker[0] && move[3] == attacker[1]) {
                                 if (isValidMove(move[0], move[1], move[2], move[3])) {
                                     String attackerPiece = board[attacker[0]][attacker[1]];
-                                    System.out.println("PINNED QUEEN DEFENSE: " + piece + " captures " + attackerPiece + " threatening pinned Queen");
+                                    logger.debug("PINNED QUEEN DEFENSE: {} captures {} threatening pinned Queen", piece, attackerPiece);
                                     criticalDefenseMove = move;
                                     break;
                                 }
@@ -1191,11 +1191,11 @@ public class ChessGame {
                                 board[move[2]][move[3]] = captured;
                                 
                                 if (queenSafeAtDestination) {
-                                    System.out.println("QUEEN ESCAPE: Moving Queen to safety [" + move[2] + "," + move[3] + "]");
+                                    logger.debug("QUEEN ESCAPE: Moving Queen to safety [{},{}]", move[2], move[3]);
                                     criticalDefenseMove = move;
                                     break;
                                 } else {
-                                    System.out.println("QUEEN ESCAPE REJECTED: [" + move[2] + "," + move[3] + "] still under attack");
+                                    logger.debug("QUEEN ESCAPE REJECTED: [{},{}] still under attack", move[2], move[3]);
                                 }
                             }
                         }
@@ -1234,7 +1234,7 @@ public class ChessGame {
                                 if (move[2] == attacker[0] && move[3] == attacker[1]) {
                                     if (isValidMove(move[0], move[1], move[2], move[3])) {
                                         String attackerPiece = board[attacker[0]][attacker[1]];
-                                        System.out.println("DESPERATE CAPTURE: " + piece + " captures " + attackerPiece + " - Queen has no escape");
+                                        logger.debug("DESPERATE CAPTURE: {} captures {} - Queen has no escape", piece, attackerPiece);
                                         criticalDefenseMove = move;
                                         break;
                                     }
@@ -1932,7 +1932,7 @@ public class ChessGame {
             if (!isFlipFlopMove(move) || ChessTacticalDefense.wouldRemoveCriticalDefense(board, move)) {
                 filteredMoves.add(move);
             } else {
-                System.out.println("FLIP-FLOP FILTERED: " + formatMoveKey(move));
+                logger.debug("FLIP-FLOP FILTERED: {}", formatMoveKey(move));
             }
         }
         if (filteredMoves.isEmpty()) {
@@ -2311,7 +2311,7 @@ public class ChessGame {
                 if (move[2] == whiteKingPos[0] && move[3] == whiteKingPos[1]) {
                     if (isValidMove(move[0], move[1], move[2], move[3])) {
                         String piece = board[move[0]][move[1]];
-                        System.out.println("CHECKMATE OPPORTUNITY: " + piece + " can capture White King!");
+                        logger.debug("CHECKMATE OPPORTUNITY: {} can capture White King!", piece);
                         return move;
                     }
                 }
@@ -2326,7 +2326,7 @@ public class ChessGame {
                 if (move[2] == whiteQueenPos[0] && move[3] == whiteQueenPos[1]) {
                     if (isValidMove(move[0], move[1], move[2], move[3])) {
                         String piece = board[move[0]][move[1]];
-                        System.out.println("CRITICAL: " + piece + " can capture White Queen!");
+                        logger.debug("CRITICAL: {} can capture White Queen!", piece);
                         return move;
                     }
                 }
@@ -2336,7 +2336,7 @@ public class ChessGame {
         // PRIORITY 2: Protect Black Queen
         int[] blackQueenPos = findPiecePosition("♛");
         if (blackQueenPos != null && isSquareUnderAttack(blackQueenPos[0], blackQueenPos[1], true)) {
-            System.out.println("CRITICAL: Black Queen under attack!");
+            logger.debug("CRITICAL: Black Queen under attack!");
             int[] protection = findProtectionMove(blackQueenPos);
             if (protection != null) {
                 return protection;
@@ -2349,7 +2349,7 @@ public class ChessGame {
             for (int i = 0; i < 8; i++) {
                 for (int j = 0; j < 8; j++) {
                     if (pieceType.equals(board[i][j]) && isSquareUnderAttack(i, j, true)) {
-                        System.out.println("CRITICAL: Black " + pieceType + " under attack at [" + i + "," + j + "]!");
+                        logger.debug("CRITICAL: Black {} under attack at [{},{}]!", pieceType, i, j);
                         int[] protection = findPieceProtectionMove(new int[]{i, j}, pieceType);
                         if (protection != null) {
                             return protection;

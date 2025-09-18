@@ -4,8 +4,11 @@ import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 public class AICompletionTracker {
+    private static final Logger logger = LogManager.getLogger(AICompletionTracker.class);
     private final Map<String, AtomicBoolean> aiActiveStatus = new ConcurrentHashMap<>();
     
     public AICompletionTracker() {
@@ -46,7 +49,7 @@ public class AICompletionTracker {
                 // Log which AIs are still active after timeout
                 aiActiveStatus.entrySet().stream()
                     .filter(e -> e.getValue().get())
-                    .forEach(e -> System.out.println("*** AI still active after timeout: " + e.getKey() + " ***"));
+                    .forEach(e -> logger.debug("*** AI still active after timeout: {} ***", e.getKey()));
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();

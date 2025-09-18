@@ -88,12 +88,11 @@ public class ChessApplication {
         Thread shutdownHook = new Thread(() -> {
             if (!shutdownInProgress && chessGame != null) {
                 shutdownInProgress = true;
-                System.out.println("*** JVM SHUTDOWN HOOK TRIGGERED ***");
-                System.out.flush();
+                logger.debug("*** JVM SHUTDOWN HOOK TRIGGERED ***");
                 try {
                     // CRITICAL FIX: Always call chessGame.shutdown() to process user game data
                     chessGame.shutdown();
-                    System.out.println("*** CHESS GAME SHUTDOWN COMPLETE (JVM HOOK) ***");
+                    logger.debug("*** CHESS GAME SHUTDOWN COMPLETE (JVM HOOK) ***");
                 } catch (Exception e) {
                     System.err.println("JVM shutdown hook error: " + e.getMessage());
                     e.printStackTrace();
@@ -113,7 +112,7 @@ public class ChessApplication {
                         // Use direct AI saves for periodic backup (training may be active)
                         try {
                             chessGame.saveAllAIDirectly();
-                            System.out.println("*** PERIODIC TRAINING DATA SAVE COMPLETE ***");
+                            logger.debug("*** PERIODIC TRAINING DATA SAVE COMPLETE ***");
                         } catch (Exception e) {
                             System.err.println("Periodic save error: " + e.getMessage());
                         }
@@ -218,7 +217,7 @@ public class ChessApplication {
     public ChessGame chessGame() {
         ChessGame game = new ChessGame();
         chessGame = game; // Set static reference for shutdown hook
-        System.out.println("ChessGame bean created and static reference set");
+        logger.debug("ChessGame bean created and static reference set");
         return game;
     }
     
@@ -235,26 +234,23 @@ public class ChessApplication {
     public void onContextClosed() {
         if (!shutdownInProgress && chessGame != null) {
             shutdownInProgress = true;
-            System.out.println("*** SPRING CONTEXT CLOSING - CALLING CHESS GAME SHUTDOWN ***");
-            System.out.flush();
+            logger.debug("*** SPRING CONTEXT CLOSING - CALLING CHESS GAME SHUTDOWN ***");
             
             try {
                 // CRITICAL FIX: Always call chessGame.shutdown() to process user game data
                 chessGame.shutdown();
-                System.out.println("*** CHESS GAME SHUTDOWN COMPLETE ***");
-                System.out.flush();
+                logger.debug("*** CHESS GAME SHUTDOWN COMPLETE ***");
             } catch (Exception e) {
                 System.err.println("Chess game shutdown error: " + e.getMessage());
                 e.printStackTrace();
             }
             
             if (useAsyncIO()) {
-                System.out.println("*** ASYNC I/O SHUTDOWN ***");
+                logger.debug("*** ASYNC I/O SHUTDOWN ***");
                 asyncDataManager.shutdown().join();
             }
             
-            System.out.println("*** SPRING SHUTDOWN COMPLETE ***");
-            System.out.flush();
+            logger.debug("*** SPRING SHUTDOWN COMPLETE ***");
         }
     }
     
