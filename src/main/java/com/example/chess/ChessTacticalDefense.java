@@ -15,17 +15,20 @@ public class ChessTacticalDefense {
     public static int[] findBestDefensiveMove(String[][] board, List<int[]> validMoves, String aiName) {
         if (validMoves.isEmpty()) return null;
         
-        // Priority 1: Queen under attack
+        // Priority 1: Immediate checkmate threats (HIGHEST PRIORITY)
+        int[] checkmateDefense = detectCheckmateThreats(board, validMoves, aiName);
+        if (checkmateDefense != null) {
+            logger.info("*** {}: CHECKMATE THREAT DETECTED - Emergency defense ***", aiName);
+            return checkmateDefense;
+        }
+        
+        // Priority 2: Queen under attack
         int[] queenDefense = detectQueenThreats(board, validMoves, aiName);
         if (queenDefense != null) return queenDefense;
         
-        // Priority 2: Valuable pieces under attack (Rook, Bishop, Knight)
+        // Priority 3: Valuable pieces under attack (Rook, Bishop, Knight)
         int[] valuablePieceDefense = detectValuablePieceThreats(board, validMoves, aiName);
         if (valuablePieceDefense != null) return valuablePieceDefense;
-        
-        // Priority 3: Immediate checkmate threats
-        int[] checkmateDefense = detectCheckmateThreats(board, validMoves, aiName);
-        if (checkmateDefense != null) return checkmateDefense;
         
         // Priority 4: Opening traps
         int[] trapDefense = detectOpeningTraps(board, validMoves, aiName);
@@ -415,10 +418,10 @@ public class ChessTacticalDefense {
             return forkDefense;
         }
         
-        // Defend against skewers
+        // Defend against skewers (only high-value threats)
         int[] skewerDefense = defendAgainstSkewers(board, validMoves);
         if (skewerDefense != null) {
-            logger.info("*** {}: SKEWER THREAT - Breaking alignment ***", aiName);
+            logger.info("*** {}: HIGH-VALUE SKEWER THREAT - Breaking alignment ***", aiName);
             return skewerDefense;
         }
         
@@ -438,33 +441,7 @@ public class ChessTacticalDefense {
 //    }
     
     private static int[] defendScholarsMate(String[][] board, List<int[]> validMoves) {
-        // Check for classic Scholar's Mate setup: Queen on f3 + Bishop on c4
-        boolean queenOnF3 = "♕".equals(board[5][5]);
-        boolean bishopOnC4 = "♗".equals(board[4][2]);
-        
-        if (queenOnF3 && bishopOnC4) {
-            // Priority 1: Knight to f6 - CLASSIC Scholar's Mate defense (with validation)
-            for (int[] move : validMoves) {
-                if ("♞".equals(board[move[0]][move[1]]) && move[2] == 2 && move[3] == 5) {
-                    // Validate that this move actually stops the threat
-                    if (!isScholarsMateStillThreat(board, move)) {
-                        return move; // Nf6 - blocks checkmate threat
-                    }
-                }
-            }
-            
-            // Priority 2: Any piece defending f7 (with validation)
-            for (int[] move : validMoves) {
-                if (move[2] == 1 && move[3] == 5) { // Any piece to f7
-                    // Validate that this move actually stops the threat
-                    if (!isScholarsMateStillThreat(board, move)) {
-                        return move;
-                    }
-                }
-            }
-        }
-        
-        // Also check for general Queen + Bishop threats on f7
+        // Check for ANY Queen + Bishop threats on f7 (Scholar's Mate pattern)
         boolean queenThreatsF7 = false;
         boolean bishopThreatsF7 = false;
         
@@ -480,13 +457,36 @@ public class ChessTacticalDefense {
             }
         }
         
+        // If both Queen and Bishop threaten f7, it's Scholar's Mate setup
         if (queenThreatsF7 && bishopThreatsF7) {
+            // Priority 1: Knight to f6 - CLASSIC Scholar's Mate defense
             for (int[] move : validMoves) {
                 if ("♞".equals(board[move[0]][move[1]]) && move[2] == 2 && move[3] == 5) {
-                    // Validate that this move actually stops the threat
-                    if (!isScholarsMateStillThreat(board, move)) {
-                        return move; // Nf6
-                    }
+                    return move; // Nf6 - blocks both Queen and Bishop attacks on f7
+                }
+            }
+            
+            // Priority 2: Any piece to f7 to defend
+            for (int[] move : validMoves) {
+                if (move[2] == 1 && move[3] == 5) { // Any piece to f7
+                    return move;
+                }
+            }
+            
+            // Priority 3: Block the Queen's attack path
+            for (int[] move : validMoves) {
+                if (move[2] == 2 && move[3] == 5) { // Any piece to f6
+                    return move;
+                }
+            }
+        }
+        
+        // Also check for early Queen threats (even without Bishop)
+        if (queenThreatsF7) {
+            // Defend f7 if Queen is threatening it
+            for (int[] move : validMoves) {
+                if ("♞".equals(board[move[0]][move[1]]) && move[2] == 2 && move[3] == 5) {
+                    return move; // Nf6 - blocks Queen attack
                 }
             }
         }
@@ -606,11 +606,13 @@ public class ChessTacticalDefense {
     }
     
     private static int[] defendFishingPole(String[][] board, List<int[]> validMoves) {
-        // Keep rook safe from trapping in Ruy Lopez
+        // Only defend against actual Ruy Lopez fishing pole trap
+        if (!isRuyLopezPosition(board)) return null;
+        
         for (int[] move : validMoves) {
             if ("♜".equals(board[move[0]][move[1]])) {
-                // Don't move rook to trapped squares
-                if (move[2] >= 2) {
+                // Check if rook is actually in danger of being trapped
+                if (isRookInDanger(board, move[0], move[1]) && move[2] >= 2) {
                     return move;
                 }
             }
@@ -618,13 +620,37 @@ public class ChessTacticalDefense {
         return null;
     }
     
+    private static boolean isRuyLopezPosition(String[][] board) {
+        // Check for Ruy Lopez setup: White bishop on b5, Black knight on c6
+        return "♗".equals(board[3][1]) && "♞".equals(board[2][2]);
+    }
+    
+    private static boolean isRookInDanger(String[][] board, int rookR, int rookC) {
+        // Check if rook has limited escape squares
+        int escapeSquares = 0;
+        int[][] directions = {{-1,0},{1,0},{0,-1},{0,1}};
+        
+        for (int[] dir : directions) {
+            int r = rookR + dir[0];
+            int c = rookC + dir[1];
+            if (r >= 0 && r < 8 && c >= 0 && c < 8 && " ".equals(board[r][c])) {
+                escapeSquares++;
+            }
+        }
+        
+        return escapeSquares <= 1; // Rook is in danger if very few escape squares
+    }
+    
     private static int[] defendNoahsArk(String[][] board, List<int[]> validMoves) {
-        // Trap white bishop with pawn moves a6/b5 when bishop is on long diagonal
+        // Only execute Noah's Ark if bishop is actually trappable and it's mid/endgame
+        int totalPieces = countTotalPieces(board);
+        if (totalPieces > 20) return null; // Don't execute in opening
+        
         for (int r = 0; r < 8; r++) {
             for (int c = 0; c < 8; c++) {
                 if ("♗".equals(board[r][c])) {
-                    // Check if bishop can be trapped by a6 or b5
-                    if ((r >= 3 && c >= 1 && r - c == 2) || (r >= 2 && c >= 2 && r - c == 0)) {
+                    // More precise bishop trap detection
+                    if (isBishopActuallyTrappable(board, r, c)) {
                         for (int[] move : validMoves) {
                             if ("♟".equals(board[move[0]][move[1]])) {
                                 if ((move[2] == 2 && move[3] == 0) || (move[2] == 3 && move[3] == 1)) {
@@ -637,6 +663,40 @@ public class ChessTacticalDefense {
             }
         }
         return null;
+    }
+    
+    private static boolean isBishopActuallyTrappable(String[][] board, int bishopR, int bishopC) {
+        // Check if bishop has limited escape squares
+        int escapeSquares = 0;
+        int[][] directions = {{-1,-1},{-1,1},{1,-1},{1,1}};
+        
+        for (int[] dir : directions) {
+            int r = bishopR + dir[0];
+            int c = bishopC + dir[1];
+            while (r >= 0 && r < 8 && c >= 0 && c < 8) {
+                if (" ".equals(board[r][c])) {
+                    escapeSquares++;
+                    break;
+                } else if ("♚♛♜♝♞♟".contains(board[r][c])) {
+                    break; // Blocked by black piece
+                }
+                r += dir[0]; c += dir[1];
+            }
+        }
+        
+        return escapeSquares <= 2; // Bishop is trappable if few escape squares
+    }
+    
+    private static int countTotalPieces(String[][] board) {
+        int count = 0;
+        for (int r = 0; r < 8; r++) {
+            for (int c = 0; c < 8; c++) {
+                if (!" ".equals(board[r][c])) {
+                    count++;
+                }
+            }
+        }
+        return count;
     }
     
     private static int[] defendAgainstPins(String[][] board, List<int[]> validMoves) {
@@ -687,13 +747,100 @@ public class ChessTacticalDefense {
     }
     
     private static int[] defendAgainstSkewers(String[][] board, List<int[]> validMoves) {
-        // Break skewer alignment
-        for (int[] move : validMoves) {
-            if (breaksSkewer(board, move)) {
-                return move;
+        // Only defend against actual skewers with high-value pieces
+        if (hasActualSkewer(board)) {
+            for (int[] move : validMoves) {
+                if (breaksSkewer(board, move)) {
+                    return move;
+                }
             }
         }
         return null;
+    }
+    
+    private static boolean hasActualSkewer(String[][] board) {
+        // Only detect IMMEDIATE skewer threats with high-value pieces at risk
+        for (int r = 0; r < 8; r++) {
+            for (int c = 0; c < 8; c++) {
+                String piece = board[r][c];
+                if ("♔♕♖♗♘♙".contains(piece)) { // White pieces
+                    if (hasImmediateSkewer(board, r, c)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+    
+    private static boolean hasImmediateSkewer(String[][] board, int attackerR, int attackerC) {
+        String attacker = board[attackerR][attackerC];
+        if (!"♕♖♗".contains(attacker)) return false; // Only Queen, Rook, Bishop
+        
+        // Check all 8 directions for IMMEDIATE skewer threats
+        int[][] directions = {{-1,-1},{-1,0},{-1,1},{0,-1},{0,1},{1,-1},{1,0},{1,1}};
+        
+        for (int[] dir : directions) {
+            if (hasHighValueSkewer(board, attackerR, attackerC, dir[0], dir[1])) {
+                return true;
+            }
+        }
+        return false;
+    }
+    
+    private static boolean hasHighValueSkewer(String[][] board, int startR, int startC, int dr, int dc) {
+        String attacker = board[startR][startC];
+        boolean isWhiteAttacker = "♔♕♖♗♘♙".contains(attacker);
+        
+        String firstPiece = null;
+        String secondPiece = null;
+        int firstR = -1, firstC = -1;
+        int r = startR + dr, c = startC + dc;
+        
+        // Find first piece in this direction
+        while (r >= 0 && r < 8 && c >= 0 && c < 8) {
+            if (!" ".equals(board[r][c])) {
+                firstPiece = board[r][c];
+                firstR = r; firstC = c;
+                break;
+            }
+            r += dr; c += dc;
+        }
+        
+        if (firstPiece == null) return false;
+        
+        // Find second piece in same direction
+        r += dr; c += dc;
+        while (r >= 0 && r < 8 && c >= 0 && c < 8) {
+            if (!" ".equals(board[r][c])) {
+                secondPiece = board[r][c];
+                break;
+            }
+            r += dr; c += dc;
+        }
+        
+        if (secondPiece == null) return false;
+        
+        // Only consider it a skewer if:
+        // 1. Both pieces are Black (opposite of White attacker)
+        // 2. Back piece is Queen or Rook (high value)
+        // 3. Front piece is less valuable
+        // 4. Attacker can actually attack along this line
+        boolean firstIsBlack = "♚♛♜♝♞♟".contains(firstPiece);
+        boolean secondIsBlack = "♚♛♜♝♞♟".contains(secondPiece);
+        
+        if (isWhiteAttacker && firstIsBlack && secondIsBlack) {
+            double firstValue = getChessPieceValue(firstPiece);
+            double secondValue = getChessPieceValue(secondPiece);
+            
+            // Only high-value skewers: Queen or Rook behind
+            if (secondValue >= 500 && firstValue < secondValue) {
+                // Verify attacker can actually attack along this line
+                return canAttackerSkewer(attacker, dr, dc);
+            }
+        }
+        
+        return false;
     }
     
     private static int[] defendAgainstDiscoveredAttacks(String[][] board, List<int[]> validMoves) {
@@ -755,7 +902,74 @@ public class ChessTacticalDefense {
     }
     
     private static boolean breaksPinOnKing(String[][] board, int[] move) {
-        return move[2] != move[0] || move[3] != move[1];
+        // Only consider it a pin-breaking move if there's actually a pin
+        String piece = board[move[0]][move[1]];
+        if (piece.isEmpty()) return false;
+        
+        // Find the king
+        boolean isBlackPiece = "♚♛♜♝♞♟".contains(piece);
+        int[] kingPos = findKing(board, !isBlackPiece);
+        if (kingPos == null) return false;
+        
+        // Check if this piece is actually pinned to the king
+        return isPiecePinnedToKing(board, move[0], move[1], kingPos[0], kingPos[1]);
+    }
+    
+    private static boolean isPiecePinnedToKing(String[][] board, int pieceR, int pieceC, int kingR, int kingC) {
+        // Check if piece and king are on same line (rank, file, or diagonal)
+        int dr = kingR - pieceR;
+        int dc = kingC - pieceC;
+        
+        if (dr != 0 && dc != 0 && Math.abs(dr) != Math.abs(dc)) {
+            return false; // Not on same line
+        }
+        
+        // Look for attacking piece behind the potentially pinned piece
+        int stepR = Integer.compare(dr, 0);
+        int stepC = Integer.compare(dc, 0);
+        
+        // Check squares between piece and king
+        int r = pieceR + stepR;
+        int c = pieceC + stepC;
+        while (r != kingR || c != kingC) {
+            if (!" ".equals(board[r][c])) {
+                return false; // Path blocked
+            }
+            r += stepR;
+            c += stepC;
+        }
+        
+        // Look for attacking piece in opposite direction
+        r = pieceR - stepR;
+        c = pieceC - stepC;
+        while (r >= 0 && r < 8 && c >= 0 && c < 8) {
+            String attackerPiece = board[r][c];
+            if (!" ".equals(attackerPiece)) {
+                // Check if this piece can attack along this line
+                boolean isWhiteAttacker = "♔♕♖♗♘♙".contains(attackerPiece);
+                boolean isBlackKing = "♚".equals(board[kingR][kingC]);
+                
+                if (isWhiteAttacker == isBlackKing) { // Opposite colors
+                    if (canPieceAttackAlongLine(attackerPiece, stepR, stepC)) {
+                        return true; // Found pinning piece
+                    }
+                }
+                break; // Path blocked by other piece
+            }
+            r -= stepR;
+            c -= stepC;
+        }
+        
+        return false;
+    }
+    
+    private static boolean canPieceAttackAlongLine(String piece, int stepR, int stepC) {
+        switch (piece) {
+            case "♕": case "♛": return true; // Queen attacks all directions
+            case "♖": case "♜": return stepR == 0 || stepC == 0; // Rook attacks ranks/files
+            case "♗": case "♝": return Math.abs(stepR) == Math.abs(stepC); // Bishop attacks diagonals
+            default: return false;
+        }
     }
     
     /**
@@ -841,7 +1055,17 @@ public class ChessTacticalDefense {
     }
     
     private static boolean breaksSkewer(String[][] board, int[] move) {
-        return Math.abs(move[2] - move[0]) != Math.abs(move[3] - move[1]);
+        // Only consider it skewer-breaking if it actually disrupts a real skewer
+        String piece = board[move[0]][move[1]];
+        if (piece.isEmpty()) return false;
+        
+        // Simulate the move and check if it breaks any existing skewers
+        String[][] tempBoard = copyBoard(board);
+        tempBoard[move[2]][move[3]] = piece;
+        tempBoard[move[0]][move[1]] = " ";
+        
+        // Check if the move actually reduces skewer threats
+        return !hasActualSkewer(tempBoard);
     }
     
     private static boolean preventsDiscoveredAttack(String[][] board, int[] move) {
@@ -854,6 +1078,18 @@ public class ChessTacticalDefense {
     
     private static boolean controlsKeySquare(String[][] board, int[] move) {
         return (move[2] >= 3 && move[2] <= 4) && (move[3] >= 3 && move[3] <= 4);
+    }
+    
+    /**
+     * Check if an attacking piece can create a skewer along the given direction
+     */
+    private static boolean canAttackerSkewer(String attacker, int dr, int dc) {
+        switch (attacker) {
+            case "♕": return true; // Queen can skewer in any direction
+            case "♖": return dr == 0 || dc == 0; // Rook only on ranks/files
+            case "♗": return Math.abs(dr) == Math.abs(dc); // Bishop only on diagonals
+            default: return false;
+        }
     }
     
     public static boolean isCriticalDefensiveMove(String[][] board, int[] move, String aiName) {
