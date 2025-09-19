@@ -100,9 +100,31 @@ public class WebSocketController {
         // );
     }
     
+    private volatile long lastNewGameTime = 0;
+    private static final long NEW_GAME_DEBOUNCE_MS = 5000; // 5 second debounce
+    
     @MessageMapping("/newgame")
     @SendTo("/topic/gameState")
     public GameStateMessage newGame() {
+        // CRITICAL FIX: Debounce new game requests to prevent continuous saves
+        long currentTime = System.currentTimeMillis();
+        if (currentTime - lastNewGameTime < NEW_GAME_DEBOUNCE_MS) {
+            // Return current game state without resetting
+            return new GameStateMessage(
+                game.getBoard(),
+                game.isWhiteTurn(),
+                game.isGameOver(),
+                game.getKingInCheckPosition(),
+                game.getThreatenedHighValuePieces(),
+                true,
+                null,
+                false,
+                null,
+                game.isAllAIEnabled() ? "All AIs" : game.getSelectedAIForGame()
+            );
+        }
+        lastNewGameTime = currentTime;
+        
         game.resetGame();
         return new GameStateMessage(
             game.getBoard(),
