@@ -1,6 +1,8 @@
 package com.example.chess;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -32,6 +34,20 @@ public class ChessTacticalDefense {
         // Priority 5: Tactical patterns
         int[] tacticalDefense = detectTacticalThreats(board, validMoves, aiName);
         if (tacticalDefense != null) return tacticalDefense;
+        
+        // Priority 6: Positional defense (king safety)
+        int[] kingSafetyDefense = defendKingSafety(board, validMoves);
+        if (kingSafetyDefense != null) {
+            logger.info("*** {}: KING SAFETY - Improving pawn shield ***", aiName);
+            return kingSafetyDefense;
+        }
+        
+        // Priority 7: Central control (weak squares)
+        int[] centralDefense = defendWeakSquares(board, validMoves);
+        if (centralDefense != null) {
+            logger.info("*** {}: CENTRAL CONTROL - Controlling key squares ***", aiName);
+            return centralDefense;
+        }
         
         return null;
     }
@@ -360,21 +376,66 @@ public class ChessTacticalDefense {
     }
     
     private static int[] detectOpeningTraps(String[][] board, List<int[]> validMoves, String aiName) {
-        // Only defend against immediate opening trap threats that lead to material loss
-        // Remove Noah's Ark and other positional traps - let AI evaluate these
+        // Defend against Fried Liver Attack (Italian Game)
+        int[] friedLiverDefense = defendFriedLiver(board, validMoves);
+        if (friedLiverDefense != null) {
+            logger.info("*** {}: FRIED LIVER ATTACK THREAT - Defending f7 ***", aiName);
+            return friedLiverDefense;
+        }
+        
+        // Defend against Fishing Pole trap (Ruy Lopez)
+        int[] fishingPoleDefense = defendFishingPole(board, validMoves);
+        if (fishingPoleDefense != null) {
+            logger.info("*** {}: FISHING POLE TRAP THREAT - Keeping rook safe ***", aiName);
+            return fishingPoleDefense;
+        }
+        
+        // Execute Noah's Ark trap (trap White bishop)
+        int[] noahsArkTrap = defendNoahsArk(board, validMoves);
+        if (noahsArkTrap != null) {
+            logger.info("*** {}: NOAH'S ARK TRAP - Trapping White bishop ***", aiName);
+            return noahsArkTrap;
+        }
+        
         return null;
     }
     
     private static int[] detectTacticalThreats(String[][] board, List<int[]> validMoves, String aiName) {
-        // Only defend against immediate tactical threats that cause material loss
-        // Let AI engines handle pins, forks, skewers through their own evaluation
+        // Defend against pins on king
+        int[] pinDefense = defendAgainstPins(board, validMoves);
+        if (pinDefense != null) {
+            logger.info("*** {}: PIN THREAT - Breaking pin ***", aiName);
+            return pinDefense;
+        }
+        
+        // Defend against forks (high-value threats only)
+        int[] forkDefense = defendAgainstForks(board, validMoves);
+        if (forkDefense != null) {
+            logger.info("*** {}: FORK THREAT - Defending valuable pieces ***", aiName);
+            return forkDefense;
+        }
+        
+        // Defend against skewers
+        int[] skewerDefense = defendAgainstSkewers(board, validMoves);
+        if (skewerDefense != null) {
+            logger.info("*** {}: SKEWER THREAT - Breaking alignment ***", aiName);
+            return skewerDefense;
+        }
+        
+        // Defend against discovered attacks
+        int[] discoveredDefense = defendAgainstDiscoveredAttacks(board, validMoves);
+        if (discoveredDefense != null) {
+            logger.info("*** {}: DISCOVERED ATTACK THREAT - Controlling center ***", aiName);
+            return discoveredDefense;
+        }
+        
         return null;
     }
     
-    private static int[] detectPositionalThreats(String[][] board, List<int[]> validMoves, String aiName) {
-        // Remove all positional defenses - let AI engines handle these
-        return null;
-    }
+//    private static int[] detectPositionalThreats(String[][] board, List<int[]> validMoves, String aiName) {
+//        // Remove all positional defenses - let AI engines handle these
+//        return null;
+//    }
     
     private static int[] defendScholarsMate(String[][] board, List<int[]> validMoves) {
         // Check for classic Scholar's Mate setup: Queen on f3 + Bishop on c4
@@ -382,17 +443,23 @@ public class ChessTacticalDefense {
         boolean bishopOnC4 = "♗".equals(board[4][2]);
         
         if (queenOnF3 && bishopOnC4) {
-            // Priority 1: Knight to f6 - CLASSIC Scholar's Mate defense
+            // Priority 1: Knight to f6 - CLASSIC Scholar's Mate defense (with validation)
             for (int[] move : validMoves) {
                 if ("♞".equals(board[move[0]][move[1]]) && move[2] == 2 && move[3] == 5) {
-                    return move; // Nf6 - blocks checkmate threat
+                    // Validate that this move actually stops the threat
+                    if (!isScholarsMateStillThreat(board, move)) {
+                        return move; // Nf6 - blocks checkmate threat
+                    }
                 }
             }
             
-            // Priority 2: Any piece defending f7
+            // Priority 2: Any piece defending f7 (with validation)
             for (int[] move : validMoves) {
                 if (move[2] == 1 && move[3] == 5) { // Any piece to f7
-                    return move;
+                    // Validate that this move actually stops the threat
+                    if (!isScholarsMateStillThreat(board, move)) {
+                        return move;
+                    }
                 }
             }
         }
@@ -416,7 +483,10 @@ public class ChessTacticalDefense {
         if (queenThreatsF7 && bishopThreatsF7) {
             for (int[] move : validMoves) {
                 if ("♞".equals(board[move[0]][move[1]]) && move[2] == 2 && move[3] == 5) {
-                    return move; // Nf6
+                    // Validate that this move actually stops the threat
+                    if (!isScholarsMateStillThreat(board, move)) {
+                        return move; // Nf6
+                    }
                 }
             }
         }
