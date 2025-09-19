@@ -38,15 +38,15 @@ jobs:
           mvn clean compile -DskipTests
           echo "✅ CHESS Spring Boot backend compiled successfully"
 
-      # - name: SpotBugs Security Analysis
-      #   run: |
-      #     mvn spotbugs:check -Dspotbugs.failOnError=false || echo "⚠️ SpotBugs found potential issues"
-      #     echo "✅ SpotBugs security analysis completed"
+      - name: SpotBugs Security Analysis
+        run: |
+          mvn spotbugs:check -Dspotbugs.failOnError=false || echo "⚠️ SpotBugs found potential issues"
+          echo "✅ SpotBugs security analysis completed"
 
-      # - name: PMD Security Rules
-      #   run: |
-      #     mvn pmd:check -Dpmd.failOnViolation=false || echo "⚠️ PMD found code quality issues"
-      #     echo "✅ PMD security rules check completed"
+      - name: PMD Security Rules
+        run: |
+          mvn pmd:check -Dpmd.failOnViolation=false || echo "⚠️ PMD found code quality issues"
+          echo "✅ PMD security rules check completed"
 
       - name: Skip Unit Tests (Performance)
         run: |
@@ -89,22 +89,22 @@ jobs:
           mvn dependency:tree | grep -E "(SNAPSHOT|RELEASE)" || echo "No snapshot dependencies found"
           echo "✅ Maven dependency check completed"
 
-      # - name: OWASP Dependency Check
-      #   uses: dependency-check/Dependency-Check_Action@main
-      #   with:
-      #     project: 'chess-backend'
-      #     path: '.'
-      #     format: 'JSON'
-      #     args: '--enableRetired --enableExperimental'
-      #   continue-on-error: true
+      - name: OWASP Dependency Check
+        uses: dependency-check/Dependency-Check_Action@main
+        with:
+          project: 'chess-backend'
+          path: '.'
+          format: 'JSON'
+          args: '--enableRetired --enableExperimental'
+        continue-on-error: true
 
-      # - name: Snyk Security Scan
-      #   uses: snyk/actions/maven@master
-      #   env:
-      #     SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-      #   with:
-      #     args: --severity-threshold=high
-      #   continue-on-error: true
+      - name: Snyk Security Scan
+        uses: snyk/actions/maven@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --severity-threshold=high
+        continue-on-error: true
 
       - name: Setup Node.js for Frontend Audit
         uses: actions/setup-node@v4
@@ -119,17 +119,17 @@ jobs:
           npm ci --prefer-offline
           npm audit --audit-level=moderate || echo "⚠️ Frontend vulnerabilities found - review required"
 
-      # - name: ESLint Security Scan
-      #   run: |
-      #     cd frontend
-      #     npx eslint . --ext .ts,.tsx --config .eslintrc.json --format json > eslint-report.json || true
-      #     echo "✅ ESLint security scan completed"
+      - name: ESLint Security Scan
+        run: |
+          cd frontend
+          npx eslint . --ext .ts,.tsx --config .eslintrc.json --format json > eslint-report.json || true
+          echo "✅ ESLint security scan completed"
 
-      # - name: TypeScript Security Check
-      #   run: |
-      #     cd frontend
-      #     npx tsc --noEmit --strict --noImplicitAny --noImplicitReturns --noImplicitThis
-      #     echo "✅ TypeScript security check completed"
+      - name: TypeScript Security Check
+        run: |
+          cd frontend
+          npx tsc --noEmit --strict --noImplicitAny --noImplicitReturns --noImplicitThis
+          echo "✅ TypeScript security check completed"
           
       - name: CHESS AI Model Security Check
         run: |
@@ -208,13 +208,13 @@ jobs:
         with:
           fetch-depth: 0
 
-      # - name: TruffleHog Secret Scan
-      #   uses: trufflesecurity/trufflehog@main
-      #   with:
-      #     path: ./
-      #     base: main
-      #     head: HEAD
-      #     extra_args: --debug --only-verified
+      - name: TruffleHog Secret Scan
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: main
+          head: HEAD
+          extra_args: --debug --only-verified
 
       - name: License Compliance Check
         run: |
@@ -292,23 +292,23 @@ jobs:
           find infra/terraform -name "*.tf" -exec echo "Terraform file: {}" \;
           echo "✅ Infrastructure security check completed"
 
-      # - name: TFSec Infrastructure Security
-      #   if: hashFiles('infra/terraform/**/*.tf') != ''
-      #   uses: aquasecurity/tfsec-action@v1.0.3
-      #   with:
-      #     working_directory: 'infra/terraform'
-      #     soft_fail: true
-      #   continue-on-error: true
+      - name: TFSec Infrastructure Security
+        if: hashFiles('infra/terraform/**/*.tf') != ''
+        uses: aquasecurity/tfsec-action@v1.0.3
+        with:
+          working_directory: 'infra/terraform'
+          soft_fail: true
+        continue-on-error: true
 
-      # - name: Checkov Infrastructure Security
-      #   if: hashFiles('infra/terraform/**/*.tf') != ''
-      #   uses: bridgecrewio/checkov-action@master
-      #   with:
-      #     directory: 'infra/terraform'
-      #     framework: terraform
-      #     output_format: sarif
-      #     output_file_path: checkov-results.sarif
-      #   continue-on-error: true
+      - name: Checkov Infrastructure Security
+        if: hashFiles('infra/terraform/**/*.tf') != ''
+        uses: bridgecrewio/checkov-action@master
+        with:
+          directory: 'infra/terraform'
+          framework: terraform
+          output_format: sarif
+          output_file_path: checkov-results.sarif
+        continue-on-error: true
 
       - name: Docker Security Check
         if: hashFiles('**/Dockerfile') != ''
@@ -317,22 +317,22 @@ jobs:
           find . -name "Dockerfile" -exec echo "Docker file: {}" \;
           echo "✅ Docker security check completed"
 
-      # - name: Trivy Container Scan
-      #   if: hashFiles('**/Dockerfile') != ''
-      #   uses: aquasecurity/trivy-action@master
-      #   with:
-      #     scan-type: 'fs'
-      #     scan-ref: '.'
-      #     format: 'sarif'
-      #     output: 'trivy-results.sarif'
-      #   continue-on-error: true
+      - name: Trivy Container Scan
+        if: hashFiles('**/Dockerfile') != ''
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+        continue-on-error: true
 
-      # - name: Upload Trivy scan results to GitHub Security tab
-      #   if: hashFiles('**/Dockerfile') != ''
-      #   uses: github/codeql-action/upload-sarif@v3
-      #   with:
-      #     sarif_file: 'trivy-results.sarif'
-      #   continue-on-error: true
+      - name: Upload Trivy scan results to GitHub Security tab
+        if: hashFiles('**/Dockerfile') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results.sarif'
+        continue-on-error: true
 
       - name: Kubernetes Security Check
         if: hashFiles('infra/helm/**/*.yaml') != ''
@@ -368,13 +368,13 @@ jobs:
           echo "- Monitor AI model security and training data access" >> $GITHUB_STEP_SUMMARY
           echo "- Uncomment external tools (Snyk, TruffleHog, Trivy) for enhanced scanning" >> $GITHUB_STEP_SUMMARY
 
-      # - name: Upload Security Artifacts
-      #   if: always()
-      #   uses: actions/upload-artifact@v4
-      #   with:
-      #     name: security-reports
-      #     path: |
-      #       eslint-report.json
-      #       trivy-results.sarif
-      #       checkov-results.sarif
-      #     retention-days: 30
+      - name: Upload Security Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-reports
+          path: |
+            eslint-report.json
+            trivy-results.sarif
+            checkov-results.sarif
+          retention-days: 30
