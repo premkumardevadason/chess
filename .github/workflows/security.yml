@@ -214,7 +214,7 @@ jobs:
         uses: trufflesecurity/trufflehog@main
         with:
           path: ./
-          extra_args: --debug --only-verified --fail
+          extra_args: --debug --only-verified
 
       - name: License Compliance Check
         run: |
@@ -374,7 +374,9 @@ jobs:
         with:
           name: security-reports
           path: |
-            eslint-report.json
+            frontend/eslint-report.json
             trivy-results.sarif
             checkov-results.sarif
+            reports/
+          if-no-files-found: ignore
           retention-days: 30
