@@ -24,6 +24,7 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({ onPawnPromotion }) => {
       }, 2000);
       return () => clearTimeout(timer);
     }
+    return undefined;
   }, [backendGameState?.aiMove]);
 
   // Clear invalid move animation after it completes
@@ -34,6 +35,7 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({ onPawnPromotion }) => {
       }, 1000);
       return () => clearTimeout(timer);
     }
+    return undefined;
   }, [backendGameState?.invalidMove, actions]);
 
   const handleSquareClick = (row: number, col: number) => {

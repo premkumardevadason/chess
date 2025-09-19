@@ -96,6 +96,8 @@ jobs:
           path: '.'
           format: 'JSON'
           args: '--enableRetired --enableExperimental'
+        env:
+          JAVA_HOME: ''
         continue-on-error: true
 
       # - name: Snyk Security Scan
@@ -122,7 +124,7 @@ jobs:
       - name: ESLint Security Scan
         run: |
           cd frontend
-          npx eslint . --ext .ts,.tsx --config .eslintrc.json --format json > eslint-report.json || true
+          npx eslint . --ext .ts,.tsx --config .eslintrc.cjs --format json > eslint-report.json || true
           echo "✅ ESLint security scan completed"
 
       - name: TypeScript Security Check

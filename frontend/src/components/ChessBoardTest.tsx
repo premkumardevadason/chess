@@ -19,7 +19,7 @@ export const ChessBoardTest: React.FC = () => {
           <div className="mt-4">
             <p><strong>Board preview (first row):</strong></p>
                          <div className="flex gap-1">
-               {gameState.board[0]?.map((piece, index) => (
+               {gameState.board[0]?.map((piece: any, index: number) => (
                  <span key={index} className="w-8 h-8 border border-gray-400 flex items-center justify-center text-sm">
                    {piece && piece.color && piece.type ? `${piece.color[0]}${piece.type[0]}` : '·'}
                  </span>
