@@ -216,6 +216,37 @@ jobs:
           path: ./
           extra_args: --debug --only-verified
 
+      - name: GitLeaks Secret Scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+
+      - name: Semgrep Security Scan
+        uses: semgrep/semgrep-action@v1
+        with:
+          config: auto
+          output: semgrep-results.sarif
+        continue-on-error: true
+
+      - name: Hadolint Dockerfile Security
+        if: hashFiles('**/Dockerfile') != ''
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: infra/Dockerfile
+          format: sarif
+          output-file: hadolint-results.sarif
+        continue-on-error: true
+
+      - name: Terrascan IaC Security
+        if: hashFiles('infra/terraform/**/*.tf') != ''
+        uses: tenable/terrascan-action@main
+        with:
+          iac_type: terraform
+          iac_dir: infra/terraform
+          sarif_upload: true
+        continue-on-error: true
+
       - name: License Compliance Check
         run: |
           echo "🔍 Checking license compliance..."
@@ -377,6 +408,9 @@ jobs:
             frontend/eslint-report.json
             trivy-results.sarif
             checkov-results.sarif
+            semgrep-results.sarif
+            hadolint-results.sarif
+            results.sarif
             reports/
           if-no-files-found: ignore
           retention-days: 30
