@@ -2,6 +2,7 @@ package com.example.chess;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.SequencedCollection;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -1023,25 +1024,36 @@ public class DeepLearningCNNAI {
     }
     
     private double evaluateWithQLearning(String[][] board, int[] move) {
+        // Enhanced: Use actual Q-table lookups when available
+        if (qLearningAI != null) {
+            try {
+                String boardState = qLearningAI.encodeBoardStatePublic(board);
+                String stateAction = boardState + ":" + Arrays.toString(move);
+                Double qValue = qLearningAI.getQValue(stateAction);
+                if (qValue != null) {
+                    return qValue; // Use actual Q-value
+                }
+            } catch (Exception e) {
+                // Fallback to basic evaluation
+            }
+        }
+        
+        // Fallback: Basic chess evaluation
         String piece = board[move[0]][move[1]];
         String captured = board[move[2]][move[3]];
         boolean isWhite = "♔♕♖♗♘♙".contains(piece);
         
         double value = 0.0;
-        
-        if (wouldExposeKing(board, move, isWhite)) {
-            value -= 2.0;
-        }
-        
+        if (wouldExposeKing(board, move, isWhite)) value -= 2.0;
         if (!captured.isEmpty()) {
             boolean capturingOpponent = isWhite ? "♚♛♜♝♞♟".contains(captured) : "♔♕♖♗♘♙".contains(captured);
             if (capturingOpponent) {
                 value += switch (captured) {
-                    case "♕", "♛" -> 0.9; // Queen
-                    case "♘", "♞" -> 0.7; // Knight
-                    case "♗", "♝" -> 0.5; // Bishop
-                    case "♖", "♜" -> 0.3; // Rook
-                    case "♙", "♟" -> 0.1; // Pawn
+                    case "♕", "♛" -> 0.9;
+                    case "♘", "♞" -> 0.7;
+                    case "♗", "♝" -> 0.5;
+                    case "♖", "♜" -> 0.3;
+                    case "♙", "♟" -> 0.1;
                     default -> 0.0;
                 };
             }

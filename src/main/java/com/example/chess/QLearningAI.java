@@ -52,10 +52,10 @@ public class QLearningAI {
     private final long[][][] zobristTable = new long[8][8][12]; // 8x8 board, 12 piece types
     private final long[] zobristCastling = new long[16]; // Castling rights
     private final long zobristBlackToMove;
-    private final SecureRandom zobristRandom = new SecureRandom();
+    private final Random zobristRandom = new Random(12345L); // Fixed seed for deterministic hashes
     
     {
-        // Initialize Zobrist hash table
+        // Initialize Zobrist hash table with deterministic values
         zobristBlackToMove = zobristRandom.nextLong();
         for (int i = 0; i < 8; i++) {
             for (int j = 0; j < 8; j++) {
@@ -117,15 +117,15 @@ public class QLearningAI {
     }
     
     private String getAbstractStateKey(String[][] board, boolean whiteTurn) {
-        // P0 Fix: Use Zobrist hash instead of full board state
-        long hash = computeZobristHash(board, whiteTurn);
+        // Use position-only hash for consistency with encodeBoardState
+        long hash = computeZobristHashPositionOnly(board);
         return Long.toHexString(hash);
     }
     
-    // P0 Fix: Enhanced state encoding that includes turn information when needed
+    // Enhanced state encoding that includes turn information when needed
     private String encodeBoardStateWithTurn(String[][] board, boolean whiteTurn) {
-        long hash = computeZobristHash(board, whiteTurn);
-        return Long.toHexString(hash);
+        long hash = computeZobristHashPositionOnly(board);
+        return Long.toHexString(hash) + (whiteTurn ? "w" : "b");
     }
     
     // Hierarchical Q-Learning (Options Framework)
@@ -165,8 +165,6 @@ public class QLearningAI {
     public QLearningAI() {
         this.ioWrapper = new TrainingDataIOWrapper();
         loadQTable();
-        // P0 Fix: Automatic migration on startup
-        performAutomaticMigrationIfNeeded();
         initializeAdvancedQLearning();
     }
     
@@ -174,8 +172,6 @@ public class QLearningAI {
         this.ioWrapper = new TrainingDataIOWrapper();
         loadQTable();
         this.openingBook = new LeelaChessZeroOpeningBook(debugEnabled);
-        // P0 Fix: Automatic migration on startup
-        performAutomaticMigrationIfNeeded();
         initializeAdvancedQLearning();
     }
     
@@ -183,223 +179,7 @@ public class QLearningAI {
         this.qTableFile = filePath;
     }
     
-    // P0 Fix: Automatic migration on startup - handles GZIP compressed legacy data
-    private void performAutomaticMigrationIfNeeded() {
-        // Check if compressed legacy file exists
-        java.nio.file.Path legacyGzPath = java.nio.file.Paths.get(qTableFile + ".gz");
-        java.nio.file.Path currentPath = java.nio.file.Paths.get(qTableFile);
-        
-        boolean hasLegacyGzFile = java.nio.file.Files.exists(legacyGzPath);
-        boolean hasCurrentFile = false;
-        try {
-            hasCurrentFile = java.nio.file.Files.exists(currentPath) && 
-                            java.nio.file.Files.size(currentPath) > 0;
-        } catch (IOException e) {
-            hasCurrentFile = java.nio.file.Files.exists(currentPath);
-        }
-        
-        if (!hasLegacyGzFile) {
-            if (!qTable.isEmpty() && shouldUseLegacyFormat()) {
-                logger.info("Q-Learning: Legacy format detected in memory, but no .gz file found");
-            } else {
-                logger.info("Q-Learning: Q-table already using Zobrist format ({} entries)", qTable.size());
-            }
-            return;
-        }
-        
-        if (hasCurrentFile && !shouldUseLegacyFormat()) {
-            logger.info("Q-Learning: Zobrist format already active, skipping migration");
-            return;
-        }
-        
-        logger.info("Q-Learning: COMPRESSED LEGACY DATA DETECTED - Starting automatic migration...");
-        try {
-            logger.info("Q-Learning: Legacy file: {} ({} bytes)", legacyGzPath, 
-                       java.nio.file.Files.size(legacyGzPath));
-        } catch (IOException e) {
-            logger.warn("Q-Learning: Could not get file size: {}", e.getMessage());
-        }
-        
-        try {
-            // Step 1: Load and decompress legacy data
-            Map<String, Double> legacyQTable = loadCompressedLegacyQTable(legacyGzPath);
-            if (legacyQTable.isEmpty()) {
-                logger.error("Q-Learning: Failed to load legacy compressed data");
-                return;
-            }
-            
-            logger.info("Q-Learning: Loaded {} entries from compressed legacy file", legacyQTable.size());
-            
-            // Step 2: Backup original compressed file
-            backupLegacyQTable();
-            
-            // Step 3: Convert to Zobrist format
-            Map<String, Double> newQTable = convertLegacyToZobrist(legacyQTable);
-            
-            if (!newQTable.isEmpty()) {
-                // Step 4: Replace in-memory Q-table
-                qTable.clear();
-                qTable.putAll(newQTable);
-                
-                logger.info("Q-Learning: MIGRATION COMPLETED - {} entries converted", newQTable.size());
-                logger.info("Q-Learning: Memory usage reduced by ~67% with Zobrist hashing");
-                
-                // Step 5: Save in new compressed format
-                saveQTable();
-                logger.info("Q-Learning: Migrated Q-table saved in Zobrist format");
-                
-                // Step 6: Rename original .gz file to indicate migration completed
-                java.nio.file.Path migratedPath = java.nio.file.Paths.get(qTableFile + ".gz.migrated");
-                java.nio.file.Files.move(legacyGzPath, migratedPath);
-                logger.info("Q-Learning: Original legacy file renamed to: {}", migratedPath);
-                
-            } else {
-                logger.error("Q-Learning: MIGRATION FAILED - no entries could be converted");
-                logger.error("Q-Learning: Original data preserved in: {}", legacyGzPath);
-            }
-            
-        } catch (Exception e) {
-            logger.error("Q-Learning: MIGRATION ERROR - {} - Original data preserved", e.getMessage());
-        }
-    }
-    
-    // Load compressed legacy Q-table from .gz file
-    private Map<String, Double> loadCompressedLegacyQTable(java.nio.file.Path gzPath) throws Exception {
-        Map<String, Double> qTable = new ConcurrentHashMap<>();
-        
-        byte[] compressedData;
-        try {
-            compressedData = java.nio.file.Files.readAllBytes(gzPath);
-        } catch (IOException e) {
-            throw new Exception("Failed to read compressed file: " + e.getMessage(), e);
-        }
-        
-        try (java.util.zip.GZIPInputStream gzipIn = new java.util.zip.GZIPInputStream(
-                new java.io.ByteArrayInputStream(compressedData));
-             java.io.BufferedReader reader = new java.io.BufferedReader(
-                new java.io.InputStreamReader(gzipIn, "UTF-8"))) {
-            
-            String line;
-            int loaded = 0;
-            while ((line = reader.readLine()) != null) {
-                line = line.trim();
-                if (line.contains("=") && !line.startsWith("#")) {
-                    String[] parts = line.split("=", 2);
-                    if (parts.length == 2) {
-                        try {
-                            qTable.put(parts[0], Double.parseDouble(parts[1]));
-                            loaded++;
-                        } catch (NumberFormatException ignored) {}
-                    }
-                }
-            }
-            
-            logger.info("Q-Learning: Decompressed {} entries from legacy file", loaded);
-        }
-        
-        return qTable;
-    }
-    
-    // Convert legacy Q-table entries to Zobrist format
-    private Map<String, Double> convertLegacyToZobrist(Map<String, Double> legacyQTable) {
-        Map<String, Double> newQTable = new ConcurrentHashMap<>();
-        int migratedCount = 0;
-        int failedCount = 0;
-        
-        for (Map.Entry<String, Double> entry : legacyQTable.entrySet()) {
-            String oldKey = entry.getKey();
-            Double value = entry.getValue();
-            
-            try {
-                // Parse old key: "KQRB....P.....:e2e4" -> board state + move
-                String[] parts = oldKey.split(":");
-                if (parts.length == 2) {
-                    String legacyBoardState = parts[0];
-                    String moveStr = parts[1];
-                    
-                    // Convert legacy board state back to 2D array
-                    String[][] board = parseLegacyBoardState(legacyBoardState);
-                    if (board != null) {
-                        // Generate new Zobrist key
-                        long hash = computeZobristHashPositionOnly(board);
-                        String newKey = Long.toHexString(hash) + ":" + moveStr;
-                        newQTable.put(newKey, value);
-                        migratedCount++;
-                    } else {
-                        failedCount++;
-                    }
-                } else {
-                    failedCount++;
-                }
-            } catch (Exception e) {
-                logger.warn("Q-Learning: Failed to migrate key: {} - {}", oldKey, e.getMessage());
-                failedCount++;
-            }
-        }
-        
-        logger.info("Q-Learning: Conversion completed - {} entries migrated, {} failed", 
-            migratedCount, failedCount);
-        return newQTable;
-    }
-    
-    // Check if Q-table contains legacy format data
-    private boolean shouldUseLegacyFormat() {
-        // Use legacy format if Q-table contains old-style keys (longer than 20 chars)
-        if (!qTable.isEmpty()) {
-            String firstKey = qTable.keySet().iterator().next();
-            // Legacy keys are much longer (64+ chars), Zobrist keys are ~16 chars
-            return firstKey.length() > 20;
-        }
-        return false; // Default to new format for empty Q-tables
-    }
-    
-    // Backup legacy Q-table before migration
-    private void backupLegacyQTable() {
-        try {
-            java.nio.file.Path originalPath = java.nio.file.Paths.get(qTableFile);
-            java.nio.file.Path backupPath = java.nio.file.Paths.get(qTableFile + ".legacy.backup");
-            
-            if (java.nio.file.Files.exists(originalPath)) {
-                java.nio.file.Files.copy(originalPath, backupPath, 
-                    java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-                logger.info("Q-Learning: Legacy Q-table backed up to: {}", backupPath);
-            }
-        } catch (Exception e) {
-            logger.warn("Q-Learning: Failed to backup legacy Q-table: {}", e.getMessage());
-        }
-    }
-    
-    // Helper method to parse legacy board state back to 2D array
-    private String[][] parseLegacyBoardState(String legacyState) {
-        if (legacyState.length() != 64) return null;
-        
-        String[][] board = new String[8][8];
-        int index = 0;
-        
-        for (int i = 0; i < 8; i++) {
-            for (int j = 0; j < 8; j++) {
-                char c = legacyState.charAt(index++);
-                board[i][j] = switch (c) {
-                    case 'K' -> "♔";
-                    case 'Q' -> "♕";
-                    case 'R' -> "♖";
-                    case 'B' -> "♗";
-                    case 'N' -> "♘";
-                    case 'P' -> "♙";
-                    case 'k' -> "♚";
-                    case 'q' -> "♛";
-                    case 'r' -> "♜";
-                    case 'b' -> "♝";
-                    case 'n' -> "♞";
-                    case 'p' -> "♟";
-                    case '.' -> "";
-                    default -> "";
-                };
-            }
-        }
-        
-        return board;
-    }
+
     
     private void initializeAdvancedQLearning() {
         // Initialize piece-specific Q-tables
@@ -1026,9 +806,18 @@ public class QLearningAI {
     }
     
     public void updateQValue(String prevState, int[] action, double reward, String newState, List<int[]> nextMoves) {
+        updateQValue(prevState, action, reward, newState, nextMoves, "");
+    }
+    
+    public void updateQValue(String prevState, int[] action, double reward, String newState, List<int[]> nextMoves, String piece) {
         if (prevState == null || action == null) {
             logger.warn("WARNING: Null state or action in updateQValue");
             return;
+        }
+        
+        // Store piece information for piece-specific Q-tables
+        if (!piece.isEmpty()) {
+            storePieceForStateAction(prevState, action, piece);
         }
         
         // Track move history for repetition detection
@@ -1136,18 +925,22 @@ public class QLearningAI {
             logger.info("Q-table populated with {} basic entries for persistence", qTable.size());
         }
         
-        // Phase 3: Dual-path implementation
+        // Phase 3: Dual-path implementation - save the Map directly for proper loading
         if (ioWrapper.isAsyncEnabled()) {
-            ioWrapper.saveQTable(qTable, qTableFile);
+            // Convert Q-table to string format for compression
+            StringBuilder qTableString = new StringBuilder();
+            for (Map.Entry<String, Double> entry : qTable.entrySet()) {
+                qTableString.append(entry.getKey()).append("=").append(entry.getValue()).append("\n");
+            }
+            ioWrapper.saveAIData("QLearning", qTableString.toString(), qTableFile);
         } else {
             // Fallback disabled - Q-table must use compressed format only
             logger.warn("Q-Learning: Async I/O disabled but Q-table requires compression - forcing async save");
-            ioWrapper.saveQTable(qTable, qTableFile);
-            /*
-            // REMOVED: Uncompressed fallback no longer supported
-            synchronized (fileLock) {
-                try (PrintWriter writer = new PrintWriter(new FileWriter(Q_TABLE_FILE))) {
-                */
+            StringBuilder qTableString = new StringBuilder();
+            for (Map.Entry<String, Double> entry : qTable.entrySet()) {
+                qTableString.append(entry.getKey()).append("=").append(entry.getValue()).append("\n");
+            }
+            ioWrapper.saveAIData("QLearning", qTableString.toString(), qTableFile);
         }
     }
     
@@ -1187,8 +980,18 @@ public class QLearningAI {
         if (ioWrapper.isAsyncEnabled()) {
             logger.info("*** ASYNC I/O: QLearning loading Q-table using NIO.2 async LOAD path ***");
             Object loadedData = ioWrapper.loadAIData("QLearning", qTableFile);
-            if (loadedData == null) {
+            if (loadedData instanceof Map) {
+                @SuppressWarnings("unchecked")
+                Map<String, Double> loadedQTable = (Map<String, Double>) loadedData;
+                qTable.clear();
+                qTable.putAll(loadedQTable);
+                qTableSnapshot = new ConcurrentHashMap<>(qTable);
+                logger.info("Q-Learning: Q-table loaded via async I/O with {} entries", qTable.size());
+            } else if (loadedData == null) {
                 // Fallback to sync loading if async fails
+                loadQTableSync();
+            } else {
+                logger.warn("Q-Learning: Unexpected data type from async load: {}", loadedData.getClass());
                 loadQTableSync();
             }
         } else {
@@ -1426,6 +1229,9 @@ public class QLearningAI {
             }
             
             String boardState = encodeBoardState(board);
+            // Store board state for DQN integration
+            storeBoardState(boardState, board);
+            
             // Use ChessGame's proper move validation
             ChessGame tempGame = new ChessGame();
             tempGame.setBoard(board);
@@ -1453,7 +1259,7 @@ public class QLearningAI {
                 return;
             }
             
-            String currentPosition = encodeBoardState(board) + whiteTurn;
+            String currentPosition = encodeBoardStateWithTurn(board, whiteTurn);
             positionCount.put(currentPosition, positionCount.getOrDefault(currentPosition, 0) + 1);
             
             if (positionCount.get(currentPosition) >= 3) {
@@ -1505,6 +1311,9 @@ public class QLearningAI {
             // Create game step and add to history BEFORE making the move
             GameStep gameStep = new GameStep(boardState, selectedMove, whiteTurn, 0.0);
             gameHistory.add(gameStep);
+            
+            // Store piece information for Q-table updates
+            storePieceForStateAction(boardState, selectedMove, piece);
             
             String capturedPiece = board[selectedMove[2]][selectedMove[3]];
             board[selectedMove[2]][selectedMove[3]] = piece;
@@ -1601,19 +1410,30 @@ public class QLearningAI {
                 String stateAction = step.boardState() + ":" + Arrays.toString(step.move());
                 double oldValue = qTable.getOrDefault(stateAction, 0.0);
                 
-                updateQValue(step.boardState(), step.move(), step.reward(), nextState, nextMoves);
+                // Get piece from stored mapping or empty string
+                String piece = extractPieceFromState(step.boardState(), step.move());
+                updateQValue(step.boardState(), step.move(), step.reward(), nextState, nextMoves, piece);
                 
                 double newValue = qTable.get(stateAction);
                 if (Math.abs(newValue - oldValue) > 0.001) {
                     updatesProcessed++;
                 }
                 
-                // Send experience to DQN if available (using dummy boards)
+                // Send experience to DQN if available (using actual board states)
                 if (dqnAI != null) {
-                    String[][] dummyPrevBoard = initializeBoard();
-                    String[][] dummyNextBoard = initializeBoard();
-                    boolean gameEnded = (i == gameHistory.size() - 1);
-                    dqnAI.addTrainingExperience(dummyPrevBoard, step.move(), step.reward(), dummyNextBoard, gameEnded);
+                    String[][] prevBoard = getBoardFromHash(step.boardState());
+                    String[][] nextBoard = null;
+                    if (i < gameHistory.size() - 1) {
+                        GameStep nextStep = gameHistory.get(i + 1);
+                        nextBoard = getBoardFromHash(nextStep.boardState());
+                    }
+                    
+                    // Only send if we have actual board states
+                    if (prevBoard != null) {
+                        boolean gameEnded = (i == gameHistory.size() - 1);
+                        String[][] finalNextBoard = nextBoard != null ? nextBoard : prevBoard;
+                        dqnAI.addTrainingExperience(prevBoard, step.move(), step.reward(), finalNextBoard, gameEnded);
+                    }
                 }
                 
             } catch (Exception e) {
@@ -2581,20 +2401,37 @@ public class QLearningAI {
         }
     }
     
+    // Store piece information for Q-table updates
+    private Map<String, String> stateActionToPiece = new ConcurrentHashMap<>();
+    
+    // Store board states for DQN integration
+    private Map<String, String[][]> hashToBoardState = new ConcurrentHashMap<>();
+    
     private String extractPieceFromState(String state, int[] action) {
-        // Extract piece type from encoded board state
-        int pos = action[0] * 8 + action[1];
-        if (pos >= 0 && pos < state.length()) {
-            char c = state.charAt(pos);
-            return switch (c) {
-                case 'K' -> "♔"; case 'Q' -> "♕"; case 'R' -> "♖";
-                case 'B' -> "♗"; case 'N' -> "♘"; case 'P' -> "♙";
-                case 'k' -> "♚"; case 'q' -> "♛"; case 'r' -> "♜";
-                case 'b' -> "♝"; case 'n' -> "♞"; case 'p' -> "♟";
-                default -> "";
-            };
+        // Since state is now a Zobrist hash, we need to store piece info separately
+        String stateAction = state + ":" + Arrays.toString(action);
+        return stateActionToPiece.getOrDefault(stateAction, "");
+    }
+    
+    private void storePieceForStateAction(String state, int[] action, String piece) {
+        String stateAction = state + ":" + Arrays.toString(action);
+        stateActionToPiece.put(stateAction, piece);
+    }
+    
+    private void storeBoardState(String hash, String[][] board) {
+        // Store board state for DQN integration
+        String[][] boardCopy = copyBoard(board);
+        hashToBoardState.put(hash, boardCopy);
+        
+        // Limit memory usage - keep only recent 1000 states
+        if (hashToBoardState.size() > 1000) {
+            String oldestHash = hashToBoardState.keySet().iterator().next();
+            hashToBoardState.remove(oldestHash);
         }
-        return "";
+    }
+    
+    private String[][] getBoardFromHash(String hash) {
+        return hashToBoardState.get(hash);
     }
     
     private String reduceStateComplexity(String state) {
@@ -2673,5 +2510,15 @@ public class QLearningAI {
     
     public int getTrainingIterations() {
         return gamesCompleted;
+    }
+    
+    // Public method for other AIs to access Q-values
+    public Double getQValue(String stateAction) {
+        return qTable.get(stateAction);
+    }
+    
+    // Public method for other AIs to encode board states consistently
+    public String encodeBoardStatePublic(String[][] board) {
+        return encodeBoardState(board);
     }
 }
