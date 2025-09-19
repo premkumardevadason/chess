@@ -7,109 +7,109 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 /**
- * Centralized Chess Tactical Defense System
+ * Threat Severity-Based Chess Defense System
  */
 public class ChessTacticalDefense {
     private static final Logger logger = LogManager.getLogger(ChessTacticalDefense.class);
     
+    // Threat severity levels
+    private static final int CRITICAL = 1000;  // Immediate checkmate
+    private static final int HIGH = 500;       // Major piece loss
+    private static final int MEDIUM = 100;     // Minor piece loss
+    private static final int LOW = 50;         // Positional threats
+    
     public static int[] findBestDefensiveMove(String[][] board, List<int[]> validMoves, String aiName) {
         if (validMoves.isEmpty()) return null;
         
-        // Priority 1: Immediate checkmate threats (HIGHEST PRIORITY)
-        int[] checkmateDefense = detectCheckmateThreats(board, validMoves, aiName);
-        if (checkmateDefense != null) {
-            logger.info("*** {}: CHECKMATE THREAT DETECTED - Emergency defense ***", aiName);
-            return checkmateDefense;
+        ThreatAssessment bestThreat = null;
+        int[] bestDefense = null;
+        
+        // Evaluate all threats and find highest severity
+        List<ThreatAssessment> threats = assessAllThreats(board, validMoves);
+        
+        for (ThreatAssessment threat : threats) {
+            if (bestThreat == null || threat.severity > bestThreat.severity) {
+                bestThreat = threat;
+                bestDefense = threat.defenseMove;
+            }
         }
         
-        // Priority 2: Queen under attack
-        int[] queenDefense = detectQueenThreats(board, validMoves, aiName);
-        if (queenDefense != null) return queenDefense;
-        
-        // Priority 3: Valuable pieces under attack (Rook, Bishop, Knight)
-        int[] valuablePieceDefense = detectValuablePieceThreats(board, validMoves, aiName);
-        if (valuablePieceDefense != null) return valuablePieceDefense;
-        
-        // Priority 4: Opening traps
-        int[] trapDefense = detectOpeningTraps(board, validMoves, aiName);
-        if (trapDefense != null) return trapDefense;
-        
-        // Priority 5: Tactical patterns
-        int[] tacticalDefense = detectTacticalThreats(board, validMoves, aiName);
-        if (tacticalDefense != null) return tacticalDefense;
-        
-        // Priority 6: Positional defense (king safety)
-        int[] kingSafetyDefense = defendKingSafety(board, validMoves);
-        if (kingSafetyDefense != null) {
-            logger.info("*** {}: KING SAFETY - Improving pawn shield ***", aiName);
-            return kingSafetyDefense;
+        if (bestThreat != null && bestThreat.severity >= MEDIUM) {
+            logger.info("*** {}: {} THREAT (severity: {}) - {} ***", 
+                aiName, bestThreat.type, bestThreat.severity, bestThreat.description);
+            return bestDefense;
         }
         
-        // Priority 7: Central control (weak squares)
-        int[] centralDefense = defendWeakSquares(board, validMoves);
-        if (centralDefense != null) {
-            logger.info("*** {}: CENTRAL CONTROL - Controlling key squares ***", aiName);
-            return centralDefense;
-        }
-        
-        return null;
+        return null; // Let AI handle low-severity threats
     }
     
-    private static int[] detectQueenThreats(String[][] board, List<int[]> validMoves, String aiName) {
-        // Find Black Queen position
-        int[] queenPos = null;
+    private static class ThreatAssessment {
+        final String type;
+        final int severity;
+        final String description;
+        final int[] defenseMove;
+        
+        ThreatAssessment(String type, int severity, String description, int[] defenseMove) {
+            this.type = type;
+            this.severity = severity;
+            this.description = description;
+            this.defenseMove = defenseMove;
+        }
+    }
+    
+    private static List<ThreatAssessment> assessAllThreats(String[][] board, List<int[]> validMoves) {
+        List<ThreatAssessment> threats = new ArrayList<>();
+        
+        // CRITICAL: Immediate checkmate threats
+        assessCheckmateThreats(board, validMoves, threats);
+        
+        // HIGH: Major piece threats (Queen, Rook)
+        assessMajorPieceThreats(board, validMoves, threats);
+        
+        // MEDIUM: Minor piece threats (Bishop, Knight)
+        assessMinorPieceThreats(board, validMoves, threats);
+        
+        return threats;
+    }
+    
+    private static void assessCheckmateThreats(String[][] board, List<int[]> validMoves, List<ThreatAssessment> threats) {
+        // Scholar's Mate detection
+        int[] scholarDefense = defendScholarsMate(board, validMoves);
+        if (scholarDefense != null) {
+            threats.add(new ThreatAssessment("CHECKMATE", CRITICAL, "Scholar's Mate threat", scholarDefense));
+        }
+    }
+    
+    private static void assessMajorPieceThreats(String[][] board, List<int[]> validMoves, List<ThreatAssessment> threats) {
+        // Queen threats
+        assessPieceThreats(board, validMoves, threats, "♛", "Queen", HIGH);
+        // Rook threats  
+        assessPieceThreats(board, validMoves, threats, "♜", "Rook", HIGH);
+    }
+    
+    private static void assessMinorPieceThreats(String[][] board, List<int[]> validMoves, List<ThreatAssessment> threats) {
+        // Bishop threats
+        assessPieceThreats(board, validMoves, threats, "♝", "Bishop", MEDIUM);
+        // Knight threats
+        assessPieceThreats(board, validMoves, threats, "♞", "Knight", MEDIUM);
+    }
+    
+    private static void assessPieceThreats(String[][] board, List<int[]> validMoves, List<ThreatAssessment> threats, 
+                                          String pieceType, String pieceName, int baseSeverity) {
         for (int i = 0; i < 8; i++) {
             for (int j = 0; j < 8; j++) {
-                if ("♛".equals(board[i][j])) {
-                    queenPos = new int[]{i, j};
-                    break;
-                }
-            }
-            if (queenPos != null) break;
-        }
-        
-        if (queenPos == null) return null;
-        
-        // Check if Queen is under attack
-        boolean queenUnderAttack = isSquareUnderAttack(board, queenPos[0], queenPos[1], true);
-        if (!queenUnderAttack) return null;
-        
-        logger.info("*** TACTICAL DEFENSE: Queen under attack at [{},{}] ***", queenPos[0], queenPos[1]);
-        
-        return defendValuablePiece(board, validMoves, queenPos, "♛", "Queen");
-    }
-    
-    /**
-     * Detect and defend threats against all valuable pieces (Rook, Bishop, Knight)
-     */
-    private static int[] detectValuablePieceThreats(String[][] board, List<int[]> validMoves, String aiName) {
-        String[] valuablePieces = {"♜", "♝", "♞"}; // Rook, Bishop, Knight
-        String[] pieceNames = {"Rook", "Bishop", "Knight"};
-        
-        for (int p = 0; p < valuablePieces.length; p++) {
-            String pieceType = valuablePieces[p];
-            String pieceName = pieceNames[p];
-            
-            // Find all pieces of this type
-            for (int i = 0; i < 8; i++) {
-                for (int j = 0; j < 8; j++) {
-                    if (pieceType.equals(board[i][j])) {
-                        // Check if this piece is under attack
-                        if (isSquareUnderAttack(board, i, j, true)) {
-                            logger.info("*** TACTICAL DEFENSE: {} under attack at [{},{}] ***", pieceName, i, j);
-                            
-                            int[] defense = defendValuablePiece(board, validMoves, new int[]{i, j}, pieceType, pieceName);
-                            if (defense != null) {
-                                return defense;
-                            }
-                        }
+                if (pieceType.equals(board[i][j]) && isSquareUnderAttack(board, i, j, true)) {
+                    int[] defense = defendValuablePiece(board, validMoves, new int[]{i, j}, pieceType, pieceName);
+                    if (defense != null) {
+                        threats.add(new ThreatAssessment("PIECE_ATTACK", baseSeverity, 
+                            pieceName + " under attack", defense));
                     }
                 }
             }
         }
-        
-        return null;
     }
+    
+
     
     /**
      * Universal piece defense logic: Escape → Block → Capture
@@ -378,62 +378,9 @@ public class ChessTacticalDefense {
         return null;
     }
     
-    private static int[] detectOpeningTraps(String[][] board, List<int[]> validMoves, String aiName) {
-        // Defend against Fried Liver Attack (Italian Game)
-        int[] friedLiverDefense = defendFriedLiver(board, validMoves);
-        if (friedLiverDefense != null) {
-            logger.info("*** {}: FRIED LIVER ATTACK THREAT - Defending f7 ***", aiName);
-            return friedLiverDefense;
-        }
-        
-        // Defend against Fishing Pole trap (Ruy Lopez)
-        int[] fishingPoleDefense = defendFishingPole(board, validMoves);
-        if (fishingPoleDefense != null) {
-            logger.info("*** {}: FISHING POLE TRAP THREAT - Keeping rook safe ***", aiName);
-            return fishingPoleDefense;
-        }
-        
-        // Execute Noah's Ark trap (trap White bishop)
-        int[] noahsArkTrap = defendNoahsArk(board, validMoves);
-        if (noahsArkTrap != null) {
-            logger.info("*** {}: NOAH'S ARK TRAP - Trapping White bishop ***", aiName);
-            return noahsArkTrap;
-        }
-        
-        return null;
-    }
+
     
-    private static int[] detectTacticalThreats(String[][] board, List<int[]> validMoves, String aiName) {
-        // Defend against pins on king
-        int[] pinDefense = defendAgainstPins(board, validMoves);
-        if (pinDefense != null) {
-            logger.info("*** {}: PIN THREAT - Breaking pin ***", aiName);
-            return pinDefense;
-        }
-        
-        // Defend against forks (high-value threats only)
-        int[] forkDefense = defendAgainstForks(board, validMoves);
-        if (forkDefense != null) {
-            logger.info("*** {}: FORK THREAT - Defending valuable pieces ***", aiName);
-            return forkDefense;
-        }
-        
-        // Defend against skewers (only high-value threats)
-        int[] skewerDefense = defendAgainstSkewers(board, validMoves);
-        if (skewerDefense != null) {
-            logger.info("*** {}: HIGH-VALUE SKEWER THREAT - Breaking alignment ***", aiName);
-            return skewerDefense;
-        }
-        
-        // Defend against discovered attacks
-        int[] discoveredDefense = defendAgainstDiscoveredAttacks(board, validMoves);
-        if (discoveredDefense != null) {
-            logger.info("*** {}: DISCOVERED ATTACK THREAT - Controlling center ***", aiName);
-            return discoveredDefense;
-        }
-        
-        return null;
-    }
+
     
 //    private static int[] detectPositionalThreats(String[][] board, List<int[]> validMoves, String aiName) {
 //        // Remove all positional defenses - let AI engines handle these
@@ -441,27 +388,49 @@ public class ChessTacticalDefense {
 //    }
     
     private static int[] defendScholarsMate(String[][] board, List<int[]> validMoves) {
+        logger.debug("*** SCHOLAR'S MATE CHECK: Scanning board for Queen+Bishop f7 threats ***");
+        
         // Check for ANY Queen + Bishop threats on f7 (Scholar's Mate pattern)
         boolean queenThreatsF7 = false;
         boolean bishopThreatsF7 = false;
         
+        // Debug: Show what's on f7
+        logger.debug("*** SCHOLAR'S MATE: f7 square [1,5] contains: '{}' ***", board[1][5]);
+        
         for (int r = 0; r < 8; r++) {
             for (int c = 0; c < 8; c++) {
                 String piece = board[r][c];
-                if ("♕".equals(piece) && canQueenAttack(r, c, 1, 5, board)) {
-                    queenThreatsF7 = true;
+                if ("♕".equals(piece)) {
+                    logger.debug("*** SCHOLAR'S MATE: Found White Queen at [{},{}] ***", r, c);
+                    if (canQueenAttack(r, c, 1, 5, board)) {
+                        queenThreatsF7 = true;
+                        logger.debug("*** SCHOLAR'S MATE: Queen at [{},{}] threatens f7 ***", r, c);
+                    } else {
+                        logger.debug("*** SCHOLAR'S MATE: Queen at [{},{}] does NOT threaten f7 ***", r, c);
+                    }
                 }
-                if ("♗".equals(piece) && canBishopAttack(r, c, 1, 5, board)) {
-                    bishopThreatsF7 = true;
+                if ("♗".equals(piece)) {
+                    logger.debug("*** SCHOLAR'S MATE: Found White Bishop at [{},{}] ***", r, c);
+                    if (canBishopAttack(r, c, 1, 5, board)) {
+                        bishopThreatsF7 = true;
+                        logger.debug("*** SCHOLAR'S MATE: Bishop at [{},{}] threatens f7 ***", r, c);
+                    } else {
+                        logger.debug("*** SCHOLAR'S MATE: Bishop at [{},{}] does NOT threaten f7 ***", r, c);
+                    }
                 }
             }
         }
         
+        logger.debug("*** SCHOLAR'S MATE: Queen threatens f7: {}, Bishop threatens f7: {} ***", queenThreatsF7, bishopThreatsF7);
+        
         // If both Queen and Bishop threaten f7, it's Scholar's Mate setup
         if (queenThreatsF7 && bishopThreatsF7) {
+            logger.debug("*** SCHOLAR'S MATE DETECTED: Both Queen and Bishop threaten f7 ***");
+            
             // Priority 1: Knight to f6 - CLASSIC Scholar's Mate defense
             for (int[] move : validMoves) {
                 if ("♞".equals(board[move[0]][move[1]]) && move[2] == 2 && move[3] == 5) {
+                    logger.debug("*** SCHOLAR'S MATE DEFENSE: Knight to f6 ***");
                     return move; // Nf6 - blocks both Queen and Bishop attacks on f7
                 }
             }
@@ -469,6 +438,7 @@ public class ChessTacticalDefense {
             // Priority 2: Any piece to f7 to defend
             for (int[] move : validMoves) {
                 if (move[2] == 1 && move[3] == 5) { // Any piece to f7
+                    logger.debug("*** SCHOLAR'S MATE DEFENSE: Piece to f7 ***");
                     return move;
                 }
             }
@@ -476,6 +446,7 @@ public class ChessTacticalDefense {
             // Priority 3: Block the Queen's attack path
             for (int[] move : validMoves) {
                 if (move[2] == 2 && move[3] == 5) { // Any piece to f6
+                    logger.debug("*** SCHOLAR'S MATE DEFENSE: Piece to f6 ***");
                     return move;
                 }
             }
@@ -483,14 +454,17 @@ public class ChessTacticalDefense {
         
         // Also check for early Queen threats (even without Bishop)
         if (queenThreatsF7) {
+            logger.debug("*** EARLY QUEEN THREAT: Queen threatens f7 ***");
             // Defend f7 if Queen is threatening it
             for (int[] move : validMoves) {
                 if ("♞".equals(board[move[0]][move[1]]) && move[2] == 2 && move[3] == 5) {
+                    logger.debug("*** EARLY QUEEN DEFENSE: Knight to f6 ***");
                     return move; // Nf6 - blocks Queen attack
                 }
             }
         }
         
+        logger.debug("*** SCHOLAR'S MATE: No threats detected or no defense available ***");
         return null;
     }
     
@@ -844,34 +818,20 @@ public class ChessTacticalDefense {
     }
     
     private static int[] defendAgainstDiscoveredAttacks(String[][] board, List<int[]> validMoves) {
-        // Prevent discovered attacks by controlling center
-        for (int[] move : validMoves) {
-            if (preventsDiscoveredAttack(board, move)) {
-                return move;
+        // Only defend against ACTUAL discovered attacks with high-value pieces at risk
+        if (hasActualDiscoveredAttack(board)) {
+            for (int[] move : validMoves) {
+                if (preventsDiscoveredAttack(board, move)) {
+                    return move;
+                }
             }
         }
         return null;
     }
     
-    private static int[] defendKingSafety(String[][] board, List<int[]> validMoves) {
-        // Improve king safety with pawn shield
-        for (int[] move : validMoves) {
-            if (improvesKingSafety(board, move)) {
-                return move;
-            }
-        }
-        return null;
-    }
+
     
-    private static int[] defendWeakSquares(String[][] board, List<int[]> validMoves) {
-        // Control central weak squares
-        for (int[] move : validMoves) {
-            if (controlsKeySquare(board, move)) {
-                return move;
-            }
-        }
-        return null;
-    }
+
     
     // Helper methods
 //    private static int[] findKing(String[][] board, boolean isWhite) {
@@ -1070,6 +1030,49 @@ public class ChessTacticalDefense {
     
     private static boolean preventsDiscoveredAttack(String[][] board, int[] move) {
         return move[2] >= 2 && move[2] <= 5;
+    }
+    
+    /**
+     * Check if there's an actual discovered attack threat with high-value pieces
+     */
+    private static boolean hasActualDiscoveredAttack(String[][] board) {
+        // Only detect discovered attacks if Queen or Rook is at risk AND it's not a Scholar's Mate setup
+        
+        // First check if this is a Scholar's Mate pattern - if so, don't trigger discovered attack
+        boolean queenThreatsF7 = false;
+        boolean bishopThreatsF7 = false;
+        
+        for (int r = 0; r < 8; r++) {
+            for (int c = 0; c < 8; c++) {
+                String piece = board[r][c];
+                if ("♕".equals(piece) && canQueenAttack(r, c, 1, 5, board)) {
+                    queenThreatsF7 = true;
+                }
+                if ("♗".equals(piece) && canBishopAttack(r, c, 1, 5, board)) {
+                    bishopThreatsF7 = true;
+                }
+            }
+        }
+        
+        // If Scholar's Mate pattern detected, don't trigger discovered attack defense
+        if (queenThreatsF7 || bishopThreatsF7) {
+            logger.debug("*** DISCOVERED ATTACK: Skipping due to Scholar's Mate pattern ***");
+            return false;
+        }
+        
+        // Only detect discovered attacks if Queen or Rook is at risk
+        for (int r = 0; r < 8; r++) {
+            for (int c = 0; c < 8; c++) {
+                String piece = board[r][c];
+                if ("♛♜".contains(piece)) { // Black Queen or Rook
+                    if (isSquareUnderAttack(board, r, c, true)) {
+                        logger.debug("*** DISCOVERED ATTACK: High-value piece {} at [{},{}] under attack ***", piece, r, c);
+                        return true; // High-value piece under attack
+                    }
+                }
+            }
+        }
+        return false;
     }
     
     private static boolean improvesKingSafety(String[][] board, int[] move) {

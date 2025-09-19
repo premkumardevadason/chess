@@ -15,6 +15,9 @@
         <Logger name="com.example.chess.AlphaZeroNeuralNetwork" level="INFO" additivity="false">
             <AppenderRef ref="Console"/>
         </Logger>
+        <Logger name="com.example.chess.ChessTacticalDefense" level="INFO" additivity="false">
+            <AppenderRef ref="Console"/>
+        </Logger>
         <Logger name="org.springframework" level="WARN" additivity="false">
             <AppenderRef ref="Console"/>
         </Logger>
