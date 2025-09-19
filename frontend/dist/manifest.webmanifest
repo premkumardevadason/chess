@@ -1,0 +1,1 @@
+{"name":"Chess AI Game","short_name":"Chess AI","description":"Advanced Chess Game with 12 AI Systems","start_url":"/newage/chess/","display":"standalone","background_color":"#ffffff","theme_color":"#000000","lang":"en","scope":"/","icons":[{"src":"pwa-192x192.png","sizes":"192x192","type":"image/png"},{"src":"pwa-512x512.png","sizes":"512x512","type":"image/png"}]}
