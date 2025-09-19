@@ -3,12 +3,16 @@ package com.example.chess.mcp.agent;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 /**
  * Main application class for the MCP Chess Agent
  * Creates dual-session training environment for AI vs AI gameplay
  */
 public class MCPChessAgent {
+    
+    private static final Logger logger = LogManager.getLogger(MCPChessAgent.class);
     
     private MCPConnectionManager connectionManager;
     private DualSessionOrchestrator orchestrator;
@@ -37,8 +41,7 @@ public class MCPChessAgent {
             }
             
         } catch (Exception e) {
-            System.err.println("Agent failed: " + e.getMessage());
-            e.printStackTrace();
+            logger.error("Agent failed: " + e.getMessage(), e);
         } finally {
             agent.shutdown();
         }
@@ -50,10 +53,10 @@ public class MCPChessAgent {
         this.connectionManager = new MCPConnectionManager(config);
         this.orchestrator = new DualSessionOrchestrator(connectionManager, config);
         
-        System.out.println("MCP Chess Agent initialized");
-        System.out.println("Server: " + config.getServerHost() + ":" + config.getServerPort());
-        System.out.println("Transport: " + config.getTransportType());
-        System.out.println("Games per session: " + config.getGamesPerSession());
+        logger.info("MCP Chess Agent initialized");
+        logger.info("Server: " + config.getServerHost() + ":" + config.getServerPort());
+        logger.info("Transport: " + config.getTransportType());
+        logger.info("Games per session: " + config.getGamesPerSession());
         
         // Display available MCP tools
         displayMCPTools();
@@ -75,7 +78,7 @@ public class MCPChessAgent {
                 .sendRequest("temp-tools-fetch", toolsRequest)
                 .get(10, java.util.concurrent.TimeUnit.SECONDS);
             
-            System.out.println("\n=== REGISTERED MCP TOOLS ===");
+            logger.info("\n=== REGISTERED MCP TOOLS ===");
             
             if (response.has("result") && response.get("result").has("tools")) {
                 com.fasterxml.jackson.databind.JsonNode tools = response.get("result").get("tools");
@@ -84,36 +87,36 @@ public class MCPChessAgent {
                 for (com.fasterxml.jackson.databind.JsonNode tool : tools) {
                     String name = tool.get("name").asText();
                     String description = tool.has("description") ? tool.get("description").asText() : "No description";
-                    System.out.println(name + " - " + description);
+                    logger.info(name + " - " + description);
                     toolCount++;
                 }
                 
-                System.out.println("Total tools: " + toolCount + "\n");
+                logger.info("Total tools: " + toolCount + "\n");
             } else {
-                System.out.println("No tools found in server response\n");
+                logger.warn("No tools found in server response\n");
             }
             
             // Close temporary connection
             connectionManager.closeConnection("temp-tools-fetch");
             
         } catch (Exception e) {
-            System.err.println("Failed to fetch MCP tools dynamically, using fallback: " + e.getMessage());
+            logger.error("Failed to fetch MCP tools dynamically, using fallback: " + e.getMessage(), e);
             displayFallbackTools();
         }
     }
     
     private void displayFallbackTools() {
-        System.out.println("\n=== MCP TOOLS (FALLBACK) ===");
-        System.out.println("create_chess_game - Create a new chess game with AI opponent selection");
-        System.out.println("make_chess_move - Execute a chess move and get AI response");
-        System.out.println("get_board_state - Get current chess board state and game information");
-        System.out.println("analyze_position - Get AI analysis of current chess position");
-        System.out.println("get_legal_moves - Get all legal moves for current position");
-        System.out.println("get_move_hint - Get AI move suggestion with explanation");
-        System.out.println("create_tournament - Create games against all 12 AI systems simultaneously");
-        System.out.println("get_tournament_status - Get status of all games in agent's tournament");
-        System.out.println("fetch_current_board - Get visual representation of current chess board");
-        System.out.println("Total tools: 9 (fallback)\n");
+        logger.info("\n=== MCP TOOLS (FALLBACK) ===");
+        logger.info("create_chess_game - Create a new chess game with AI opponent selection");
+        logger.info("make_chess_move - Execute a chess move and get AI response");
+        logger.info("get_board_state - Get current chess board state and game information");
+        logger.info("analyze_position - Get AI analysis of current chess position");
+        logger.info("get_legal_moves - Get all legal moves for current position");
+        logger.info("get_move_hint - Get AI move suggestion with explanation");
+        logger.info("create_tournament - Create games against all 12 AI systems simultaneously");
+        logger.info("get_tournament_status - Get status of all games in agent's tournament");
+        logger.info("fetch_current_board - Get visual representation of current chess board");
+        logger.info("Total tools: 9 (fallback)\n");
     }
     
     public void startDualSessionTraining() {
@@ -121,21 +124,20 @@ public class MCPChessAgent {
         
         threadPool.submit(() -> {
             try {
-                System.out.println("Dual-session training started");
-                System.out.println("Attempting to connect to MCP server at: " + config.getServerUrl());
+                logger.info("Dual-session training started");
+                logger.info("Attempting to connect to MCP server at: " + config.getServerUrl());
                 orchestrator.initializeSessions();
                 orchestrator.startTrainingLoop();
             } catch (java.net.ConnectException e) {
-                System.err.println("\n❌ CONNECTION FAILED: Cannot connect to MCP server");
-                System.err.println("Server URL: " + config.getServerUrl());
-                System.err.println("\n💡 SOLUTION: Start the MCP server first:");
-                System.err.println("   java -jar chess-application.jar --mcp --transport=websocket --port=8082");
-                System.err.println("   OR");
-                System.err.println("   mvn spring-boot:run -Dspring-boot.run.arguments=\"--mcp --transport=websocket --port=8082\"");
-                System.err.println("\nError details: " + e.getMessage());
+                logger.error("\n❌ CONNECTION FAILED: Cannot connect to MCP server");
+                logger.error("Server URL: " + config.getServerUrl());
+                logger.error("\n💡 SOLUTION: Start the MCP server first:");
+                logger.error("   java -jar chess-application.jar --mcp --transport=websocket --port=8082");
+                logger.error("   OR");
+                logger.error("   mvn spring-boot:run -Dspring-boot.run.arguments=\"--mcp --transport=websocket --port=8082\"");
+                logger.error("\nError details: " + e.getMessage(), e);
             } catch (Exception e) {
-                System.err.println("Training loop failed: " + e.getMessage());
-                e.printStackTrace();
+                logger.error("Training loop failed: " + e.getMessage(), e);
             } finally {
                 synchronized (this) {
                     running = false;
@@ -146,7 +148,7 @@ public class MCPChessAgent {
     }
     
     public void shutdown() {
-        System.out.println("Shutting down MCP Chess Agent...");
+        logger.info("Shutting down MCP Chess Agent...");
         running = false;
         
         if (orchestrator != null) {
@@ -168,7 +170,7 @@ public class MCPChessAgent {
             }
         }
         
-        System.out.println("MCP Chess Agent shutdown complete");
+        logger.info("MCP Chess Agent shutdown complete");
     }
     
     private static AgentConfiguration parseArguments(String[] args) {
@@ -211,15 +213,15 @@ public class MCPChessAgent {
     }
     
     private static void printUsage() {
-        System.out.println("MCP Chess Agent Usage:");
-        System.out.println("  --host <host>        MCP server host (default: localhost)");
-        System.out.println("  --port <port>        MCP server port (default: 8082)");
-        System.out.println("  --transport <type>   Transport type: websocket|stdio (default: websocket)");
-        System.out.println("  --games <count>      Games per session (default: 1)");
-        System.out.println("  --difficulty <level> AI difficulty 1-10 (default: 8)");
-        System.out.println("  --white <ai>         White AI system (default: AlphaZero)");
-        System.out.println("  --black <ai>         Black AI system (default: LeelaChessZero)");
-        System.out.println("  --tournament         Run tournament mode");
-        System.out.println("  --help               Show this help");
+        logger.info("MCP Chess Agent Usage:");
+        logger.info("  --host <host>        MCP server host (default: localhost)");
+        logger.info("  --port <port>        MCP server port (default: 8082)");
+        logger.info("  --transport <type>   Transport type: websocket|stdio (default: websocket)");
+        logger.info("  --games <count>      Games per session (default: 1)");
+        logger.info("  --difficulty <level> AI difficulty 1-10 (default: 8)");
+        logger.info("  --white <ai>         White AI system (default: AlphaZero)");
+        logger.info("  --black <ai>         Black AI system (default: LeelaChessZero)");
+        logger.info("  --tournament         Run tournament mode");
+        logger.info("  --help               Show this help");
     }
 }

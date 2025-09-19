@@ -3,23 +3,27 @@ package com.example.chess;
 import java.io.*;
 import java.lang.reflect.Method;
 import org.deeplearning4j.util.ModelSerializer;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 /**
  * Standalone test to investigate DeepLearning4J ModelSerializer API
  */
 public class StandaloneAPITest {
     
+    private static final Logger logger = LogManager.getLogger(StandaloneAPITest.class);
+    
     public static void main(String[] args) {
-        System.out.println("=== DeepLearning4J ModelSerializer API Investigation ===");
+        logger.info("=== DeepLearning4J ModelSerializer API Investigation ===");
         
         Class<?> modelSerializerClass = ModelSerializer.class;
         
-        System.out.println("Available ModelSerializer methods:");
+        logger.info("Available ModelSerializer methods:");
         boolean hasStreamMethods = false;
         
         for (Method method : modelSerializerClass.getDeclaredMethods()) {
             if (method.getName().contains("writeModel") || method.getName().contains("restore")) {
-                System.out.println("  " + method.getName() + " - Parameters: " + 
+                logger.info("  " + method.getName() + " - Parameters: " + 
                     java.util.Arrays.toString(method.getParameterTypes()));
                 
                 // Check for stream-based methods
@@ -31,13 +35,13 @@ public class StandaloneAPITest {
             }
         }
         
-        System.out.println("\n=== COMPATIBILITY RESULT ===");
+        logger.info("\n=== COMPATIBILITY RESULT ===");
         if (hasStreamMethods) {
-            System.out.println("✅ STREAM METHODS FOUND - NIO.2 COMPATIBLE");
-            System.out.println("   All 8 AI systems can use NIO.2 (100% coverage)");
+            logger.info("✅ STREAM METHODS FOUND - NIO.2 COMPATIBLE");
+            logger.info("   All 8 AI systems can use NIO.2 (100% coverage)");
         } else {
-            System.out.println("❌ NO STREAM METHODS - FILE-ONLY API");
-            System.out.println("   Only 3/8 AI systems can use NIO.2 (37.5% coverage)");
+            logger.warn("❌ NO STREAM METHODS - FILE-ONLY API");
+            logger.warn("   Only 3/8 AI systems can use NIO.2 (37.5% coverage)");
         }
     }
 }

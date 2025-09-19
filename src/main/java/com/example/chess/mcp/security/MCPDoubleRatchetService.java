@@ -16,6 +16,8 @@ import java.util.Base64;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 /**
  * Double Ratchet service with DH ratchet (X25519) and HKDF-based chain keys.
@@ -26,6 +28,8 @@ import java.util.concurrent.ConcurrentHashMap;
 @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(name = "mcp.encryption.impl", havingValue = "hkdf", matchIfMissing = true)
 public class MCPDoubleRatchetService implements DoubleRatchetService {
 
+	private static final Logger logger = LogManager.getLogger(MCPDoubleRatchetService.class);
+	
 	private final SecureRandom secureRandom = new SecureRandom();
 	private final ConcurrentHashMap<String, RatchetState> sessions = new ConcurrentHashMap<>();
 	private final ThreadLocal<Cipher> cipherPool = ThreadLocal.withInitial(() -> {
@@ -161,7 +165,7 @@ public class MCPDoubleRatchetService implements DoubleRatchetService {
 			sessions.put(agentId, state);
 
 			String role = isServer ? "SERVER" : "CLIENT";
-			System.out.println("🔐 Double Ratchet session established for: " + agentId + " (" + role + ")");
+			logger.debug("🔐 Double Ratchet session established for: " + agentId + " (" + role + ")");
 		} catch (Exception e) {
 			throw new RuntimeException("Failed to establish session for " + agentId, e);
 		}
@@ -203,7 +207,7 @@ public class MCPDoubleRatchetService implements DoubleRatchetService {
 	public void removeSession(String agentId) {
 		RatchetState state = sessions.remove(agentId);
 		if (state != null) state.clearSensitive();
-		System.out.println("🗑️ Removed Double Ratchet session: " + agentId);
+		logger.debug("🗑️ Removed Double Ratchet session: " + agentId);
 	}
 
 	public boolean hasSession(String agentId) {

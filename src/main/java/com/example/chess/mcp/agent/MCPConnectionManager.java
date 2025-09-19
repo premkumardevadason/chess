@@ -11,11 +11,15 @@ import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 /**
  * Manages MCP connections and JSON-RPC communication
  */
 public class MCPConnectionManager {
+    
+    private static final Logger logger = LogManager.getLogger(MCPConnectionManager.class);
     
     private final AgentConfiguration config;
     private final ConcurrentHashMap<String, MCPConnection> connections = new ConcurrentHashMap<>();
@@ -62,22 +66,21 @@ public class MCPConnectionManager {
             
             @Override
             public void onOpen(WebSocket webSocket) {
-                System.out.println("WebSocket connection opened for session: " + sessionId);
+                logger.info("WebSocket connection opened for session: " + sessionId);
                 webSocket.request(1); // Request first message
                 webSocketFuture.complete(webSocket);
             }
             
             @Override
             public CompletionStage<?> onClose(WebSocket webSocket, int statusCode, String reason) {
-                System.out.println("WebSocket connection closed for session: " + sessionId + " (" + statusCode + ": " + reason + ")");
+                logger.info("WebSocket connection closed for session: " + sessionId + " (" + statusCode + ": " + reason + ")");
                 connections.remove(sessionId);
                 return CompletableFuture.completedFuture(null);
             }
             
             @Override
             public void onError(WebSocket webSocket, Throwable error) {
-                System.err.println("WebSocket error for session " + sessionId + ": " + error.getMessage());
-                error.printStackTrace();
+                logger.error("WebSocket error for session " + sessionId + ": " + error.getMessage(), error);
                 webSocketFuture.completeExceptionally(error);
             }
         };
@@ -91,9 +94,9 @@ public class MCPConnectionManager {
         
         // Skip encryption setup here - will be done after getting agent ID from server
         if (encryptionEnabled) {
-            System.out.println("⚙️ HKDF Double Ratchet will be established after server handshake for: " + sessionId);
+            logger.info("⚙️ HKDF Double Ratchet will be established after server handshake for: " + sessionId);
         } else {
-            System.out.println("⚠️ Encryption disabled for session: " + sessionId);
+            logger.warn("⚠️ Encryption disabled for session: " + sessionId);
         }
         
         // Initialize MCP protocol
@@ -119,23 +122,23 @@ public class MCPConnectionManager {
             params
         );
         
-        System.out.println("Sending initialize request with ID: " + initRequestId);
+        logger.debug("Sending initialize request with ID: " + initRequestId);
         JsonNode initResponse = sendRequest(connection.getSessionId(), initRequest).get(config.getTimeoutSeconds(), TimeUnit.SECONDS);
         
         // Establish encryption after successful initialize
         if (encryptionEnabled && initResponse.has("result")) {
             try {
                 // Debug: Print the full response
-                System.out.println("🔍 Initialize response: " + initResponse.toString());
+                logger.debug("🔍 Initialize response: " + initResponse.toString());
                 
                 // Extract agent ID from server response
                 String agentId = null;
                 if (initResponse.get("result").has("serverInfo") && 
                     initResponse.get("result").get("serverInfo").has("agentId")) {
                     agentId = initResponse.get("result").get("serverInfo").get("agentId").asText();
-                    System.out.println("🎯 Extracted agent ID from server: " + agentId);
+                    logger.info("🎯 Extracted agent ID from server: " + agentId);
                 } else {
-                    System.out.println("🔍 ServerInfo structure: " + initResponse.get("result").get("serverInfo").toString());
+                    logger.debug("🔍 ServerInfo structure: " + initResponse.get("result").get("serverInfo").toString());
                 }
                 
                 if (agentId != null) {
@@ -166,26 +169,25 @@ public class MCPConnectionManager {
                         if (doubleRatchetService instanceof com.example.chess.mcp.security.SignalDoubleRatchetService s) {
                             s.initializeWithPreKeyBundle(agentId, dto);
                         }
-                        System.out.println("✅ Signal session initialized with PreKey bundle for agent: " + agentId);
+                        logger.info("✅ Signal session initialized with PreKey bundle for agent: " + agentId);
                     } else {
                         doubleRatchetService.establishSession(agentId, false); // HKDF client mode
-                        System.out.println("✅ HKDF Double Ratchet CLIENT established with server agent ID: " + agentId);
+                        logger.info("✅ HKDF Double Ratchet CLIENT established with server agent ID: " + agentId);
                     }
                 } else {
-                    System.err.println("❌ No agent ID found in server response - using fallback");
+                    logger.error("❌ No agent ID found in server response - using fallback");
                     // Fallback: use session ID
                     agentId = connection.getSessionId();
                     doubleRatchetService.establishSession(agentId, false); // Client mode
                     connection.setAgentId(agentId);
-                    System.out.println("⚠️ HKDF Double Ratchet CLIENT established with fallback ID: " + agentId);
+                    logger.warn("⚠️ HKDF Double Ratchet CLIENT established with fallback ID: " + agentId);
                 }
             } catch (Exception e) {
-                System.err.println("❌ Failed to establish encryption: " + e.getMessage());
-                e.printStackTrace();
+                logger.error("❌ Failed to establish encryption: " + e.getMessage(), e);
             }
         }
         
-        System.out.println("Initialize request completed successfully");
+        logger.info("Initialize request completed successfully");
     }
     
     public CompletableFuture<JsonNode> sendRequest(String sessionId, JsonRpcRequest request) {
@@ -273,7 +275,7 @@ public class MCPConnectionManager {
                 }
             }
         } catch (Exception e) {
-            System.err.println("Error handling message for session " + sessionId + ": " + e.getMessage());
+            logger.error("Error handling message for session " + sessionId + ": " + e.getMessage(), e);
         }
     }
     

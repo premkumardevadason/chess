@@ -13,6 +13,8 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 /**
  * Web controller for chess game interface.
@@ -20,6 +22,8 @@ import java.util.concurrent.Executors;
  */
 @Controller
 public class ChessController {
+    
+    private static final Logger logger = LogManager.getLogger(ChessController.class);
     
     @Autowired
     private ChessGame game;
@@ -52,7 +56,7 @@ public class ChessController {
         backgroundThread.shutdownNow(); // Interrupts running thread
         try {
             if (!backgroundThread.awaitTermination(2, java.util.concurrent.TimeUnit.SECONDS)) {
-                System.err.println("WebSocket broadcaster did not terminate gracefully");
+                logger.error("WebSocket broadcaster did not terminate gracefully");
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -73,7 +77,7 @@ public class ChessController {
                 } catch (Exception e) {
                     // Ignore WebSocket errors during shutdown
                     if (!shutdownInProgress) {
-                        System.err.println("WebSocket broadcast error: " + e.getMessage());
+                        logger.error("WebSocket broadcast error: " + e.getMessage(), e);
                     }
                 }
             }

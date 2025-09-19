@@ -6,11 +6,15 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 /**
  * Proxy for a single chess session via MCP
  */
 public class ChessSessionProxy {
+    
+    private static final Logger logger = LogManager.getLogger(ChessSessionProxy.class);
     
     private final String sessionId;
     private final String playerColor;
@@ -38,7 +42,7 @@ public class ChessSessionProxy {
         if (connection == null) {
             // Create connection only once
             connection = connectionManager.createConnection(sessionId);
-            System.out.println("Connection created for session: " + sessionId);
+            logger.debug("Connection created for session: " + sessionId);
         }
     }
     
@@ -63,7 +67,7 @@ public class ChessSessionProxy {
             params
         );
         
-        System.out.println("Sending create_chess_game request with ID: " + createGameRequestId + 
+        logger.debug("Sending create_chess_game request with ID: " + createGameRequestId + 
                           " for session: " + sessionId + " (Player: " + playerColor + " vs AI: " + aiOpponent + ")");
         
         CompletableFuture<JsonNode> response = connectionManager.sendRequest(sessionId, createGameRequest);
@@ -80,22 +84,22 @@ public class ChessSessionProxy {
                         if (resourceData.has("sessionId")) {
                             gameSessionId = resourceData.get("sessionId").asText();
                             gameActive = true;
-                            System.out.println("Game initialized for " + sessionId + " with session ID: " + gameSessionId);
+                            logger.debug("Game initialized for " + sessionId + " with session ID: " + gameSessionId);
                             return;
                         } else {
-                            System.out.println("No sessionId found in response. Available fields: " + resourceData.fieldNames());
+                            logger.debug("No sessionId found in response. Available fields: " + resourceData.fieldNames());
                         }
                     } catch (Exception e) {
-                        System.err.println("Error parsing resource text: " + e.getMessage());
+                        logger.error("Error parsing resource text: " + e.getMessage());
                     }
                 }
             }
         } else if (result.has("error")) {
-            System.err.println("Error creating chess game: " + result.get("error").toString());
+            logger.error("Error creating chess game: " + result.get("error").toString());
             throw new RuntimeException("Failed to create chess game: " + result.get("error").toString());
         }
         
-        System.out.println("Failed to create chess game. Response: " + result.toString());
+        logger.debug("Failed to create chess game. Response: " + result.toString());
         throw new RuntimeException("Failed to create chess game: " + result.toString());
     }
     
@@ -103,7 +107,7 @@ public class ChessSessionProxy {
     
     public String getAIMove() throws Exception {
         if (!gameActive) {
-            System.out.println("Session " + sessionId + " is not active - cannot get AI move");
+            logger.debug("Session " + sessionId + " is not active - cannot get AI move");
             return null;
         }
         
@@ -119,7 +123,7 @@ public class ChessSessionProxy {
             hintParams
         );
         
-        System.out.println("Getting AI move hint for session: " + sessionId);
+        logger.debug("Getting AI move hint for session: " + sessionId);
         
         CompletableFuture<JsonNode> hintResponse = connectionManager.sendRequest(sessionId, hintRequest);
         JsonNode hintResult = hintResponse.get(config.getTimeoutSeconds(), TimeUnit.SECONDS);
@@ -135,29 +139,29 @@ public class ChessSessionProxy {
                         // Try multiple possible field names for move suggestions
                         if (resourceData.has("suggestedMove")) {
                             String move = resourceData.get("suggestedMove").asText();
-                            System.out.println("AI move hint received: " + move);
+                            logger.debug("AI move hint received: " + move);
                             return move;
                         } else if (resourceData.has("move")) {
                             String move = resourceData.get("move").asText();
-                            System.out.println("AI move received: " + move);
+                            logger.debug("AI move received: " + move);
                             return move;
                         } else if (resourceData.has("aiMove")) {
                             String move = resourceData.get("aiMove").asText();
-                            System.out.println("AI move received: " + move);
+                            logger.debug("AI move received: " + move);
                             return move;
                         } else {
-                            System.out.println("No move field found in response. Available fields: " + resourceData.fieldNames());
+                            logger.debug("No move field found in response. Available fields: " + resourceData.fieldNames());
                         }
                     } catch (Exception e) {
-                        System.err.println("Error parsing resource text: " + e.getMessage());
+                        logger.error("Error parsing resource text: " + e.getMessage());
                     }
                 }
             }
         } else if (hintResult.has("error")) {
-            System.err.println("Error getting AI move: " + hintResult.get("error").toString());
+            logger.error("Error getting AI move: " + hintResult.get("error").toString());
         }
         
-        System.out.println("Failed to get AI move from session: " + sessionId);
+        logger.debug("Failed to get AI move from session: " + sessionId);
         return null;
     }
     
@@ -165,7 +169,7 @@ public class ChessSessionProxy {
     
     public String makeMove(String uciMove) throws Exception {
         if (!gameActive) {
-            System.out.println("Session " + sessionId + " is not active - cannot make move");
+            logger.debug("Session " + sessionId + " is not active - cannot make move");
             return null;
         }
         
@@ -177,7 +181,7 @@ public class ChessSessionProxy {
             )
         );
         
-        System.out.println("Making move " + uciMove + " in session: " + sessionId);
+        logger.debug("Making move " + uciMove + " in session: " + sessionId);
         
         JsonRpcRequest makeMoveRequest = new JsonRpcRequest(
             requestIdCounter.getAndIncrement(),
@@ -200,37 +204,37 @@ public class ChessSessionProxy {
                         // Try multiple possible field names for AI moves
                         if (resourceData.has("aiMove")) {
                             String aiMove = resourceData.get("aiMove").asText();
-                            System.out.println("AI response move: " + aiMove);
+                            logger.debug("AI response move: " + aiMove);
                             
                             // Check if game ended
                             if (resourceData.has("gameStatus") && !"active".equals(resourceData.get("gameStatus").asText())) {
-                                System.out.println("Game ended in session " + sessionId + " with status: " + resourceData.get("gameStatus").asText());
+                                logger.debug("Game ended in session " + sessionId + " with status: " + resourceData.get("gameStatus").asText());
                                 gameActive = false;
                             }
                             return aiMove;
                         } else if (resourceData.has("move")) {
                             String aiMove = resourceData.get("move").asText();
-                            System.out.println("AI response move: " + aiMove);
+                            logger.debug("AI response move: " + aiMove);
                             
                             // Check if game ended
                             if (resourceData.has("gameStatus") && !"active".equals(resourceData.get("gameStatus").asText())) {
-                                System.out.println("Game ended in session " + sessionId + " with status: " + resourceData.get("gameStatus").asText());
+                                logger.debug("Game ended in session " + sessionId + " with status: " + resourceData.get("gameStatus").asText());
                                 gameActive = false;
                             }
                             return aiMove;
                         } else {
-                            System.out.println("No AI move field found in response. Available fields: " + resourceData.fieldNames());
+                            logger.debug("No AI move field found in response. Available fields: " + resourceData.fieldNames());
                         }
                     } catch (Exception e) {
-                        System.err.println("Error parsing resource text: " + e.getMessage());
+                        logger.error("Error parsing resource text: " + e.getMessage());
                     }
                 }
             }
         } else if (result.has("error")) {
-            System.err.println("Error making move: " + result.get("error").toString());
+            logger.error("Error making move: " + result.get("error").toString());
         }
         
-        System.out.println("Failed to get AI response move from session: " + sessionId);
+        logger.debug("Failed to get AI response move from session: " + sessionId);
         return null;
     }
     
@@ -348,13 +352,13 @@ public class ChessSessionProxy {
     public void resetGame() throws Exception {
         // Only reset when game is over - create new game session with existing connection
         if (!gameActive || isGameOver()) {
-            System.out.println("Game over - creating new game for session: " + sessionId + " (reusing connection)");
+            logger.debug("Game over - creating new game for session: " + sessionId + " (reusing connection)");
             initializeGame(
                 "white".equals(playerColor) ? config.getBlackAI() : config.getWhiteAI(),
                 config.getAiDifficulty()
             );
         } else {
-            System.out.println("Game still active for session: " + sessionId + " - no reset needed");
+            logger.debug("Game still active for session: " + sessionId + " - no reset needed");
         }
     }
     

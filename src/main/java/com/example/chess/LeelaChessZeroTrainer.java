@@ -47,14 +47,14 @@ public class LeelaChessZeroTrainer {
     
     public void runSelfPlayTraining(int totalGames) {
         logger.info("*** LeelaZero Trainer: Starting self-play training for " + totalGames + " games ***");
-        System.out.println("*** LeelaZero Trainer: TRAINING STARTED - " + totalGames + " games ***");
+        logger.info("*** LeelaZero Trainer: TRAINING STARTED - " + totalGames + " games ***");
         
         int gamesCompleted = 0;
         int batchCount = 0;
         
         while (gamesCompleted < totalGames && !stopRequested) {
             if (stopRequested) {
-                System.out.println("*** LeelaZero Trainer: STOP REQUESTED - ENDING TRAINING ***");
+                logger.info("*** LeelaZero Trainer: STOP REQUESTED - ENDING TRAINING ***");
                 return;
             }
             
@@ -70,7 +70,7 @@ public class LeelaChessZeroTrainer {
                 
                 if (gamesCompleted % 200 == 0) {
                     logger.info("*** LeelaZero Trainer: Completed " + gamesCompleted + "/" + totalGames + " games ***");
-                    System.out.println("*** LeelaZero Trainer: Progress " + gamesCompleted + "/" + totalGames + " games ***");
+                    logger.debug("*** LeelaZero Trainer: Progress " + gamesCompleted + "/" + totalGames + " games ***");
                 }
             }
             
@@ -90,7 +90,7 @@ public class LeelaChessZeroTrainer {
             
             // Check stop flag after training batch
             if (stopRequested) {
-                System.out.println("*** LeelaZero Trainer: STOP REQUESTED AFTER BATCH TRAINING ***");
+                logger.info("*** LeelaZero Trainer: STOP REQUESTED AFTER BATCH TRAINING ***");
                 return;
             }
             
@@ -109,7 +109,7 @@ public class LeelaChessZeroTrainer {
             
             // Check stop flag after periodic save
             if (stopRequested) {
-                System.out.println("*** LeelaZero Trainer: STOP REQUESTED AFTER PERIODIC SAVE ***");
+                logger.info("*** LeelaZero Trainer: STOP REQUESTED AFTER PERIODIC SAVE ***");
                 return;
             }
         }
@@ -126,7 +126,7 @@ public class LeelaChessZeroTrainer {
         saveTrainingGames(neuralNetwork.getTrainingGames());
         
         logger.info("*** LeelaZero Trainer: Training completed - " + gamesCompleted + " games played ***");
-        System.out.println("*** LeelaZero Trainer: TRAINING COMPLETED - " + gamesCompleted + " games played ***");
+        logger.info("*** LeelaZero Trainer: TRAINING COMPLETED - " + gamesCompleted + " games played ***");
     }
     
     public void requestStop() {
@@ -150,7 +150,7 @@ public class LeelaChessZeroTrainer {
         
         while (moveCount < MAX_GAME_LENGTH && !moveAdapter.isGameOver(board) && !stopRequested) {
             if (stopRequested) {
-                System.out.println("*** LeelaZero Trainer: STOP REQUESTED DURING GAME ***");
+                logger.info("*** LeelaZero Trainer: STOP REQUESTED DURING GAME ***");
                 return;
             }
             
@@ -265,7 +265,7 @@ public class LeelaChessZeroTrainer {
         try {
             // Check stop flag before expensive neural network training
             if (stopRequested) {
-                System.out.println("*** LeelaZero Trainer: STOP REQUESTED BEFORE NEURAL NETWORK TRAINING ***");
+                logger.info("*** LeelaZero Trainer: STOP REQUESTED BEFORE NEURAL NETWORK TRAINING ***");
                 return;
             }
             

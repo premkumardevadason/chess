@@ -9,11 +9,15 @@ import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.concurrent.ConcurrentHashMap;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 /**
  * Server-side Double Ratchet decryption for MCP communications
  */
 public class MCPServerDoubleRatchet {
+    
+    private static final Logger logger = LogManager.getLogger(MCPServerDoubleRatchet.class);
     
     private final SecureRandom secureRandom = new SecureRandom();
     private final ConcurrentHashMap<String, ServerRatchetState> sessions = new ConcurrentHashMap<>();
@@ -36,7 +40,7 @@ public class MCPServerDoubleRatchet {
         );
         
         sessions.put(agentId, state);
-        System.out.println("🔐 Server Double Ratchet session established for: " + agentId);
+        logger.debug("🔐 Server Double Ratchet session established for: " + agentId);
     }
     
     private SecretKey deriveKeyFromAgent(String agentId, String purpose) throws Exception {
@@ -69,7 +73,7 @@ public class MCPServerDoubleRatchet {
         
         byte[] plaintext = cipher.doFinal(ciphertextBytes);
         
-        System.out.println("🔓 Server decrypted message for: " + agentId + " (counter: " + messageCounter + ")");
+        logger.debug("🔓 Server decrypted message for: " + agentId + " (counter: " + messageCounter + ")");
         return new String(plaintext);
     }
     
@@ -104,7 +108,7 @@ public class MCPServerDoubleRatchet {
             state.getReceivingCounter()
         );
         
-        System.out.println("🔒 Server encrypted response for: " + agentId + " (counter: " + state.getSendingCounter() + ")");
+        logger.debug("🔒 Server encrypted response for: " + agentId + " (counter: " + state.getSendingCounter() + ")");
         return encryptedResponse;
     }
     
@@ -119,7 +123,7 @@ public class MCPServerDoubleRatchet {
     
     public void removeSession(String agentId) {
         sessions.remove(agentId);
-        System.out.println("🗑️ Removed server Double Ratchet session: " + agentId);
+        logger.debug("🗑️ Removed server Double Ratchet session: " + agentId);
     }
     
     private static class ServerRatchetState {

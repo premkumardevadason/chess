@@ -576,7 +576,7 @@ public class NegamaxAI {
         transpositionTable.clear();
         historyTable.clear();
         killerMoves = new int[MAX_DEPTH + 1][2][4];
-        System.out.println("Negamax: Transposition table, history, and killer moves cleared");
+        logger.debug("Negamax: Transposition table, history, and killer moves cleared");
     }
     
     /**

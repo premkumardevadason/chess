@@ -378,7 +378,7 @@ public class DeepQNetworkAI {
             
             if (trainingSteps % targetUpdateFreq == 0) {
                 saveModels();
-                System.out.println("Rainbow DQN: Models saved at step " + trainingSteps);
+                logger.debug("Rainbow DQN: Models saved at step " + trainingSteps);
             }
             
             if (trainingSteps % 5000 == 0) {
@@ -622,7 +622,7 @@ public class DeepQNetworkAI {
                     }
                     
                 } catch (Exception e) {
-                    System.err.println("Rainbow DQN Training error: " + e.getMessage());
+                    logger.error("Rainbow DQN Training error: " + e.getMessage(), e);
                     break;
                 }
             }
@@ -662,7 +662,7 @@ public class DeepQNetworkAI {
     }
     
     public void shutdown() {
-        System.out.println("Rainbow DQN: Initiating graceful shutdown...");
+        logger.debug("Rainbow DQN: Initiating graceful shutdown...");
         
         if (isTraining.get()) {
             stopTraining();
@@ -703,7 +703,7 @@ public class DeepQNetworkAI {
                 return true;
             }
         } catch (Exception e) {
-            System.err.println("Rainbow DQN: Failed to load models - " + e.getMessage());
+            logger.error("Rainbow DQN: Failed to load models - " + e.getMessage(), e);
         }
         return false;
     }
@@ -724,7 +724,7 @@ public class DeepQNetworkAI {
                 File targetModelFile = new File(DQN_TARGET_MODEL_FILE);
                 logger.info("Rainbow DQN models saved ({} + {} bytes)", qModelFile.length(), targetModelFile.length());
             } catch (Exception e) {
-                System.err.println("Rainbow DQN: Failed to save models - " + e.getMessage());
+                logger.error("Rainbow DQN: Failed to save models - " + e.getMessage(), e);
             }
         }
     }
@@ -764,7 +764,7 @@ public class DeepQNetworkAI {
                 }
             }
         } catch (Exception e) {
-            System.err.println("Rainbow DQN: Failed to load experiences - " + e.getMessage());
+            logger.error("Rainbow DQN: Failed to load experiences - " + e.getMessage(), e);
         }
     }
     
@@ -783,7 +783,7 @@ public class DeepQNetworkAI {
                 File expFile = new File(DQN_EXPERIENCE_FILE);
                 logger.info("Rainbow DQN experiences saved ({} entries, {} bytes)", experiences.size(), expFile.length());
             } catch (Exception e) {
-                System.err.println("Rainbow DQN: Failed to save experiences - " + e.getMessage());
+                logger.error("Rainbow DQN: Failed to save experiences - " + e.getMessage(), e);
             }
         }
     }
@@ -804,10 +804,10 @@ public class DeepQNetworkAI {
             trainingSteps = 0;
             initializeDuelingNetworks();
             
-            System.out.println("Rainbow DQN: Training data deleted and networks reinitialized");
+            logger.debug("Rainbow DQN: Training data deleted and networks reinitialized");
             return success;
         } catch (Exception e) {
-            System.err.println("Rainbow DQN: Failed to delete training data - " + e.getMessage());
+            logger.error("Rainbow DQN: Failed to delete training data - " + e.getMessage(), e);
             return false;
         }
     }

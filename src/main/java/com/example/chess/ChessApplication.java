@@ -94,8 +94,7 @@ public class ChessApplication {
                     chessGame.shutdown();
                     logger.debug("*** CHESS GAME SHUTDOWN COMPLETE (JVM HOOK) ***");
                 } catch (Exception e) {
-                    System.err.println("JVM shutdown hook error: " + e.getMessage());
-                    e.printStackTrace();
+                    logger.error("JVM shutdown hook error: " + e.getMessage(), e);
                 }
             }
         });
@@ -114,13 +113,13 @@ public class ChessApplication {
                             chessGame.saveAllAIDirectly();
                             logger.debug("*** PERIODIC TRAINING DATA SAVE COMPLETE ***");
                         } catch (Exception e) {
-                            System.err.println("Periodic save error: " + e.getMessage());
+                            logger.error("Periodic save error: " + e.getMessage(), e);
                         }
                     }
                 } catch (InterruptedException e) {
                     break;
                 } catch (Exception e) {
-                    System.err.println("Periodic save error: " + e.getMessage());
+                    logger.error("Periodic save error: " + e.getMessage(), e);
                 }
             }
         });
@@ -241,8 +240,7 @@ public class ChessApplication {
                 chessGame.shutdown();
                 logger.debug("*** CHESS GAME SHUTDOWN COMPLETE ***");
             } catch (Exception e) {
-                System.err.println("Chess game shutdown error: " + e.getMessage());
-                e.printStackTrace();
+                logger.error("Chess game shutdown error: " + e.getMessage(), e);
             }
             
             if (useAsyncIO()) {

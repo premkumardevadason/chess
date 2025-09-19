@@ -219,7 +219,9 @@ public class DeepLearningAI {
             logger.info("Deep Learning: Architecture - 13 layers with skip connections, batch norm, dropout, and adaptive LR");
             
         } catch (Exception e) {
-            System.err.println("Deep Learning: Network initialization failed - " + e.getMessage());
+            if (logger.isErrorEnabled()) {
+                logger.error("Deep Learning: Network initialization failed - " + e.getMessage(), e);
+            }
             throw new RuntimeException("Failed to initialize neural network", e);
         }
     }
@@ -423,7 +425,7 @@ public class DeepLearningAI {
                     // No Thread.sleep - removed for speed
                     
                 } catch (Exception e) {
-                    System.err.println("Training error: " + e.getMessage());
+                    logger.error("Training error: " + e.getMessage(), e);
                     break;
                 }
             }
@@ -679,7 +681,7 @@ public class DeepLearningAI {
                 logger.debug("Deep Learning: No existing model file found");
             }
         } catch (Exception e) {
-            System.err.println("Deep Learning: Model file corrupted - " + e.getMessage());
+            logger.error("Deep Learning: Model file corrupted - " + e.getMessage(), e);
             handleCorruptedModel();
         }
         return false;
@@ -699,7 +701,7 @@ public class DeepLearningAI {
                 }
             }
         } catch (Exception e) {
-            System.err.println("Deep Learning: Failed to handle corrupted model: " + e.getMessage());
+            logger.error("Deep Learning: Failed to handle corrupted model: " + e.getMessage(), e);
         }
     }
     
@@ -751,7 +753,7 @@ public class DeepLearningAI {
                 try {
                     trainingThread.join(5000); // Wait up to 5 seconds
                 } catch (InterruptedException e) {
-                    System.err.println("Deep Learning: Shutdown interrupted");
+                    logger.error("Deep Learning: Shutdown interrupted", e);
                 }
             }
         }
@@ -762,12 +764,12 @@ public class DeepLearningAI {
     }
     
     public boolean deleteModel() {
-        System.out.println("Deep Learning: Attempting to delete model file: " + MODEL_FILE);
+        logger.debug("Deep Learning: Attempting to delete model file: " + MODEL_FILE);
         
         try {
             // Stop training first
             if (isTraining.get()) {
-                System.out.println("Deep Learning: Stopping training before deletion");
+                logger.debug("Deep Learning: Stopping training before deletion");
                 stopTraining();
                 
                 // Wait for training thread to finish
@@ -775,18 +777,18 @@ public class DeepLearningAI {
                     try {
                         trainingThread.join(2000); // Wait up to 2 seconds
                     } catch (InterruptedException e) {
-                        System.err.println("Deep Learning: Interrupted while stopping training");
+                        logger.error("Deep Learning: Interrupted while stopping training", e);
                     }
                 }
             }
             
             File modelFile = new File(MODEL_FILE);
-            System.out.println("Deep Learning: Model file exists: " + modelFile.exists());
-            System.out.println("Deep Learning: Model file path: " + modelFile.getAbsolutePath());
+            logger.debug("Deep Learning: Model file exists: " + modelFile.exists());
+            logger.debug("Deep Learning: Model file path: " + modelFile.getAbsolutePath());
             
             if (modelFile.exists()) {
                 boolean deleted = modelFile.delete();
-                System.out.println("Deep Learning: File deletion result: " + deleted);
+                logger.debug("Deep Learning: File deletion result: " + deleted);
                 
                 if (deleted) {
                     // Reset training counters
@@ -799,11 +801,11 @@ public class DeepLearningAI {
                     logger.info("Deep Learning: Model file deleted and network reinitialized");
                     return true;
                 } else {
-                    System.err.println("Deep Learning: Failed to delete model file - file may be locked");
+                    logger.error("Deep Learning: Failed to delete model file - file may be locked");
                     return false;
                 }
             } else {
-                System.out.println("Deep Learning: No model file to delete");
+                logger.debug("Deep Learning: No model file to delete");
                 // Reset anyway
                 trainingIterations = 0;
                 trainingStatus = "No model file found - ready for fresh training";
@@ -811,8 +813,7 @@ public class DeepLearningAI {
                 return true;
             }
         } catch (Exception e) {
-            System.err.println("Deep Learning: Error deleting model - " + e.getMessage());
-            e.printStackTrace();
+            logger.error("Deep Learning: Error deleting model - " + e.getMessage(), e);
             return false;
         }
     }

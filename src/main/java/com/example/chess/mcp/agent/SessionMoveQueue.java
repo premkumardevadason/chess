@@ -2,11 +2,15 @@ package com.example.chess.mcp.agent;
 
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 /**
  * Thread-safe FIFO queue for cross-session move communication
  */
 public class SessionMoveQueue {
+    
+    private static final Logger logger = LogManager.getLogger(SessionMoveQueue.class);
     
     private final BlockingQueue<String> moveQueue = new LinkedBlockingQueue<>();
     private final String sessionName;
@@ -20,7 +24,7 @@ public class SessionMoveQueue {
      */
     public void enqueue(String move) {
         moveQueue.offer(move);
-        System.out.println("📥 Queued move to " + sessionName + " queue: " + move);
+        logger.debug("📥 Queued move to " + sessionName + " queue: " + move);
     }
     
     /**
@@ -30,7 +34,7 @@ public class SessionMoveQueue {
     public String dequeue() {
         String move = moveQueue.poll();
         if (move != null) {
-            System.out.println("📤 Dequeued move from " + sessionName + " queue: " + move);
+            logger.debug("📤 Dequeued move from " + sessionName + " queue: " + move);
         }
         return move;
     }
@@ -54,6 +58,6 @@ public class SessionMoveQueue {
      */
     public void clear() {
         moveQueue.clear();
-        System.out.println("🧹 Cleared " + sessionName + " queue");
+        logger.debug("🧹 Cleared " + sessionName + " queue");
     }
 }

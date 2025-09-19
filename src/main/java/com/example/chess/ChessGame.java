@@ -1365,7 +1365,7 @@ public class ChessGame {
                             try {
                                 return qLearningAI.selectMove(board, movesToEvaluate, false);
                             } catch (Exception e) {
-                                System.err.println("Q-Learning error: " + e.getMessage());
+                                logger.error("Q-Learning error: " + e.getMessage(), e);
                                 return null;
                             }
                         });
@@ -1377,7 +1377,7 @@ public class ChessGame {
                             try {
                                 return deepLearningAI.selectMove(board, movesToEvaluate);
                             } catch (Exception e) {
-                                System.err.println("Deep Learning error: " + e.getMessage());
+                                logger.error("Deep Learning error: " + e.getMessage(), e);
                                 return null;
                             }
                         });
@@ -1389,7 +1389,7 @@ public class ChessGame {
                             try {
                                 return deepLearningCNNAI.selectMove(board, movesToEvaluate);
                             } catch (Exception e) {
-                                System.err.println("CNN Deep Learning error: " + e.getMessage());
+                                logger.error("CNN Deep Learning error: " + e.getMessage(), e);
                                 return null;
                             }
                         });
@@ -1401,7 +1401,7 @@ public class ChessGame {
                             try {
                                 return dqnAI.selectMove(board, movesToEvaluate);
                             } catch (Exception e) {
-                                System.err.println("DQN error: " + e.getMessage());
+                                logger.error("DQN error: " + e.getMessage(), e);
                                 return null;
                             }
                         });
@@ -1413,7 +1413,7 @@ public class ChessGame {
                             try {
                                 return mctsAI.selectMove(board, movesToEvaluate);
                             } catch (Exception e) {
-                                System.err.println("MCTS error: " + e.getMessage());
+                                logger.error("MCTS error: " + e.getMessage(), e);
                                 return null;
                             }
                         });
@@ -1425,7 +1425,7 @@ public class ChessGame {
                             try {
                                 return alphaZeroAI.selectMove(board, movesToEvaluate);
                             } catch (Exception e) {
-                                System.err.println("AlphaZero error: " + e.getMessage());
+                                logger.error("AlphaZero error: " + e.getMessage(), e);
                                 return null;
                             }
                         });
@@ -1437,7 +1437,7 @@ public class ChessGame {
                             try {
                                 return negamaxAI.selectMove(board, movesToEvaluate);
                             } catch (Exception e) {
-                                System.err.println("Negamax error: " + e.getMessage());
+                                logger.error("Negamax error: " + e.getMessage(), e);
                                 return null;
                             }
                         });
@@ -1449,7 +1449,7 @@ public class ChessGame {
                             try {
                                 return openAiAI.selectMove(board, movesToEvaluate);
                             } catch (Exception e) {
-                                System.err.println("OpenAI error: " + e.getMessage());
+                                logger.error("OpenAI error: " + e.getMessage(), e);
                                 return null;
                             }
                         });
@@ -1461,7 +1461,7 @@ public class ChessGame {
                             try {
                                 return leelaZeroAI.selectMove(board, movesToEvaluate);
                             } catch (Exception e) {
-                                System.err.println("LeelaZero error: " + e.getMessage());
+                                logger.error("LeelaZero error: " + e.getMessage(), e);
                                 return null;
                             }
                         });
@@ -1473,7 +1473,7 @@ public class ChessGame {
                             try {
                                 return geneticAI.selectMove(board, movesToEvaluate);
                             } catch (Exception e) {
-                                System.err.println("Genetic error: " + e.getMessage());
+                                logger.error("Genetic error: " + e.getMessage(), e);
                                 return null;
                             }
                         });
@@ -1485,7 +1485,7 @@ public class ChessGame {
                             try {
                                 return alphaFold3AI.selectMove(board, movesToEvaluate);
                             } catch (Exception e) {
-                                System.err.println("AlphaFold3 error: " + e.getMessage());
+                                logger.error("AlphaFold3 error: " + e.getMessage(), e);
                                 return null;
                             }
                         });
@@ -1502,7 +1502,7 @@ public class ChessGame {
                     try {
                         return qLearningAI.selectMove(board, movesToEvaluate, false);
                     } catch (Exception e) {
-                        System.err.println("Q-Learning error: " + e.getMessage());
+                        logger.error("Q-Learning error: " + e.getMessage(), e);
                         return null;
                     }
                 }) : java.util.concurrent.CompletableFuture.completedFuture(null);
@@ -1512,7 +1512,7 @@ public class ChessGame {
                     try {
                         return deepLearningAI.selectMove(board, movesToEvaluate);
                     } catch (Exception e) {
-                        System.err.println("Deep Learning error: " + e.getMessage());
+                        logger.error("Deep Learning error: " + e.getMessage(), e);
                         return null;
                     }
                 }) : java.util.concurrent.CompletableFuture.completedFuture(null);
@@ -1522,7 +1522,7 @@ public class ChessGame {
                     try {
                         return deepLearningCNNAI.selectMove(board, movesToEvaluate);
                     } catch (Exception e) {
-                        System.err.println("CNN Deep Learning error: " + e.getMessage());
+                        logger.error("CNN Deep Learning error: " + e.getMessage(), e);
                         return null;
                     }
                 }) : java.util.concurrent.CompletableFuture.completedFuture(null);
@@ -1532,7 +1532,7 @@ public class ChessGame {
                     try {
                         return dqnAI.selectMove(board, movesToEvaluate);
                     } catch (Exception e) {
-                        System.err.println("DQN error: " + e.getMessage());
+                        logger.error("DQN error: " + e.getMessage(), e);
                         return null;
                     }
                 }) : java.util.concurrent.CompletableFuture.completedFuture(null);
@@ -1542,7 +1542,7 @@ public class ChessGame {
                     try {
                         return mctsAI.selectMove(board, movesToEvaluate);
                     } catch (Exception e) {
-                        System.err.println("MCTS error: " + e.getMessage());
+                        logger.error("MCTS error: " + e.getMessage(), e);
                         return null;
                     }
                 }) : java.util.concurrent.CompletableFuture.completedFuture(null);
@@ -1552,7 +1552,7 @@ public class ChessGame {
                     try {
                         return alphaZeroAI.selectMove(board, movesToEvaluate);
                     } catch (Exception e) {
-                        System.err.println("AlphaZero error: " + e.getMessage());
+                        logger.error("AlphaZero error: " + e.getMessage(), e);
                         return null;
                     }
                 }) : java.util.concurrent.CompletableFuture.completedFuture(null);
@@ -1562,7 +1562,7 @@ public class ChessGame {
                     try {
                         return negamaxAI.selectMove(board, movesToEvaluate);
                     } catch (Exception e) {
-                        System.err.println("Negamax error: " + e.getMessage());
+                        logger.error("Negamax error: " + e.getMessage(), e);
                         return null;
                     }
                 }) : java.util.concurrent.CompletableFuture.completedFuture(null);
@@ -1572,7 +1572,7 @@ public class ChessGame {
                     try {
                         return openAiAI.selectMove(board, movesToEvaluate);
                     } catch (Exception e) {
-                        System.err.println("OpenAI error: " + e.getMessage());
+                        logger.error("OpenAI error: " + e.getMessage(), e);
                         return null;
                     }
                 }) : java.util.concurrent.CompletableFuture.completedFuture(null);
@@ -1582,7 +1582,7 @@ public class ChessGame {
                     try {
                         return leelaZeroAI.selectMove(board, movesToEvaluate);
                     } catch (Exception e) {
-                        System.err.println("LeelaZero error: " + e.getMessage());
+                        logger.error("LeelaZero error: " + e.getMessage(), e);
                         return null;
                     }
                 }) : java.util.concurrent.CompletableFuture.completedFuture(null);
@@ -1592,7 +1592,7 @@ public class ChessGame {
                     try {
                         return geneticAI.selectMove(board, movesToEvaluate);
                     } catch (Exception e) {
-                        System.err.println("Genetic error: " + e.getMessage());
+                        logger.error("Genetic error: " + e.getMessage(), e);
                         return null;
                     }
                 }) : java.util.concurrent.CompletableFuture.completedFuture(null);
@@ -1602,7 +1602,7 @@ public class ChessGame {
                     try {
                         return alphaFold3AI.selectMove(board, movesToEvaluate);
                     } catch (Exception e) {
-                        System.err.println("AlphaFold3 error: " + e.getMessage());
+                        logger.error("AlphaFold3 error: " + e.getMessage(), e);
                         return null;
                     }
                 }) : java.util.concurrent.CompletableFuture.completedFuture(null);
@@ -1619,7 +1619,7 @@ public class ChessGame {
                     try {
                         return a3cAI.selectMove(board, movesToEvaluate, false);
                     } catch (Exception e) {
-                        System.err.println("A3C error: " + e.getMessage());
+                        logger.error("A3C error: " + e.getMessage(), e);
                         return null;
                     }
                 });
@@ -1631,7 +1631,7 @@ public class ChessGame {
                     try {
                         return a3cAI.selectMove(board, movesToEvaluate, false);
                     } catch (Exception e) {
-                        System.err.println("A3C error: " + e.getMessage());
+                        logger.error("A3C error: " + e.getMessage(), e);
                         return null;
                     }
                 }) : java.util.concurrent.CompletableFuture.completedFuture(null);
@@ -1658,35 +1658,35 @@ public class ChessGame {
         try {
             qLearningMove = qLearningTask.get(2, java.util.concurrent.TimeUnit.SECONDS);
         } catch (Exception e) {
-            System.err.println("Q-Learning timeout/error: " + e.getMessage());
+            logger.error("Q-Learning timeout/error: " + e.getMessage(), e);
             qLearningTask.cancel(true);
         }
         
         try {
             deepLearningMove = deepLearningTask.get(3, java.util.concurrent.TimeUnit.SECONDS);
         } catch (Exception e) {
-            System.err.println("Deep Learning timeout/error: " + e.getMessage());
+            logger.error("Deep Learning timeout/error: " + e.getMessage(), e);
             deepLearningTask.cancel(true);
         }
         
         try {
             deepLearningCNNMove = deepLearningCNNTask.get(3, java.util.concurrent.TimeUnit.SECONDS);
         } catch (Exception e) {
-            System.err.println("CNN Deep Learning timeout/error: " + e.getMessage());
+            logger.error("CNN Deep Learning timeout/error: " + e.getMessage(), e);
             deepLearningCNNTask.cancel(true);
         }
         
         try {
             dqnMove = dqnTask.get(3, java.util.concurrent.TimeUnit.SECONDS);
         } catch (Exception e) {
-            System.err.println("DQN timeout/error: " + e.getMessage());
+            logger.error("DQN timeout/error: " + e.getMessage(), e);
             dqnTask.cancel(true);
         }
         
         try {
             mctsMove = mctsTask.get(8, java.util.concurrent.TimeUnit.SECONDS);
         } catch (Exception e) {
-            System.err.println("MCTS timeout/error: " + e.getMessage());
+            logger.error("MCTS timeout/error: " + e.getMessage(), e);
             mctsTask.cancel(true);
             if (mctsAI != null) mctsAI.stopThinking();
         }
@@ -1694,7 +1694,7 @@ public class ChessGame {
         try {
             alphaZeroMove = alphaZeroTask.get(15, java.util.concurrent.TimeUnit.SECONDS);
         } catch (Exception e) {
-            System.err.println("AlphaZero timeout/error: " + e.getMessage());
+            logger.error("AlphaZero timeout/error: " + e.getMessage(), e);
             alphaZeroTask.cancel(true);
             if (alphaZeroAI != null) alphaZeroAI.stopThinking();
         }
@@ -1702,42 +1702,42 @@ public class ChessGame {
         try {
             negamaxMove = negamaxTask.get(8, java.util.concurrent.TimeUnit.SECONDS);
         } catch (Exception e) {
-            System.err.println("Negamax timeout/error: " + e.getMessage());
+            logger.error("Negamax timeout/error: " + e.getMessage(), e);
             negamaxTask.cancel(true);
         }
         
         try {
             openAiMove = openAiTask.get(10, java.util.concurrent.TimeUnit.SECONDS);
         } catch (Exception e) {
-            System.err.println("OpenAI timeout/error: " + e.getMessage());
+            logger.error("OpenAI timeout/error: " + e.getMessage(), e);
             openAiTask.cancel(true);
         }
         
         try {
             leelaZeroMove = leelaZeroTask.get(15, java.util.concurrent.TimeUnit.SECONDS);
         } catch (Exception e) {
-            System.err.println("LeelaZero timeout/error: " + e.getMessage());
+            logger.error("LeelaZero timeout/error: " + e.getMessage(), e);
             leelaZeroTask.cancel(true);
         }
         
         try {
             geneticMove = geneticTask.get(3, java.util.concurrent.TimeUnit.SECONDS);
         } catch (Exception e) {
-            System.err.println("Genetic timeout/error: " + e.getMessage());
+            logger.error("Genetic timeout/error: " + e.getMessage(), e);
             geneticTask.cancel(true);
         }
         
         try {
             alphaFold3Move = alphaFold3Task.get(4, java.util.concurrent.TimeUnit.SECONDS);
         } catch (Exception e) {
-            System.err.println("AlphaFold3 timeout/error: " + e.getMessage());
+            logger.error("AlphaFold3 timeout/error: " + e.getMessage(), e);
             alphaFold3Task.cancel(true);
         }
         
         try {
             a3cMove = a3cTask.get(3, java.util.concurrent.TimeUnit.SECONDS);
         } catch (Exception e) {
-            System.err.println("A3C timeout/error: " + e.getMessage());
+            logger.error("A3C timeout/error: " + e.getMessage(), e);
             a3cTask.cancel(true);
         }
         
@@ -3680,7 +3680,7 @@ public class ChessGame {
                 }
             } catch (Exception e) {
                 alphaZeroDeleted = false;
-                System.err.println("AlphaZero: Failed to delete cache - " + e.getMessage());
+                logger.error("AlphaZero: Failed to delete cache - " + e.getMessage(), e);
             }
         }
         
@@ -3707,11 +3707,11 @@ public class ChessGame {
                 if (leelaZeroDeleted) {
                     logger.info("LeelaZero: All training files deleted (opening book, neural network, MCTS cache, models directory)");
                 } else {
-                    System.err.println("LeelaZero: Failed to delete some training files");
+                    logger.error("LeelaZero: Failed to delete some training files");
                 }
             } catch (Exception e) {
                 leelaZeroDeleted = false;
-                System.err.println("LeelaZero: Failed to delete training data - " + e.getMessage());
+                logger.error("LeelaZero: Failed to delete training data - " + e.getMessage(), e);
             }
         }
         
@@ -3731,7 +3731,7 @@ public class ChessGame {
                 logger.info("Genetic Algorithm: Training data deleted");
             } catch (Exception e) {
                 geneticDeleted = false;
-                System.err.println("Genetic Algorithm: Failed to delete training data - " + e.getMessage());
+                logger.error("Genetic Algorithm: Failed to delete training data - " + e.getMessage(), e);
             }
         }
         
@@ -3748,7 +3748,7 @@ public class ChessGame {
                 }
             } catch (Exception e) {
                 alphaFold3Deleted = false;
-                System.err.println("AlphaFold3: Failed to delete training data - " + e.getMessage());
+                logger.error("AlphaFold3: Failed to delete training data - " + e.getMessage(), e);
             }
         }
         
@@ -3769,11 +3769,11 @@ public class ChessGame {
                 if (a3cDeleted) {
                     logger.info("A3C: All training files deleted (actor model, critic model, state)");
                 } else {
-                    System.err.println("A3C: Failed to delete some training files");
+                    logger.error("A3C: Failed to delete some training files");
                 }
             } catch (Exception e) {
                 a3cDeleted = false;
-                System.err.println("A3C: Failed to delete training data - " + e.getMessage());
+                logger.error("A3C: Failed to delete training data - " + e.getMessage(), e);
             }
         }
         
@@ -4510,11 +4510,11 @@ public class ChessGame {
         List<int[]> attackers = findAttackersOfSquare(piecePos[0], piecePos[1], true);
         
         if (attackers.isEmpty()) {
-            System.out.println("ERROR: Piece protection called but no attackers found!");
+            logger.error("Piece protection called but no attackers found!");
             return null;
         }
         
-        System.out.println(pieceType + " at [" + piecePos[0] + "," + piecePos[1] + "] is attacked by " + attackers.size() + " piece(s)");
+        logger.debug("{} at [{},{}] is attacked by {} piece(s)", pieceType, piecePos[0], piecePos[1], attackers.size());
         
         List<int[]> moves = getAllValidMoves(false);
         
@@ -4539,11 +4539,11 @@ public class ChessGame {
                     // Only capture if it's a good trade OR piece will be safe
                     if (pieceWillBeSafe || capturedValue >= pieceValue * 0.8) {
                         if (capturedValue > attackerValue) {
-                            System.out.println("BETTER CAPTURE DEFENSE: " + pieceType + " captures " + captured + " (" + capturedValue + ") instead of attacker (" + attackerValue + ") - Safe: " + pieceWillBeSafe);
+                            logger.debug("BETTER CAPTURE DEFENSE: {} captures {} ({}) instead of attacker ({}) - Safe: {}", pieceType, captured, capturedValue, attackerValue, pieceWillBeSafe);
                             return move;
                         }
                     } else {
-                        System.out.println("CAPTURE REJECTED: " + pieceType + " capturing " + captured + " would hang piece for insufficient compensation");
+                        logger.debug("CAPTURE REJECTED: {} capturing {} would hang piece for insufficient compensation", pieceType, captured);
                     }
                 }
             }
@@ -4556,7 +4556,7 @@ public class ChessGame {
                     if (isValidMove(move[0], move[1], move[2], move[3])) {
                         String piece = board[move[0]][move[1]];
                         String captured = board[move[2]][move[3]];
-                        System.out.println("CAPTURE DEFENSE: " + piece + " captures attacker " + captured + " threatening " + pieceType);
+                        logger.debug("CAPTURE DEFENSE: {} captures attacker {} threatening {}", piece, captured, pieceType);
                         return move;
                     }
                 }
@@ -4570,19 +4570,19 @@ public class ChessGame {
             if (pieceType.equals(piece) && move[0] == piecePos[0] && move[1] == piecePos[1]) {
                 // CRITICAL: Check if piece is pinned before moving (to King or Queen)
                 if (isPiecePinned(piecePos[0], piecePos[1])) {
-                    System.out.println("PIECE PINNED: " + pieceType + " at [" + piecePos[0] + "," + piecePos[1] + "] cannot move - would expose King!");
+                    logger.debug("PIECE PINNED: {} at [{},{}] cannot move - would expose King!", pieceType, piecePos[0], piecePos[1]);
                     continue; // Skip this move - piece is pinned to King
                 }
                 
                 // NEW: Check if piece is pinned to Queen
                 if (isPiecePinnedToQueen(piecePos[0], piecePos[1])) {
-                    System.out.println("PIECE PINNED TO QUEEN: " + pieceType + " at [" + piecePos[0] + "," + piecePos[1] + "] cannot move - would expose Queen!");
+                    logger.debug("PIECE PINNED TO QUEEN: {} at [{},{}] cannot move - would expose Queen!", pieceType, piecePos[0], piecePos[1]);
                     continue; // Skip this move - piece is pinned to Queen
                 }
                 
                 // CRITICAL: Check if moving this piece would remove critical defense (e.g., Scholar's Mate defense)
                 if (ChessTacticalDefense.wouldRemoveCriticalDefense(board, move)) {
-                    System.out.println("CRITICAL DEFENSE PRESERVED: " + pieceType + " at [" + piecePos[0] + "," + piecePos[1] + "] cannot retreat - defending against checkmate threat!");
+                    logger.debug("CRITICAL DEFENSE PRESERVED: {} at [{},{}] cannot retreat - defending against checkmate threat!", pieceType, piecePos[0], piecePos[1]);
                     continue; // Skip this move - piece is defending against critical threat
                 }
                 
@@ -4600,7 +4600,7 @@ public class ChessGame {
                     if (queenPos != null) {
                         exposesQueen = isSquareUnderAttack(queenPos[0], queenPos[1], true);
                         if (exposesQueen) {
-                            System.out.println("PIECE ESCAPE REJECTED: Moving " + pieceType + " would expose Queen to attack!");
+                            logger.debug("PIECE ESCAPE REJECTED: Moving {} would expose Queen to attack!", pieceType);
                         }
                     }
                     
@@ -4608,7 +4608,7 @@ public class ChessGame {
                     board[move[2]][move[3]] = captured;
                     
                     if (!pieceStillThreatened && !exposesQueen) {
-                        System.out.println("PIECE ESCAPE: Moving " + pieceType + " to safe square [" + move[2] + "," + move[3] + "]");
+                        logger.debug("PIECE ESCAPE: Moving {} to safe square [{},{}]", pieceType, move[2], move[3]);
                         return move;
                     }
                 }
@@ -4625,7 +4625,7 @@ public class ChessGame {
                         String piece = board[move[0]][move[1]];
                         if (!pieceType.equals(piece) && move[2] == blockSquare[0] && move[3] == blockSquare[1]) {
                             if (isValidMove(move[0], move[1], move[2], move[3])) {
-                                System.out.println("BLOCK DEFENSE: " + piece + " blocks attack on " + pieceType);
+                                logger.debug("BLOCK DEFENSE: {} blocks attack on {}", piece, pieceType);
                                 return move;
                             }
                         }
@@ -4634,7 +4634,7 @@ public class ChessGame {
             }
         }
         
-        System.out.println("NO PIECE PROTECTION FOUND - " + pieceType + " may be lost!");
+        logger.debug("NO PIECE PROTECTION FOUND - {} may be lost!", pieceType);
         return null;
     }
 
@@ -4723,7 +4723,7 @@ public class ChessGame {
                             whiteTurn = false; // Set to Black's turn for validation
                             
                             if (isValidMove(fromRow, fromCol, attacker[0], attacker[1])) {
-                                System.out.println("CAPTURE SOLUTION: " + piece + " [" + fromRow + "," + fromCol + "] captures " + attackerPiece + " [" + attacker[0] + "," + attacker[1] + "]");
+                                logger.debug("CAPTURE SOLUTION: {} [{},{}] captures {} [{},{}]", piece, fromRow, fromCol, attackerPiece, attacker[0], attacker[1]);
                                 whiteTurn = savedTurn;
                                 return new int[]{fromRow, fromCol, attacker[0], attacker[1]};
                             } else {
@@ -4752,7 +4752,7 @@ public class ChessGame {
                         whiteTurn = false; // Set to Black's turn for validation
                         
                         if (isValidMove(kingPos[0], kingPos[1], newRow, newCol)) {
-                            System.out.println("KING ESCAPE: King [" + kingPos[0] + "," + kingPos[1] + "] to [" + newRow + "," + newCol + "]");
+                            logger.debug("KING ESCAPE: King [{},{}] to [{},{}]", kingPos[0], kingPos[1], newRow, newCol);
                             whiteTurn = currentTurn;
                             return new int[]{kingPos[0], kingPos[1], newRow, newCol};
                         } else {
@@ -4780,7 +4780,7 @@ public class ChessGame {
                                 if (!piece.isEmpty() && "♚♛♜♝♞♟".contains(piece) && !"♚".equals(piece)) {
                                     // Use actuallyResolvesCheck for precise check resolution validation
                                     if (actuallyResolvesCheck(fromRow, fromCol, blockSquare[0], blockSquare[1])) {
-                                        System.out.println("BLOCK SOLUTION: " + piece + " [" + fromRow + "," + fromCol + "] blocks at [" + blockSquare[0] + "," + blockSquare[1] + "]");
+                                        logger.debug("BLOCK SOLUTION: {} [{},{}] blocks at [{},{}]", piece, fromRow, fromCol, blockSquare[0], blockSquare[1]);
                                         return new int[]{fromRow, fromCol, blockSquare[0], blockSquare[1]};
                                     } else {
                                         logger.debug("BLOCK REJECTED: {} [{},{}] to [{},{}] - doesn't resolve check", piece, fromRow, fromCol, blockSquare[0], blockSquare[1]);
@@ -4982,7 +4982,7 @@ public class ChessGame {
         board[pieceRow][pieceCol] = piece;
         
         if (queenInDanger) {
-            System.out.println("QUEEN PIN DETECTED: " + piece + " at [" + pieceRow + "," + pieceCol + "] is pinned - removing it exposes Queen!");
+            logger.debug("QUEEN PIN DETECTED: {} at [{},{}] is pinned - removing it exposes Queen!", piece, pieceRow, pieceCol);
         }
         
         return queenInDanger;
@@ -5017,7 +5017,7 @@ public class ChessGame {
             String lastMove = recentMoves.get(recentMoves.size() - 1);
             String reverseMove = move[2] + "," + move[3] + "," + move[0] + "," + move[1];
             if (lastMove.equals(reverseMove)) {
-                System.out.println("FLIP-FLOP: Move " + moveKey + " undoes " + lastMove);
+                logger.debug("FLIP-FLOP: Move {} undoes {}", moveKey, lastMove);
                 return true;
             }
         }
@@ -5315,13 +5315,13 @@ public class ChessGame {
         // PRIORITY 1: Queen under attack
         int[] queenPos = findPiecePosition("♛");
         if (queenPos != null && isSquareUnderAttack(queenPos[0], queenPos[1], true)) {
-            System.out.println("CRITICAL THREAT: Queen under attack at [" + queenPos[0] + "," + queenPos[1] + "]");
+            logger.debug("CRITICAL THREAT: Queen under attack at [{},{}]", queenPos[0], queenPos[1]);
             return true;
         }
         
         // PRIORITY 2: King in check
         if (isKingInDanger(false)) {
-            System.out.println("CRITICAL THREAT: King in check");
+            logger.debug("CRITICAL THREAT: King in check");
             return true;
         }
         
@@ -5335,7 +5335,7 @@ public class ChessGame {
                     if (pieceType.equals(board[i][j]) && isSquareUnderAttack(i, j, true)) {
                         threatenedPieces++;
                         if (threatenedPieces >= 2) {
-                            System.out.println("CRITICAL THREAT: Multiple important pieces under attack");
+                            logger.debug("CRITICAL THREAT: Multiple important pieces under attack");
                             return true;
                         }
                     }
@@ -5345,7 +5345,7 @@ public class ChessGame {
         
         // PRIORITY 4: Opponent has strong tactical opportunity
         if (opponentHasTacticalThreat()) {
-            System.out.println("CRITICAL THREAT: Opponent has strong tactical opportunity");
+            logger.debug("CRITICAL THREAT: Opponent has strong tactical opportunity");
             return true;
         }
         

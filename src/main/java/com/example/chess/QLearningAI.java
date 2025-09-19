@@ -446,7 +446,7 @@ public class QLearningAI {
         }
         
         if (filteredMoves.isEmpty()) {
-            System.out.println("WARNING: No valid moves with pieces found");
+            logger.warn("WARNING: No valid moves with pieces found");
             return null;
         }
         
@@ -1027,7 +1027,7 @@ public class QLearningAI {
     
     public void updateQValue(String prevState, int[] action, double reward, String newState, List<int[]> nextMoves) {
         if (prevState == null || action == null) {
-            System.out.println("WARNING: Null state or action in updateQValue");
+            logger.warn("WARNING: Null state or action in updateQValue");
             return;
         }
         
@@ -1170,13 +1170,13 @@ public class QLearningAI {
                     if (deleted) {
                         qTable.clear();
                         qTableSnapshot.clear();
-                        System.out.println("Q-table file deleted and memory cleared");
+                        logger.debug("Q-table file deleted and memory cleared");
                     }
                     return deleted;
                 }
                 return false;
             } catch (Exception e) {
-                System.err.println("Error deleting Q-table: " + e.getMessage());
+                logger.error("Error deleting Q-table: " + e.getMessage(), e);
                 return false;
             }
         }
@@ -1230,7 +1230,7 @@ public class QLearningAI {
             }
             trainingInProgress = true;
             qTableSnapshot = new ConcurrentHashMap<>(qTable);
-            System.out.println("Training started - Q-table snapshot created for concurrent gameplay");
+            logger.debug("Training started - Q-table snapshot created for concurrent gameplay");
         }
         
         try {
@@ -1240,14 +1240,14 @@ public class QLearningAI {
             synchronized (trainingLock) {
                 trainingInProgress = false;
                 gameplayMode = false;
-                System.out.println("Training completed - concurrent gameplay can now use updated Q-table");
+                logger.debug("Training completed - concurrent gameplay can now use updated Q-table");
             }
         }
     }
     
     public void trainAgainstSelfWithProgress(int games) {
-        System.out.println("*** STARTING Q-LEARNING TRAINING WITH " + games + " GAMES ***");
-        System.out.println("Q-Learning: Starting with Q-table size: " + qTable.size());
+        logger.info("*** STARTING Q-LEARNING TRAINING WITH " + games + " GAMES ***");
+        logger.info("Q-Learning: Starting with Q-table size: " + qTable.size());
         
         isTraining = true;
         gameplayMode = false; // Disable verbose output during training
@@ -1255,32 +1255,32 @@ public class QLearningAI {
         
         // CRITICAL FIX: Ensure Q-table gets populated during training
         if (qTable.isEmpty()) {
-            System.out.println("Q-table is empty - this indicates training data starvation");
+            logger.warn("Q-table is empty - this indicates training data starvation");
             logger.warn("Q-Learning training data starvation detected - Q-table should be populated during training");
         }
         
         for (int game = 0; game < games; game++) {
             // CRITICAL: Check training status at the start of each game loop
             if (!isTraining) {
-                System.out.println("*** Q-Learning: Training stopped at game " + (game + 1) + " ***");
+                logger.info("*** Q-Learning: Training stopped at game " + (game + 1) + " ***");
                 break;
             }
             
             // Check stop flag every 5 games for faster response
             if (game % 5 == 0 && !isTraining) {
                 logger.info("*** Q-Learning AI: STOP DETECTED at game {} - Exiting training loop ***", game + 1);
-                System.out.println("*** Q-Learning: Training stopped at game " + (game + 1) + " ***");
+                logger.info("*** Q-Learning: Training stopped at game " + (game + 1) + " ***");
                 break;
             }
             
             // Show progress every 500 games for less verbose output
             if (game > 0 && game % 500 == 0) {
-                System.out.println("*** Q-Learning: Progress - Game " + (game + 1) + "/" + games + ", Q-table: " + qTable.size() + " entries ***");
+                logger.info("*** Q-Learning: Progress - Game " + (game + 1) + "/" + games + ", Q-table: " + qTable.size() + " entries ***");
             }
             
             // Reduced verbose output for training speed
             if (game % 100 == 0) {
-                System.out.println("\n--- Starting game " + (game + 1) + " ---");
+                logger.debug("\n--- Starting game " + (game + 1) + " ---");
             }
             
             // Track game progress
@@ -1290,7 +1290,7 @@ public class QLearningAI {
             
             // CRITICAL: Check training status before starting game
             if (!isTraining) {
-                System.out.println("*** Q-Learning: Training stopped before game " + (game + 1) + " ***");
+                logger.info("*** Q-Learning: Training stopped before game " + (game + 1) + " ***");
                 break;
             }
             
@@ -1299,7 +1299,7 @@ public class QLearningAI {
             
             // CRITICAL: Check training status after completing game
             if (!isTraining) {
-                System.out.println("*** Q-Learning: Training stopped after game " + (game + 1) + " ***");
+                logger.info("*** Q-Learning: Training stopped after game " + (game + 1) + " ***");
                 break;
             }
             
@@ -1307,7 +1307,7 @@ public class QLearningAI {
             
             if (gamesCompleted % 100 == 0) {
                 trainingStatus = "Completed " + gamesCompleted + " games - Q-table: " + qTable.size() + " entries";
-                System.out.println(trainingStatus);
+                logger.info(trainingStatus);
                 // Only save/broadcast if still training
                 if (isTraining) {
                     // Fire-and-forget async save with timeout protection
@@ -1399,7 +1399,7 @@ public class QLearningAI {
         
         // Reduced verbose output - only log every 100 games
         if ((gamesCompleted + 1) % 100 == 0) {
-            System.out.println("Starting Q-Learning training game " + (gamesCompleted + 1) + " with Lc0 opening book");
+            logger.debug("Starting Q-Learning training game " + (gamesCompleted + 1) + " with Lc0 opening book");
         }
         
         while (moves < 300) {
@@ -1436,7 +1436,7 @@ public class QLearningAI {
             
             // Check for checkmate: King in check + no valid moves
             if (kingInCheck && validMoves.isEmpty()) {
-                System.out.println("CHECKMATE detected! King in check with no valid moves. Processing " + gameHistory.size() + " moves for Q-table updates");
+                logger.info("CHECKMATE detected! King in check with no valid moves. Processing " + gameHistory.size() + " moves for Q-table updates");
                 updateGameRewards(gameHistory, -100.0, !whiteTurn);
                 processQTableUpdates(gameHistory);
                 trainingStatus += " - CHECKMATE! Q-table: " + qTable.size();
@@ -1445,7 +1445,7 @@ public class QLearningAI {
             }
             
             if (validMoves.isEmpty()) {
-                System.out.println("STALEMATE detected! Processing " + gameHistory.size() + " moves for Q-table updates");
+                logger.info("STALEMATE detected! Processing " + gameHistory.size() + " moves for Q-table updates");
                 updateGameRewards(gameHistory, -2.0, whiteTurn);
                 processQTableUpdates(gameHistory);
                 trainingStatus += " - STALEMATE! Q-table: " + qTable.size();
@@ -1475,7 +1475,7 @@ public class QLearningAI {
                 LeelaChessZeroOpeningBook.OpeningMoveResult openingResult = openingBook.getOpeningMove(board, validMoves, ruleValidator, whiteTurn);
                 if (openingResult != null) {
                     selectedMove = openingResult.move;
-                    System.out.println("Q-Learning: Using Lc0 opening move - " + openingResult.openingName);
+                    logger.debug("Q-Learning: Using Lc0 opening move - " + openingResult.openingName);
                 } else {
                     selectedMove = selectMove(board, validMoves, true);
                 }
@@ -1512,9 +1512,9 @@ public class QLearningAI {
             currentTrainingBoard = copyBoard(board);
             
             if ("♔".equals(capturedPiece) || "♚".equals(capturedPiece)) {
-                System.err.println("ERROR: King captured! This indicates invalid move validation.");
-                System.err.println("Move: " + Arrays.toString(selectedMove) + ", Piece: " + piece);
-                System.out.println("Processing " + gameHistory.size() + " moves for Q-table updates before ending game");
+                logger.error("ERROR: King captured! This indicates invalid move validation.");
+                logger.error("Move: " + Arrays.toString(selectedMove) + ", Piece: " + piece);
+                logger.error("Processing " + gameHistory.size() + " moves for Q-table updates before ending game");
                 updateGameRewards(gameHistory, -50.0, whiteTurn);
                 processQTableUpdates(gameHistory);
                 return;
@@ -2191,13 +2191,13 @@ public class QLearningAI {
     public static boolean isGlobalTrainingInProgress() { return trainingInProgress; }
     
     public void testTraining(int games) {
-        System.out.println("*** TEST TRAINING STARTED WITH " + games + " GAMES ***");
+        logger.info("*** TEST TRAINING STARTED WITH " + games + " GAMES ***");
         isTraining = true;
         gamesCompleted = 0;
         
         // Force add some test entries to verify saving works
         for (int i = 0; i < games; i++) {
-            System.out.println("Training game " + (i + 1));
+            logger.debug("Training game " + (i + 1));
             gamesCompleted++;
             
             // Add test Q-table entries
@@ -2205,26 +2205,26 @@ public class QLearningAI {
             qTable.put("board_" + i + ":action_" + i, (double) i * 0.2);
             
             if (i % 5 == 0) {
-                System.out.println("Current Q-table size: " + qTable.size());
+                logger.debug("Current Q-table size: " + qTable.size());
             }
             
             try { Thread.sleep(100); } catch (InterruptedException e) { break; }
         }
         
         isTraining = false;
-        System.out.println("Final Q-table size before save: " + qTable.size());
+        logger.info("Final Q-table size before save: " + qTable.size());
         saveQTable();
-        System.out.println("*** TEST TRAINING COMPLETED - Q-table size: " + qTable.size() + " ***");
+        logger.info("*** TEST TRAINING COMPLETED - Q-table size: " + qTable.size() + " ***");
     }
     
     public void forceAddTestEntries(int count) {
-        System.out.println("*** FORCE ADDING " + count + " TEST ENTRIES TO Q-TABLE ***");
+        logger.info("*** FORCE ADDING " + count + " TEST ENTRIES TO Q-TABLE ***");
         for (int i = 0; i < count; i++) {
             String testKey = "test_board_" + i + ":test_move_[" + i + "," + (i+1) + "," + (i+2) + "," + (i+3) + "]";
             double testValue = i * 0.1 + Math.random() * 0.5;
             qTable.put(testKey, testValue);
         }
-        System.out.println("*** ADDED " + count + " TEST ENTRIES - Q-table size now: " + qTable.size() + " ***");
+        logger.info("*** ADDED " + count + " TEST ENTRIES - Q-table size now: " + qTable.size() + " ***");
         saveQTable();
         
         // Verify the save worked by reloading
@@ -2232,9 +2232,9 @@ public class QLearningAI {
     }
     
     public void verifyQTableSave() {
-        System.out.println("*** VERIFYING Q-TABLE SAVE ***");
+        logger.info("*** VERIFYING Q-TABLE SAVE ***");
         int originalSize = qTable.size();
-        System.out.println("Original Q-table size: " + originalSize);
+        logger.info("Original Q-table size: " + originalSize);
         
         // Create backup before clearing
         Map<String, Double> backup = new ConcurrentHashMap<>(qTable);
@@ -2250,16 +2250,16 @@ public class QLearningAI {
         loadQTable();
         
         int reloadedSize = qTable.size();
-        System.out.println("Reloaded Q-table size: " + reloadedSize);
+        logger.info("Reloaded Q-table size: " + reloadedSize);
         
         // Restore original Q-table
         qTable = originalQTable;
         
         if (reloadedSize == originalSize) {
-            System.out.println("*** Q-TABLE SAVE/LOAD VERIFICATION: SUCCESS ***");
+            logger.info("*** Q-TABLE SAVE/LOAD VERIFICATION: SUCCESS ***");
         } else {
-            System.out.println("*** Q-TABLE SAVE/LOAD VERIFICATION: FAILED ***");
-            System.out.println("Expected: " + originalSize + ", Got: " + reloadedSize);
+            logger.error("*** Q-TABLE SAVE/LOAD VERIFICATION: FAILED ***");
+            logger.error("Expected: " + originalSize + ", Got: " + reloadedSize);
         }
     }
     

@@ -18,6 +18,8 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import java.sql.Blob;
 import java.sql.Clob;
 import java.sql.Connection;
@@ -69,6 +71,9 @@ import java.util.zip.GZIPOutputStream;
  *   Import: java DB2AirgapMigrator import --jdbc <URL> --user <U> --pass <P> --in <DIR>
  */
 public class DB2AirgapMigrator {
+    
+    private static final Logger logger = LogManager.getLogger(DB2AirgapMigrator.class);
+    
     public static void main(String[] args) throws Exception {
         if (args.length == 0) { usageAndExit(); }
         String mode = args[0].toLowerCase(Locale.ROOT);
@@ -92,7 +97,7 @@ public class DB2AirgapMigrator {
         List<TableReport> reports = new ArrayList<>();
         try (Connection c = getConn(jdbc, user, pass)) {
             List<TableRef> tables = listTables(c, schemasCsv.split(","));
-            System.out.println("Exporting " + tables.size() + " tables -> " + outDir);
+            logger.info("Exporting " + tables.size() + " tables -> " + outDir);
             for (TableRef t : tables) {
                 TableReport tr = exportTable(c, t, outDir, batch);
                 reports.add(tr);
@@ -103,7 +108,7 @@ public class DB2AirgapMigrator {
         try (BufferedWriter w = Files.newBufferedWriter(reportPath, StandardCharsets.UTF_8)) {
             for (TableReport tr : reports) w.write(tr.toLine());
         }
-        System.out.println("EXPORT complete. Report: " + reportPath);
+        logger.info("EXPORT complete. Report: " + reportPath);
     }
 
     private static void importMode(Map<String,String> a) throws Exception {
@@ -122,7 +127,7 @@ public class DB2AirgapMigrator {
                     TableMeta meta = TableMeta.read(metaPath);
                     Path dataPath = inDir.resolve(meta.baseName + ".csv.gz");
                     if (!Files.exists(dataPath)) {
-                        System.err.println("WARN: Missing data file for " + meta.baseName);
+                        logger.warn("WARN: Missing data file for " + meta.baseName);
                         continue;
                     }
                     Path failPath = inDir.resolve(meta.baseName + ".failures.csv");
@@ -139,7 +144,7 @@ public class DB2AirgapMigrator {
         try (BufferedWriter w = Files.newBufferedWriter(reportPath, StandardCharsets.UTF_8)) {
             for (TableReport tr : reports) w.write(tr.toLine());
         }
-        System.out.println("IMPORT complete. Report: " + reportPath);
+        logger.info("IMPORT complete. Report: " + reportPath);
     }
 
     private static Connection getConn(String jdbc, String user, String pass) throws Exception {
@@ -157,12 +162,12 @@ public class DB2AirgapMigrator {
     private static void validateDriverVersion(Connection c) {
         try {
             String driverVersion = c.getMetaData().getDriverVersion();
-            System.out.println("Using DB2 JDBC Driver: " + driverVersion);
+            logger.info("Using DB2 JDBC Driver: " + driverVersion);
             if (!driverVersion.contains("11.") && !driverVersion.contains("4.")) {
-                System.err.println("WARN: Consider using DB2 11.5 JDBC driver for optimal compatibility");
+                logger.warn("WARN: Consider using DB2 11.5 JDBC driver for optimal compatibility");
             }
         } catch (SQLException e) {
-            System.err.println("WARN: Could not validate JDBC driver version: " + e.getMessage());
+            logger.warn("WARN: Could not validate JDBC driver version: " + e.getMessage(), e);
         }
     }
 
@@ -231,7 +236,7 @@ public class DB2AirgapMigrator {
         try (PreparedStatement ps = c.prepareStatement("SELECT COUNT(*) FROM " + quote(t.schema) + "." + quote(t.name) + " FETCH FIRST 1 ROWS ONLY")) {
             ps.executeQuery();
         } catch (SQLException e) {
-            System.err.println("WARN: Privilege check failed for " + t.qname() + ": " + e.getMessage());
+            logger.warn("WARN: Privilege check failed for " + t.qname() + ": " + e.getMessage(), e);
         }
     }
 
@@ -334,7 +339,7 @@ public class DB2AirgapMigrator {
     }
 
     private static TableReport exportTable(Connection c, TableRef t, Path outDir, int batch) throws Exception {
-        System.out.println("EXPORT " + t.qname());
+        logger.info("EXPORT " + t.qname());
         validatePrivileges(c, t);
         List<String> pks = primaryKeys(c, t);
         List<ColumnInfo> colInfo = getColumnInfo(c, t);
@@ -391,7 +396,7 @@ public class DB2AirgapMigrator {
 
     private static TableReport importTable(Connection c, TableMeta meta, Path dataPath, int batch,
                                     boolean stopOnError, BufferedWriter failWriter) throws Exception {
-        System.out.println("IMPORT " + meta.schema + "." + meta.table);
+        logger.info("IMPORT " + meta.schema + "." + meta.table);
         String insertSql = buildInsertSql(meta);
         MessageDigest md = MessageDigest.getInstance("SHA-256");
         long imported = 0;
@@ -601,14 +606,14 @@ public class DB2AirgapMigrator {
     private static String req(Map<String,String> a, String key) {
         String v = a.get(key);
         if (v == null || v.isBlank()) {
-            System.err.println("Missing required arg: " + key);
+            logger.error("Missing required arg: " + key);
             usageAndExit();
         }
         return v;
     }
 
     private static void usageAndExit() {
-        System.err.println("\nDB2AirgapMigrator - Export/Import DB2 data across an air gap\n" +
+        logger.error("\nDB2AirgapMigrator - Export/Import DB2 data across an air gap\n" +
                 "\nEXPORT:\n  java -cp .:db2jcc.jar DB2AirgapMigrator export --jdbc <JDBC> --user <U> --pass <P> --schemas <CSV> --out <DIR>\n" +
                 "\nIMPORT:\n  java -cp .:db2jcc.jar DB2AirgapMigrator import --jdbc <JDBC> --user <U> --pass <P> --in <DIR>\n");
         System.exit(1);

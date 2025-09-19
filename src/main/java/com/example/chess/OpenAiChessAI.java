@@ -53,7 +53,7 @@ public class OpenAiChessAI {
             VirtualChessBoard virtualBoard = new VirtualChessBoard(board, false);
             LeelaChessZeroOpeningBook.OpeningMoveResult openingResult = openingBook.getOpeningMove(board, validMoves, virtualBoard.getRuleValidator(), false);
             if (openingResult != null) {
-                System.out.println("*** OpenAI: Using Lc0 opening move - " + openingResult.openingName + " ***");
+                logger.debug("*** OpenAI: Using Lc0 opening move - " + openingResult.openingName + " ***");
                 return openingResult.move;
             }
         }
@@ -122,7 +122,7 @@ public class OpenAiChessAI {
             return validMoves.get(moveIndex);
             
         } catch (Exception e) {
-            System.err.println("*** OpenAI: Error - " + e.getMessage() + " ***");
+            logger.error("*** OpenAI: Error - " + e.getMessage() + " ***", e);
             return validMoves.get(0); // Fallback to first valid move
         }
     }

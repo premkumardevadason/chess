@@ -69,7 +69,7 @@ public class LeelaChessZeroMCTS {
         int[] bestMove = selectBestChild(root);
         
         if (debugEnabled) {
-            System.out.println("*** LeelaZero MCTS: Completed " + completedSimulations + "/" + SIMULATIONS + " simulations ***");
+            logger.debug("*** LeelaZero MCTS: Completed " + completedSimulations + "/" + SIMULATIONS + " simulations ***");
             printTopMoves(root, 3);
         }
         
@@ -439,11 +439,11 @@ public class LeelaChessZeroMCTS {
         List<MCTSNode> sortedChildren = new ArrayList<>(root.children);
         sortedChildren.sort((a, b) -> Integer.compare(b.visitCount, a.visitCount));
         
-        System.out.println("*** LeelaZero MCTS: Top " + count + " moves:");
+        logger.debug("*** LeelaZero MCTS: Top " + count + " moves:");
         for (int i = 0; i < Math.min(count, sortedChildren.size()); i++) {
             MCTSNode child = sortedChildren.get(i);
             double avgValue = child.visitCount > 0 ? child.totalValue / child.visitCount : 0.0;
-            System.out.println("  " + (i + 1) + ". Move: " + Arrays.toString(child.move) + 
+            logger.debug("  " + (i + 1) + ". Move: " + Arrays.toString(child.move) + 
                              " Visits: " + child.visitCount + " Avg: " + String.format("%.3f", avgValue));
         }
     }

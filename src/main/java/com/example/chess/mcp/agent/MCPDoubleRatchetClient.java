@@ -9,11 +9,15 @@ import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.concurrent.ConcurrentHashMap;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 /**
  * Client-side Double Ratchet encryption for MCP communications
  */
 public class MCPDoubleRatchetClient {
+    
+    private static final Logger logger = LogManager.getLogger(MCPDoubleRatchetClient.class);
     
     private final SecureRandom secureRandom = new SecureRandom();
     private final ConcurrentHashMap<String, ClientRatchetState> sessions = new ConcurrentHashMap<>();
@@ -29,7 +33,7 @@ public class MCPDoubleRatchetClient {
         );
         
         sessions.put(sessionId, state);
-        System.out.println("🔐 Double Ratchet session established for: " + sessionId);
+        logger.debug("🔐 Double Ratchet session established for: " + sessionId);
     }
     
     private SecretKey deriveKeyFromSession(String sessionId, String purpose) throws Exception {
@@ -70,7 +74,7 @@ public class MCPDoubleRatchetClient {
             state.getReceivingCounter()
         );
         
-        System.out.println("🔒 Encrypted message for session: " + sessionId + " (counter: " + state.getSendingCounter() + ")");
+        logger.debug("🔒 Encrypted message for session: " + sessionId + " (counter: " + state.getSendingCounter() + ")");
         return encMsg.toJson();
     }
     
@@ -98,7 +102,7 @@ public class MCPDoubleRatchetClient {
         
         byte[] plaintext = cipher.doFinal(ciphertext);
         
-        System.out.println("🔓 Decrypted message for session: " + sessionId + " (counter: " + encMsg.getMessageCounter() + ")");
+        logger.debug("🔓 Decrypted message for session: " + sessionId + " (counter: " + encMsg.getMessageCounter() + ")");
         return new String(plaintext);
     }
     
@@ -113,7 +117,7 @@ public class MCPDoubleRatchetClient {
     
     public void removeSession(String sessionId) {
         sessions.remove(sessionId);
-        System.out.println("🗑️ Removed Double Ratchet session: " + sessionId);
+        logger.debug("🗑️ Removed Double Ratchet session: " + sessionId);
     }
     
     private static class ClientRatchetState {

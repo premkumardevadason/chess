@@ -182,7 +182,7 @@ public class MonteCarloTreeSearchAI {
         try {
             mctsThread.join(6000); // 6 second timeout to fit within ChessGame's 8s limit
             if (isThinking) {
-                System.out.println("*** MCTS: THREAD TIMEOUT - Interrupting ***");
+                logger.warn("*** MCTS: THREAD TIMEOUT - Interrupting ***");
                 mctsThread.interrupt();
                 mctsThread.join(500); // Wait 0.5 second for cleanup
                 isThinking = false;
@@ -274,7 +274,7 @@ public class MonteCarloTreeSearchAI {
                         // Silently handle interruption
                         return;
                     }
-                    System.err.println("*** MCTS: Sim-" + simId + " error: " + e.getMessage() + " ***");
+                    logger.error("*** MCTS: Sim-" + simId + " error: " + e.getMessage() + " ***", e);
                 }
             });
             simThreads.add(simThread);
@@ -355,14 +355,14 @@ public class MonteCarloTreeSearchAI {
     
     public void stopThinking() {
         if (mctsThread != null && mctsThread.isAlive()) {
-            System.out.println("*** MCTS: Stopping thread ***");
+            logger.debug("*** MCTS: Stopping thread ***");
             mctsThread.interrupt();
             
             // Wait for thread to stop gracefully
             try {
                 mctsThread.join(1000); // Wait up to 1 second
                 if (mctsThread.isAlive()) {
-                    System.out.println("*** MCTS: Thread did not stop gracefully ***");
+                    logger.warn("*** MCTS: Thread did not stop gracefully ***");
                 }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
@@ -511,7 +511,7 @@ public class MonteCarloTreeSearchAI {
             
             // Prevent infinite loop in move selection
             if (moves.size() > 200) {
-                System.err.println("*** MCTS: WARNING - Move explosion detected (" + moves.size() + " moves), limiting to 20 ***");
+                logger.warn("*** MCTS: WARNING - Move explosion detected (" + moves.size() + " moves), limiting to 20 ***");
                 moves = moves.subList(0, 20); // Limit to first 20 moves
             }
             
@@ -650,10 +650,10 @@ public class MonteCarloTreeSearchAI {
         
         if (mctsWon) {
             mctsWinStreak++;
-            System.out.println("*** MCTS: WON AI COMPARISON (Win streak: " + mctsWinStreak + ") ***");
+            logger.debug("*** MCTS: WON AI COMPARISON (Win streak: " + mctsWinStreak + ") ***");
         } else {
             mctsWinStreak = 0;
-            System.out.println("*** MCTS: LOST AI COMPARISON - KEEPING TREE (Learning from " + winnerName + ") ***");
+            logger.debug("*** MCTS: LOST AI COMPARISON - KEEPING TREE (Learning from " + winnerName + ") ***");
             
             // Learn from winning AI move by adding it to our tree with bonus visits
             if (winningMove != null && rootNode != null) {
@@ -663,12 +663,12 @@ public class MonteCarloTreeSearchAI {
         
         // Tree reuse is now always enabled - no more clearing based on performance
         enableTreeReuse = true;
-        System.out.println("*** MCTS: Tree reuse ALWAYS ENABLED - Preserving computational investment ***");
+        logger.debug("*** MCTS: Tree reuse ALWAYS ENABLED - Preserving computational investment ***");
     }
     
     private void learnFromWinningMove(int[] winningMove, String winnerName) {
         if (rootNode == null || rootNode.children.isEmpty()) {
-            System.out.println("*** MCTS: Cannot learn - no tree structure available ***");
+            logger.debug("*** MCTS: Cannot learn - no tree structure available ***");
             return;
         }
         
@@ -696,7 +696,7 @@ public class MonteCarloTreeSearchAI {
             
             logger.info("*** MCTS: LEARNED from {} - Boosted move with +{} visits ***", winnerName, bonusVisits);
         } else {
-            System.out.println("*** MCTS: Could not find winning move in tree - move not explored yet ***");
+            logger.debug("*** MCTS: Could not find winning move in tree - move not explored yet ***");
         }
     }
     
@@ -706,7 +706,7 @@ public class MonteCarloTreeSearchAI {
         mctsWinStreak = 0;
         totalMoves = 0;
         enableTreeReuse = true;
-        System.out.println("*** MCTS: Tree cleared for new game - Stats reset ***");
+        logger.debug("*** MCTS: Tree cleared for new game - Stats reset ***");
     }
     
     public int getSimulationsPerMove() {

@@ -72,9 +72,9 @@ public class DB2DataMigration {
     }
     
     private static void printUsage() {
-        System.out.println("Usage:");
-        System.out.println("  java DB2DataMigration export [export_directory]");
-        System.out.println("  java DB2DataMigration import [export_directory]");
+        logger.info("Usage:");
+        logger.info("  java DB2DataMigration export [export_directory]");
+        logger.info("  java DB2DataMigration import [export_directory]");
     }
     
     public void exportData(String exportDir) throws Exception {

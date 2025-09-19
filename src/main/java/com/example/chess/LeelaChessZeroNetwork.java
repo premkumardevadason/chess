@@ -68,12 +68,12 @@ public class LeelaChessZeroNetwork {
         try {
             OpenCLDetector.detectAndConfigureOpenCL();
             if (OpenCLDetector.isOpenCLAvailable()) {
-                System.out.println("*** LeelaZero Network: Using GPU acceleration ***");
+                logger.info("*** LeelaZero Network: Using GPU acceleration ***");
             } else {
                 logger.info("*** LeelaZero Network: Using CPU backend ***");
             }
         } catch (Exception e) {
-            System.err.println("*** LeelaZero Network: Backend configuration failed - " + e.getMessage() + " ***");
+            logger.error("*** LeelaZero Network: Backend configuration failed - " + e.getMessage() + " ***", e);
         }
     }
     
@@ -298,7 +298,7 @@ public class LeelaChessZeroNetwork {
             trainOnSelfPlayData(inputs, doublePolicies, doubleValues);
             
         } catch (Exception e) {
-            System.err.println("*** LeelaZero Network: Game data training error - " + e.getMessage() + " ***");
+            logger.error("*** LeelaZero Network: Game data training error - " + e.getMessage() + " ***", e);
         }
     }
     
