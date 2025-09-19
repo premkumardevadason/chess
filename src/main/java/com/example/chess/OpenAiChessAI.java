@@ -18,7 +18,7 @@ public class OpenAiChessAI {
     public record GPTResponse(String text, int moveIndex, double confidence) {}
     public record PositionAnalysis(String fen, double evaluation, String reasoning) {}
     public record MoveDescription(int index, String from, String to, String notation) {}
-    private static final String GPT_MODEL = "gpt-3.5-turbo-instruct";
+    private static final String GPT_MODEL = "gpt-4o-mini";
     private static final Logger logger = LogManager.getLogger(OpenAiChessAI.class);
     private LanguageModel model;
     private boolean debugEnabled;
