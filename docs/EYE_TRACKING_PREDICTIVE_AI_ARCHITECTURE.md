@@ -1241,3 +1241,183 @@ Result: Normal AI computation (2-3 seconds)
 - **Resource Constraints**: Automatic fallback to essential AIs only
 
 This architecture creates a revolutionary chess experience where eye-tracking enables instant AI responses through predictive multi-agent processing, while preserving the familiar mouse-based interaction model that users expect.
+
+## Architectural Review Recommendations and Implementations
+
+### 1. Enhance Privacy/Security
+To address privacy and security concerns, implement a dedicated PrivacyService for handling encrypted gaze data and audit logging. Update configurations and add OWASP-compliant practices.
+
+```java
+@Service
+public class PrivacyService {
+    private static final String ENCRYPTION_ALGORITHM = "AES/GCM/NoPadding";
+    private SecretKey encryptionKey;
+
+    @PostConstruct
+    public void init() throws Exception {
+        // Load or generate encryption key securely
+        KeyGenerator keyGen = KeyGenerator.getInstance("AES");
+        keyGen.init(256);
+        encryptionKey = keyGen.generateKey();
+    }
+
+    public byte[] encryptGazeData(byte[] data) throws Exception {
+        Cipher cipher = Cipher.getInstance(ENCRYPTION_ALGORITHM);
+        cipher.init(Cipher.ENCRYPT_MODE, encryptionKey);
+        return cipher.doFinal(data);
+    }
+
+    public byte[] decryptGazeData(byte[] encryptedData) throws Exception {
+        Cipher cipher = Cipher.getInstance(ENCRYPTION_ALGORITHM);
+        cipher.init(Cipher.DECRYPT_MODE, encryptionKey);
+        return cipher.doFinal(encryptedData);
+    }
+
+    public void logAccess(String userId, String action) {
+        // Log to secure audit trail
+        logger.info("User {} performed action: {}", userId, action);
+    }
+}
+```
+
+Integrate this into EyeTrackingService by encrypting data before storage:
+```java
+// In processFrame method
+byte[] gazeData = convertToByteArray(gazePoint);
+byte[] encrypted = privacyService.encryptGazeData(gazeData);
+storeEncryptedData(encrypted);
+```
+
+Add to application.properties:
+```
+chess.eyetracking.encryption.enabled=true
+chess.eyetracking.audit.logging=true
+```
+
+### 2. Add Calibration Module
+Introduce a CalibrationService with user-guided calibration to improve accuracy. Use adaptive algorithms for real-time corrections.
+
+```java
+@Service
+public class CalibrationService {
+    private Point2D[] calibrationPoints = new Point2D[9]; // 3x3 grid
+    private Map<Point2D, Point2D> calibrationMap = new HashMap<>();
+
+    public void startCalibration() {
+        // Display calibration UI points and collect gaze data
+        for (int i = 0; i < calibrationPoints.length; i++) {
+            displayCalibrationPoint(i);
+            Point2D actualGaze = eyeTrackingService.getCurrentGaze();
+            calibrationMap.put(calibrationPoints[i], actualGaze);
+        }
+        buildCalibrationModel();
+    }
+
+    private void buildCalibrationModel() {
+        // Use linear regression or affine transformation to create correction model
+        // Example: Implement Kalman filter for ongoing corrections
+    }
+
+    public Point2D correctGazePoint(Point2D rawPoint) {
+        // Apply calibration correction
+        return applyAffineTransformation(rawPoint);
+    }
+}
+```
+
+Integrate into EyeTrackingService:
+```java
+// In calculateGazePoint
+Point2D rawGaze = ...;
+Point2D corrected = calibrationService.correctGazePoint(rawGaze);
+```
+
+Add frontend React component for calibration UI using shadcn/ui.
+
+### 3. Improve Scalability
+Replace fixed thread pool with dynamic work-stealing pool and add prioritization for AI computations.
+
+```java
+// In MultiAgentPrecomputationService
+private ExecutorService aiExecutor = Executors.newWorkStealingPool();
+
+private void precomputeWithPriority(List<String> priorityAIs) {
+    // Submit tasks with priority
+    priorityAIs.forEach(ai -> aiExecutor.submit(() -> computeForAI(ai)));
+}
+
+// Usage
+if (systemLoad > 0.8) {
+    precomputeWithPriority(Arrays.asList("Negamax", "QLearning", "MCTS"));
+} else {
+    precomputeWithAllAIs();
+}
+```
+
+Add browser fallback in frontend using WebRTC for webcam access.
+
+### 4. Refine Training
+Implement hybrid training with offline datasets and anonymization.
+
+```java
+// In MovePredictionAI
+public void hybridTrain() {
+    loadOfflineDataset(); // Load pre-collected anonymized data
+    anonymizeTrainingData();
+    retrainNetwork();
+}
+
+private void anonymizeTrainingData() {
+    trainingData.forEach(example -> {
+        // Convert to abstract features, remove PII
+        example.gazePattern.anonymize();
+    });
+}
+```
+
+Schedule offline training periodically.
+
+### 5. Bolster Error Handling/Testing
+Extend GlobalExceptionHandler and add try-catch in critical paths.
+
+```java
+// In GlobalExceptionHandler
+@ExceptionHandler(VisionException.class)
+public ResponseEntity<ApiResponse<?>> handleVisionException(VisionException ex) {
+    return errorResponseEntity(ex.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR);
+}
+
+// In EyeTrackingService
+try {
+    camera.read(frame);
+} catch (Exception e) {
+    throw new VisionException("Failed to capture frame", e);
+}
+```
+
+Add unit tests:
+```java
+@Test
+public void testGazeCalculation() {
+    // Mock frame and assert output
+}
+```
+
+### 6. Frontend Enhancements
+Add React components for calibration and consent.
+
+```tsx
+// ConsentModal.tsx
+import { Dialog } from '@/components/ui/dialog';
+
+export function ConsentModal() {
+  return (
+    <Dialog>
+      <p>Consent to eye-tracking?</p>
+      <Button onClick={handleConsent}>Agree</Button>
+    </Dialog>
+  );
+}
+```
+
+Ensure dark mode and a11y with Tailwind and ARIA attributes.
