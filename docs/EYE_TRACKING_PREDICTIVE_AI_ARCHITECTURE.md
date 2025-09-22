@@ -4,6 +4,10 @@
 
 This document outlines the integration of eye-tracking technology with the Chess application's 12 AI systems to create a **Predictive Multi-Agent Chess Engine**. By analyzing user eye movements and gaze patterns, the system will anticipate user moves 2-5 seconds in advance, enabling all AI agents to pre-compute optimal responses.
 
+### **Target Interface: Original Thymeleaf Chess Board**
+
+**IMPORTANT**: Eye-tracking is designed for the **original Thymeleaf-based chess interface** (http://localhost:8081), NOT the React frontend. The system analyzes gaze patterns on the existing HTML/CSS chess board that users interact with via mouse clicks.
+
 ## Core Benefits of Move Anticipation
 
 ### **IMPORTANT: Eye-Tracking is Prediction Only**
@@ -122,8 +126,9 @@ public class ChessBoardMapper {
     }
     
     private void detectChessBoard() {
-        // Use template matching to find chess board
-        Mat template = Imgcodecs.imread("chess_board_template.png");
+        // Target the original Thymeleaf chess board (index.html)
+        // Look for the HTML table-based chess board structure
+        Mat template = Imgcodecs.imread("thymeleaf_chess_board_template.png");
         Mat screen = captureScreen();
         
         Mat result = new Mat();
@@ -132,10 +137,13 @@ public class ChessBoardMapper {
         Core.MinMaxLocResult mmr = Core.minMaxLoc(result);
         Point topLeft = mmr.maxLoc;
         
+        // Map to Thymeleaf chess board coordinates
         chessBoardBounds = new Rectangle(
             (int)topLeft.x, (int)topLeft.y, 
             template.cols(), template.rows()
         );
+        
+        logger.info("Detected Thymeleaf chess board at: {}", chessBoardBounds);
     }
     
     private void calculateSquareBounds() {
@@ -154,16 +162,35 @@ public class ChessBoardMapper {
     }
     
     public String mapToChessSquare(Point2D gazePoint) {
+        // Map gaze point to Thymeleaf chess board squares
         for (int row = 0; row < 8; row++) {
             for (int col = 0; col < 8; col++) {
                 if (squareBounds[row][col].contains(gazePoint)) {
                     char file = (char)('a' + col);
-                    int rank = 8 - row;
-                    return "" + file + rank;
+                    int rank = 8 - row; // Thymeleaf board: rank 8 at top
+                    String square = "" + file + rank;
+                    logger.debug("Gaze mapped to Thymeleaf square: {}", square);
+                    return square;
                 }
             }
         }
         return null;
+    }
+    
+    /**
+     * Validates that we're tracking the correct Thymeleaf interface
+     */
+    public boolean isThymeleafBoardActive() {
+        // Check if browser is showing localhost:8081 (Thymeleaf interface)
+        // Not localhost:8080/react (React interface)
+        return getCurrentBrowserURL().contains(":8081") && 
+               !getCurrentBrowserURL().contains("/react");
+    }
+    
+    private String getCurrentBrowserURL() {
+        // Implementation to detect current browser URL
+        // Could use browser automation tools or system APIs
+        return "http://localhost:8081"; // Default assumption
     }
 }
 ```
@@ -1002,19 +1029,49 @@ public class PredictionValidationService {
 }
 ```
 
-### **Fallback Strategy**
+### **Interface Validation and Fallback Strategy**
 
 ```java
+@Service
+public class InterfaceValidationService {
+    
+    /**
+     * Ensures eye-tracking targets the correct Thymeleaf interface
+     */
+    public boolean validateTargetInterface() {
+        // Check if user is on the correct interface
+        String currentURL = getCurrentBrowserURL();
+        
+        if (!currentURL.contains(":8081")) {
+            logger.warn("Eye-tracking requires Thymeleaf interface (localhost:8081), current: {}", currentURL);
+            return false;
+        }
+        
+        if (currentURL.contains("/react")) {
+            logger.warn("Eye-tracking not supported on React interface, switch to localhost:8081");
+            return false;
+        }
+        
+        return true;
+    }
+}
+
 /**
  * Robust fallback system ensures normal gameplay even if eye-tracking fails
  */
 public String getAIResponse(String userMove) {
+    // 0. Validate interface before using eye-tracking predictions
+    if (!interfaceValidationService.validateTargetInterface()) {
+        logger.info("Interface validation failed, using normal AI computation");
+        return selectedAI.getBestMove(getCurrentBoard());
+    }
+    
     // 1. Try precomputed response (eye-tracking prediction)
     String precomputed = precomputationService.getPrecomputedResponse(
         selectedAI, userMove, getCurrentPosition());
         
     if (precomputed != null) {
-        logger.info("Eye-tracking prediction HIT: {} → {}", userMove, precomputed);
+        logger.info("Eye-tracking prediction HIT on Thymeleaf board: {} → {}", userMove, precomputed);
         return precomputed; // <100ms response
     }
     
@@ -1094,6 +1151,12 @@ chess.eyetracking.camera.device=0
 chess.eyetracking.fps=30
 chess.eyetracking.prediction.confidence.threshold=0.7
 chess.eyetracking.precomputation.timeout=2000ms
+
+# Target Interface Configuration
+chess.eyetracking.target.interface=thymeleaf
+chess.eyetracking.target.url=http://localhost:8081
+chess.eyetracking.board.template=thymeleaf_chess_board_template.png
+chess.eyetracking.exclude.react=true
 
 # Performance Settings
 chess.eyetracking.threads=4
@@ -1186,11 +1249,13 @@ chess.eyetracking.consent.required=true
 
 ### **From User Perspective**
 
+**Target Interface: Original Thymeleaf Chess Board (localhost:8081)**
+
 **What Stays the Same:**
-- **Mouse Interaction**: Users still click pieces and squares to make moves
+- **Mouse Interaction**: Users still click pieces and squares on the Thymeleaf board to make moves
 - **Move Validation**: All existing chess rules and validation remain unchanged
-- **Game Interface**: No changes to the visual chess board or controls
-- **Turn-based Play**: Users still take turns making moves as before
+- **Game Interface**: No changes to the original HTML/CSS chess board or controls
+- **Turn-based Play**: Users still take turns making moves as before on the Thymeleaf interface
 
 **What Gets Better:**
 - **AI Response Time**: Instant AI responses instead of 2-5 second delays
