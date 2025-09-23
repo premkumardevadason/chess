@@ -5,11 +5,15 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import javax.annotation.PostConstruct;
 
 import java.awt.geom.Point2D;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.io.*;
+import java.nio.file.*;
+import java.nio.file.StandardOpenOption;
 
 /**
  * Calibration service for gaze accuracy improvement
@@ -40,6 +44,41 @@ public class CalibrationService {
     
     // Calibration model
     private CalibrationModel calibrationModel = null;
+    
+    // Calibration data file path
+    private static final String CALIBRATION_DATA_FILE = "calibration_data.dat";
+    
+    @PostConstruct
+    public void loadCalibrationData() {
+        try {
+            Path calibrationFile = Paths.get(CALIBRATION_DATA_FILE);
+            if (Files.exists(calibrationFile)) {
+                byte[] encryptedData = Files.readAllBytes(calibrationFile);
+                byte[] decryptedData = privacyService.decryptGazeData(encryptedData);
+                String calibrationJson = new String(decryptedData);
+                
+                // Parse and restore calibration model
+                calibrationModel = deserializeCalibrationModel(calibrationJson);
+                if (calibrationModel != null) {
+                    logger.info("Loaded calibration data with accuracy: {:.2f}%", 
+                        calibrationModel.getAccuracy() * 100);
+                } else {
+                    logger.warn("Failed to parse calibration data, starting fresh");
+                }
+            } else {
+                logger.info("No existing calibration data found");
+            }
+        } catch (Exception e) {
+            logger.warn("Failed to load calibration data ({}), deleting corrupted file", e.getMessage());
+            try {
+                Files.deleteIfExists(Paths.get(CALIBRATION_DATA_FILE));
+                logger.info("Deleted corrupted calibration file");
+            } catch (IOException deleteError) {
+                logger.warn("Could not delete corrupted calibration file: {}", deleteError.getMessage());
+            }
+            calibrationModel = null;
+        }
+    }
     
     /**
      * Start a new calibration session
@@ -247,9 +286,11 @@ public class CalibrationService {
                 serializeCalibrationData(result).getBytes()
             );
             
-            // Store in secure location
-            // This would integrate with the data storage system
-            logger.info("Stored encrypted calibration data for session: {}", sessionId);
+            // Store to file
+            Path calibrationFile = Paths.get(CALIBRATION_DATA_FILE);
+            Files.write(calibrationFile, encryptedData, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+            
+            logger.info("Stored encrypted calibration data for session: {} to {}", sessionId, CALIBRATION_DATA_FILE);
             
         } catch (Exception e) {
             logger.error("Error storing calibration data", e);
@@ -266,6 +307,63 @@ public class CalibrationService {
         json.append("\"accuracy\":").append(result.getAccuracy()).append(",");
         json.append("\"timestamp\":").append(System.currentTimeMillis()).append("}");
         return json.toString();
+    }
+    
+    /**
+     * Deserialize calibration model from JSON
+     */
+    private CalibrationModel deserializeCalibrationModel(String json) {
+        try {
+            if (json == null || json.trim().isEmpty()) {
+                logger.warn("Empty calibration JSON data");
+                return null;
+            }
+            
+            // Simple JSON parsing (in production, use proper JSON library)
+            if (json.contains("\"accuracy\":")) {
+                int accuracyStart = json.indexOf("\"accuracy\":") + 12;
+                if (accuracyStart >= json.length()) {
+                    logger.warn("Invalid JSON format: accuracy field incomplete");
+                    return null;
+                }
+                
+                String accuracyStr = json.substring(accuracyStart);
+                int commaIndex = accuracyStr.indexOf(",");
+                int braceIndex = accuracyStr.indexOf("}");
+                
+                int endIndex = -1;
+                if (commaIndex != -1 && braceIndex != -1) {
+                    endIndex = Math.min(commaIndex, braceIndex);
+                } else if (commaIndex != -1) {
+                    endIndex = commaIndex;
+                } else if (braceIndex != -1) {
+                    endIndex = braceIndex;
+                }
+                
+                if (endIndex == -1) {
+                    logger.warn("Invalid JSON format: cannot find accuracy value end");
+                    return null;
+                }
+                
+                accuracyStr = accuracyStr.substring(0, endIndex).trim();
+                double accuracy = Double.parseDouble(accuracyStr);
+                
+                if (accuracy < 0.0 || accuracy > 1.0) {
+                    logger.warn("Invalid accuracy value: {}, using default", accuracy);
+                    accuracy = 0.5;
+                }
+                
+                logger.debug("Parsed calibration accuracy: {}", accuracy);
+                return new RestoredCalibrationModel(accuracy);
+            } else {
+                logger.warn("No accuracy field found in calibration JSON");
+            }
+        } catch (NumberFormatException e) {
+            logger.warn("Failed to parse accuracy value: {}", e.getMessage());
+        } catch (Exception e) {
+            logger.warn("Failed to parse calibration JSON: {}", e.getMessage());
+        }
+        return null;
     }
     
     /**
@@ -407,6 +505,26 @@ public class CalibrationService {
         private double calculateModelAccuracy(List<CalibrationPoint> points) {
             // Calculate model accuracy based on calibration points
             return 0.85; // Placeholder accuracy
+        }
+    }
+    
+    // Restored calibration model from saved data
+    public static class RestoredCalibrationModel implements CalibrationModel {
+        private final double accuracy;
+        
+        public RestoredCalibrationModel(double accuracy) {
+            this.accuracy = accuracy;
+        }
+        
+        @Override
+        public Point2D correctGazePoint(Point2D rawGazePoint) {
+            // Simple correction - in production, restore full transformation matrix
+            return rawGazePoint;
+        }
+        
+        @Override
+        public double getAccuracy() {
+            return accuracy;
         }
     }
 }

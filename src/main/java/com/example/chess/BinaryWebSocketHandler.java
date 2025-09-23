@@ -119,7 +119,14 @@ public class BinaryWebSocketHandler implements WebSocketHandler {
             byte[] imageData = new byte[payload.remaining()];
             payload.get(imageData);
             
-            System.out.println("[VIDEO] Frame metadata: width=" + width + ", height=" + height + ", dataSize=" + imageData.length + ", expected=" + (width * height * 4));
+            // Validate frame size - expect 640x480 or smaller
+            int expectedSize = width * height * 4; // RGBA = 4 bytes per pixel
+            if (imageData.length != expectedSize) {
+                System.err.println("[VIDEO] Frame size mismatch: width=" + width + ", height=" + height + ", dataSize=" + imageData.length + ", expected=" + expectedSize);
+                return;
+            }
+            
+            System.out.println("[VIDEO] Frame metadata: width=" + width + ", height=" + height + ", dataSize=" + imageData.length + ", expected=" + expectedSize);
             
             // Process video frame for eye tracking
             try {
@@ -226,18 +233,7 @@ public class BinaryWebSocketHandler implements WebSocketHandler {
     }
     
     private java.util.List<java.awt.geom.Point2D> getGazeSequence(String sessionId) {
-        // Get recent gaze points for LSTM prediction
-        java.util.List<java.awt.geom.Point2D> sequence = new java.util.ArrayList<>();
-        
-        // Get last 30 gaze points (1 second at 30 FPS)
-        for (int i = 0; i < 30; i++) {
-            java.awt.geom.Point2D lastPoint = basicEyeTrackingService.getLastGazePoint(sessionId);
-            if (lastPoint != null) {
-                sequence.add(lastPoint);
-            }
-        }
-        
-        return sequence;
+        return basicEyeTrackingService.getGazeSequence(sessionId);
     }
     
 

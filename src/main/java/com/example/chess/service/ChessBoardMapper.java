@@ -10,7 +10,7 @@ import java.util.HashMap;
 @Component
 public class ChessBoardMapper {
     
-    private Rectangle chessBoardBounds = new Rectangle(100, 100, 640, 640); // Default bounds
+    private Rectangle chessBoardBounds = new Rectangle(50, 50, 800, 800); // Larger bounds for better accuracy
     private Rectangle[][] squareBounds = new Rectangle[8][8];
     private String currentHighlightedSquare = null;
     private long highlightStartTime = 0;
@@ -39,21 +39,35 @@ public class ChessBoardMapper {
             initializeSquareBounds();
         }
         
+        // Scale from 640x480 video coordinates to 800x800 chess board coordinates
+        Point2D scaledPoint = scaleVideoToChessBoard(gazePoint);
+        
         // Direct mapping
-        String exactSquare = getExactSquare(gazePoint);
+        String exactSquare = getExactSquare(scaledPoint);
         if (exactSquare != null) {
             handleSquareHighlight(exactSquare);
             return exactSquare;
         }
         
         // Tolerance mapping (15% expansion)
-        String tolerantSquare = getSquareWithTolerance(gazePoint, 0.15);
+        String tolerantSquare = getSquareWithTolerance(scaledPoint, 0.15);
         if (tolerantSquare != null) {
             handleSquareHighlight(tolerantSquare);
             return tolerantSquare;
         }
         
         return null;
+    }
+    
+    private Point2D scaleVideoToChessBoard(Point2D videoPoint) {
+        // Video: 640x480, Chess board: 800x800 (positioned at 50,50)
+        double scaleX = (double)chessBoardBounds.width / 640.0;
+        double scaleY = (double)chessBoardBounds.height / 480.0;
+        
+        double scaledX = chessBoardBounds.x + (videoPoint.getX() * scaleX);
+        double scaledY = chessBoardBounds.y + (videoPoint.getY() * scaleY);
+        
+        return new Point2D.Double(scaledX, scaledY);
     }
     
     private String getExactSquare(Point2D gazePoint) {
@@ -91,7 +105,7 @@ public class ChessBoardMapper {
     
     private String getSquareName(int row, int col) {
         char file = (char)('a' + col);
-        int rank = 8 - row;
+        int rank = row + 1; // White pieces at bottom: row 7 = rank 1, row 0 = rank 8
         return "" + file + rank;
     }
     

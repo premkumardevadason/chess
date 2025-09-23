@@ -5,18 +5,25 @@ import javax.crypto.Cipher;
 import javax.crypto.KeyGenerator;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.GCMParameterSpec;
+import javax.crypto.spec.SecretKeySpec;
 import javax.annotation.PostConstruct;
 import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
+import java.nio.file.*;
+import java.io.IOException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Service
 public class PrivacyService {
     
+    private static final Logger logger = LoggerFactory.getLogger(PrivacyService.class);
     private static final String ENCRYPTION_ALGORITHM = "AES/GCM/NoPadding";
     private static final int GCM_IV_LENGTH = 12;
     private static final int GCM_TAG_LENGTH = 16;
+    private static final String KEY_FILE = "encryption.key";
     
     private SecretKey encryptionKey;
     private final Map<String, String> auditLog = new ConcurrentHashMap<>();
@@ -24,11 +31,25 @@ public class PrivacyService {
     
     @PostConstruct
     public void init() throws Exception {
-        KeyGenerator keyGen = KeyGenerator.getInstance("AES");
-        keyGen.init(256);
-        encryptionKey = keyGen.generateKey();
-        
-        System.out.println("Privacy service initialized with AES-256 encryption");
+        try {
+            // Try to load existing key
+            Path keyFile = Paths.get(KEY_FILE);
+            if (Files.exists(keyFile)) {
+                byte[] keyBytes = Files.readAllBytes(keyFile);
+                encryptionKey = new SecretKeySpec(keyBytes, "AES");
+                logger.info("Loaded existing encryption key");
+            } else {
+                // Generate new key and save it
+                KeyGenerator keyGen = KeyGenerator.getInstance("AES");
+                keyGen.init(256);
+                encryptionKey = keyGen.generateKey();
+                Files.write(keyFile, encryptionKey.getEncoded(), StandardOpenOption.CREATE);
+                logger.info("Generated new encryption key");
+            }
+        } catch (Exception e) {
+            logger.error("Failed to initialize encryption key", e);
+            throw e;
+        }
     }
     
     public byte[] encryptGazeData(byte[] data) throws Exception {
@@ -50,6 +71,10 @@ public class PrivacyService {
     }
     
     public byte[] decryptGazeData(byte[] encryptedData) throws Exception {
+        if (encryptedData.length < GCM_IV_LENGTH + GCM_TAG_LENGTH) {
+            throw new IllegalArgumentException("Encrypted data too short");
+        }
+        
         byte[] iv = new byte[GCM_IV_LENGTH];
         byte[] cipherText = new byte[encryptedData.length - GCM_IV_LENGTH];
         
@@ -78,7 +103,7 @@ public class PrivacyService {
         String logEntry = timestamp + " - " + action;
         auditLog.put(userId + "-" + timestamp, logEntry);
         
-        System.out.println("[AUDIT] User " + anonymizeSessionId(userId) + " performed: " + action);
+        logger.debug("[AUDIT] User {} performed: {}", anonymizeSessionId(userId), action);
     }
     
     public void logDataCollection(String sessionId, String dataType, long timestamp) {
@@ -97,6 +122,7 @@ public class PrivacyService {
     
     public void clearAuditLog() {
         auditLog.clear();
+        logger.info("Audit log cleared");
         logAccess("system", "AUDIT_LOG_CLEARED");
     }
 }

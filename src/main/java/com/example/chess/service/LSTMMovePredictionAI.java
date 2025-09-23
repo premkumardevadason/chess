@@ -25,7 +25,7 @@ public class LSTMMovePredictionAI {
     
     private MultiLayerNetwork network;
     private Queue<GazeSequence> trainingQueue = new ConcurrentLinkedQueue<>();
-    private static final int SEQUENCE_LENGTH = 30;
+    private static final int SEQUENCE_LENGTH = 20;
     private static final int FEATURE_SIZE = 20;
     private static final int OUTPUT_SIZE = 64;
     

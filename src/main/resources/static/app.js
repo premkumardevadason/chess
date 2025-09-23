@@ -574,9 +574,9 @@ function sendVideoFrame() {
     try {
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
-        // Reduce frame size to prevent buffer overflow
-        canvas.width = Math.min(videoElement.videoWidth, 160);
-        canvas.height = Math.min(videoElement.videoHeight, 120);
+        // Increase frame size for better face detection
+        canvas.width = Math.min(videoElement.videoWidth, 640);
+        canvas.height = Math.min(videoElement.videoHeight, 480);
         ctx.drawImage(videoElement, 0, 0);
         
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
