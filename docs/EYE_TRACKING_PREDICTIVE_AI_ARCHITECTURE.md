@@ -54,10 +54,12 @@ git checkout -b VISUAL-CHESS
 git push -u origin VISUAL-CHESS
 ```
 
-### **REQUIREMENT 6: Visual Training Data Persistence**
+### **REQUIREMENT 6: Raw Gaze Data Collection & Backend Training**
+- **UI Sends**: Raw gaze coordinates, timestamps, user actions via WebSocket
+- **Backend Receives**: Raw data and converts to training features
+- **Training Location**: 100% server-side processing and ML training
 - **Storage Location**: `state/visual-training/` directory
-- **Transport**: WebSocket messages to backend
-- **Data Format**: Binary format (.dat) for performance with large gaze datasets
+- **Data Format**: Binary format (.dat) for performance with large datasets
 - **File Structure**:
 ```
 state/
@@ -489,21 +491,23 @@ public class VisualTrainingDataManager {
 ### 4. **WebSocket Visual Training Handler**
 
 ```java
-@MessageMapping("/visualTraining")
-public void handleVisualTrainingData(@Payload Map<String, Object> trainingData) {
-    // REQUIREMENT 6: Receive visual training data via WebSocket
-    String sessionId = (String) trainingData.get("sessionId");
-    Double gazeX = (Double) trainingData.get("gazeX");
-    Double gazeY = (Double) trainingData.get("gazeY");
-    String square = (String) trainingData.get("square");
-    Long timestamp = (Long) trainingData.get("timestamp");
+@MessageMapping("/rawGazeData")
+public void handleRawGazeData(@Payload Map<String, Object> rawData) {
+    // REQUIREMENT 6: Receive RAW gaze data from UI (not processed training data)
+    String sessionId = (String) rawData.get("sessionId");
+    Double gazeX = (Double) rawData.get("gazeX");
+    Double gazeY = (Double) rawData.get("gazeY");
+    String square = (String) rawData.get("square");
+    Long timestamp = (Long) rawData.get("timestamp");
+    String userAction = (String) rawData.get("userAction");
     
-    GazeDataPoint dataPoint = new GazeDataPoint(
-        new Point2D.Double(gazeX, gazeY), square, timestamp);
+    // Backend processes raw data into training features
+    RawGazePoint rawPoint = new RawGazePoint(
+        new Point2D.Double(gazeX, gazeY), square, timestamp, userAction);
     
-    // Publish event for persistence in STATE folder
+    // All training processing happens in backend
     applicationEventPublisher.publishEvent(
-        new VisualTrainingEvent(sessionId, dataPoint));
+        new RawGazeDataEvent(sessionId, rawPoint));
 }
 ```
 
