@@ -58,18 +58,11 @@
             <version>4.9.0-0</version>
         </dependency>
 
-        <!-- JavaCV for video processing -->
+        <!-- JavaCV for video processing and face detection -->
         <dependency>
             <groupId>org.bytedeco</groupId>
             <artifactId>javacv-platform</artifactId>
             <version>1.5.9</version>
-        </dependency>
-
-        <!-- MediaPipe for face detection -->
-        <dependency>
-            <groupId>com.google.mediapipe</groupId>
-            <artifactId>mediapipe_java</artifactId>
-            <version>0.10.7</version>
         </dependency>
         <dependency>
             <groupId>org.nd4j</groupId>
