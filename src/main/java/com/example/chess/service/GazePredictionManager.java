@@ -226,10 +226,9 @@ public class GazePredictionManager {
         sequence.positionalAdvantage = getPositionalAdvantage();
         sequence.timeRemaining = getTimeRemaining();
         sequence.moveNumber = getMoveNumber();
-        // Check if current player is in check
-        // Since we don't have direct access to whose turn it is, we'll check both
-        // In a real implementation, this would be determined by the current game state
-        sequence.isInCheck = chessGame.isKingInDanger(true) || chessGame.isKingInDanger(false);
+        // Check if current player is in check using public method
+        int[] kingInCheckPos = chessGame.getKingInCheckPosition();
+        sequence.isInCheck = (kingInCheckPos != null);
         sequence.canCastle = canCastle();
         sequence.numberOfLegalMoves = getNumberOfLegalMoves();
         
