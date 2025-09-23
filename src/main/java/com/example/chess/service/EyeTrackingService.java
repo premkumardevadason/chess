@@ -53,6 +53,9 @@ public class EyeTrackingService {
     @Value("${chess.eyetracking.fps:30}")
     private int targetFPS;
     
+    @Value("${chess.eyetracking.default.webcam.on:false}")
+    private boolean defaultWebcamOn;
+    
     @PostConstruct
     public void initialize() {
         try {
@@ -72,16 +75,12 @@ public class EyeTrackingService {
                 return;
             }
             
-            // Initialize camera
-            logger.info("Attempting to open camera device: {}", cameraDevice);
-            camera = new VideoCapture(cameraDevice);
-            if (!camera.isOpened()) {
-                logger.error("WEBCAM FAILED: Could not open camera device: {}", cameraDevice);
-                logger.error("WEBCAM STATUS: Camera is NOT working - running in simulation mode");
-                return;
+            // Only initialize camera if default webcam is enabled
+            if (defaultWebcamOn) {
+                initializeCamera();
             } else {
-                logger.info("WEBCAM SUCCESS: Camera device {} opened successfully", cameraDevice);
-                logger.info("WEBCAM STATUS: Camera is working and ready for capture");
+                logger.info("Camera initialization skipped - default webcam is disabled");
+                logger.info("Camera will be initialized when webcam is explicitly enabled");
             }
             
             // Initialize face detector
@@ -95,6 +94,18 @@ public class EyeTrackingService {
             logger.error("Failed to initialize EyeTrackingService: {}", e.getMessage());
             logger.info("Eye tracking will be disabled due to initialization failure");
             openCVInitialized = false;
+        }
+    }
+    
+    private void initializeCamera() {
+        logger.info("Attempting to open camera device: {}", cameraDevice);
+        camera = new VideoCapture(cameraDevice);
+        if (!camera.isOpened()) {
+            logger.error("WEBCAM FAILED: Could not open camera device: {}", cameraDevice);
+            logger.error("WEBCAM STATUS: Camera is NOT working - running in simulation mode");
+        } else {
+            logger.info("WEBCAM SUCCESS: Camera device {} opened successfully", cameraDevice);
+            logger.info("WEBCAM STATUS: Camera is working and ready for capture");
         }
     }
     
@@ -126,6 +137,12 @@ public class EyeTrackingService {
         // Verify consent is still valid
         if (!consentManager.hasValidConsent(sessionId, ConsentManager.ConsentType.GAZE_DATA_COLLECTION)) {
             throw new SecurityException("Valid consent required for webcam access");
+        }
+        
+        // Initialize camera if not already done
+        if (camera == null) {
+            logger.info("Camera not initialized - initializing now for webcam enable");
+            initializeCamera();
         }
         
         // Check if camera was properly initialized
