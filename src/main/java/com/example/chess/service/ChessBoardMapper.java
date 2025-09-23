@@ -105,7 +105,7 @@ public class ChessBoardMapper {
     
     private String getSquareName(int row, int col) {
         char file = (char)('a' + col);
-        int rank = row + 1; // White pieces at bottom: row 7 = rank 1, row 0 = rank 8
+        int rank = 8 - row; // Fix coordinate system: row 0 = rank 8, row 7 = rank 1
         return "" + file + rank;
     }
     
@@ -127,9 +127,9 @@ public class ChessBoardMapper {
             highlightData.put("duration", HIGHLIGHT_DURATION);
             
             webSocketController.sendToAll("/topic/squareHighlight", highlightData);
-            System.out.println("Highlighting square " + square + " in BLUE");
+            // Square highlighting logging removed
         } catch (Exception e) {
-            System.err.println("Error highlighting square: " + e.getMessage());
+            // Error highlighting logging removed
         }
     }
     

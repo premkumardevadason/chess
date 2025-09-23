@@ -21,6 +21,10 @@ public class BasicEyeTrackingService {
     private Map<String, Point2D> gazeHistory = new ConcurrentHashMap<>();
     private Map<String, java.util.List<Point2D>> gazeSequences = new ConcurrentHashMap<>();
     private static final int MAX_SEQUENCE_LENGTH = 20;
+    private Point2D lastStableGaze = null;
+    private long lastGazeTime = 0;
+    private static final long GAZE_STABILITY_THRESHOLD = 500; // 500ms
+    private static final double GAZE_MOVEMENT_THRESHOLD = 50.0; // 50 pixels
     
     @Autowired
     private com.example.chess.service.ChessBoardMapper chessBoardMapper;
@@ -101,15 +105,15 @@ public class BasicEyeTrackingService {
                 if (faceArray.length > 0) {
                     // Use first detected face
                     Rect face = faceArray[0];
-                    logger.info("*** FACE DETECTED: x={}, y={}, width={}, height={} ***", face.x, face.y, face.width, face.height);
+                    logger.debug("*** FACE DETECTED: x={}, y={}, width={}, height={} ***", face.x, face.y, face.width, face.height);
                     
                     // Extract eye regions (left and right)
                     logger.debug("Detecting pupils in face region...");
                     Point2D leftEye = detectPupil(gray, face, true);
                     Point2D rightEye = detectPupil(gray, face, false);
                     
-                    if (leftEye != null) logger.info("*** LEFT EYE DETECTED: ({}, {}) ***", leftEye.getX(), leftEye.getY());
-                    if (rightEye != null) logger.info("*** RIGHT EYE DETECTED: ({}, {}) ***", rightEye.getX(), rightEye.getY());
+                    if (leftEye != null) logger.debug("*** LEFT EYE DETECTED: ({}, {}) ***", leftEye.getX(), leftEye.getY());
+                    if (rightEye != null) logger.debug("*** RIGHT EYE DETECTED: ({}, {}) ***", rightEye.getX(), rightEye.getY());
                     
                     // Calculate average gaze point from both eyes
                     Point2D rawGaze = null;
@@ -124,13 +128,14 @@ public class BasicEyeTrackingService {
                         rawGaze = rightEye;
                     }
                     
-                    // Skip DL4J correction (returns invalid values) - use raw gaze directly
-                    if (rawGaze != null) {
-                        logger.info("*** RETURNING RAW GAZE: ({}, {}) ***", rawGaze.getX(), rawGaze.getY());
+                    // Apply gaze stabilization to reduce jumping
+                    Point2D stabilizedGaze = stabilizeGaze(rawGaze);
+                    if (stabilizedGaze != null) {
+                        logger.debug("*** RETURNING STABILIZED GAZE: ({}, {}) ***", stabilizedGaze.getX(), stabilizedGaze.getY());
                     } else {
-                        logger.warn("*** RAW GAZE IS NULL - no eyes detected ***");
+                        logger.warn("*** STABILIZED GAZE IS NULL - no stable gaze detected ***");
                     }
-                    return rawGaze;
+                    return stabilizedGaze;
                 } else {
                     logger.warn("*** NO FACES DETECTED in {}x{} frame ***", width, height);
                 }
@@ -201,7 +206,7 @@ public class BasicEyeTrackingService {
         
         String square = chessBoardMapper.mapToChessSquare(gazePoint);
         if (square != null) {
-            logger.info("*** GAZE MAPPED TO CHESS SQUARE: {} at ({}, {}) ***", square, gazePoint.getX(), gazePoint.getY());
+            logger.debug("*** GAZE MAPPED TO CHESS SQUARE: {} at ({}, {}) ***", square, gazePoint.getX(), gazePoint.getY());
         }
         return square;
     }
@@ -233,5 +238,41 @@ public class BasicEyeTrackingService {
         if (eyeMovementLearningService != null) {
             eyeMovementLearningService.recordChessMove(sessionId, gazePoint, chessSquare);
         }
+    }
+    
+    private Point2D stabilizeGaze(Point2D currentGaze) {
+        if (currentGaze == null) {
+            return null;
+        }
+        
+        long currentTime = System.currentTimeMillis();
+        
+        // If no previous gaze, use current
+        if (lastStableGaze == null) {
+            lastStableGaze = currentGaze;
+            lastGazeTime = currentTime;
+            return currentGaze;
+        }
+        
+        // Calculate distance from last stable gaze
+        double distance = Math.sqrt(
+            Math.pow(currentGaze.getX() - lastStableGaze.getX(), 2) +
+            Math.pow(currentGaze.getY() - lastStableGaze.getY(), 2)
+        );
+        
+        // If movement is small, keep using stable gaze
+        if (distance < GAZE_MOVEMENT_THRESHOLD) {
+            return lastStableGaze;
+        }
+        
+        // If movement is large, check if it's been stable for threshold time
+        if (currentTime - lastGazeTime > GAZE_STABILITY_THRESHOLD) {
+            lastStableGaze = currentGaze;
+            lastGazeTime = currentTime;
+            return currentGaze;
+        }
+        
+        // Movement detected but not stable enough yet
+        return lastStableGaze;
     }
 }

@@ -36,7 +36,7 @@ public class BinaryWebSocketHandler implements WebSocketHandler {
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws Exception {
-        System.out.println("Binary WebSocket connected: " + session.getId());
+        // WebSocket connection logging removed
     }
 
     @Override
@@ -73,15 +73,14 @@ public class BinaryWebSocketHandler implements WebSocketHandler {
             byte[] imageData = new byte[payload.remaining()];
             payload.get(imageData);
             
-            System.out.println("[CALIBRATION] Binary data received - Point: " + point + 
-                " at (" + screenX + ", " + screenY + ") Image size: " + imageData.length + " bytes");
+            // Calibration data logging removed
             
             // Start calibration session if not already started
             try {
                 calibrationService.startCalibration(session.getId());
             } catch (Exception e) {
                 // Session might already exist, continue
-                System.out.println("[CALIBRATION] Session already exists or error starting: " + e.getMessage());
+                // Calibration session logging removed
             }
             
             // Process calibration with actual gaze detection
@@ -100,7 +99,7 @@ public class BinaryWebSocketHandler implements WebSocketHandler {
                 gazeSamples
             );
             
-            System.out.println("[CALIBRATION] Successfully recorded calibration point " + point);
+            // Calibration point logging removed
             
         } catch (Exception e) {
             System.err.println("[CALIBRATION] Error processing binary data: " + e.getMessage());
@@ -126,7 +125,7 @@ public class BinaryWebSocketHandler implements WebSocketHandler {
                 return;
             }
             
-            System.out.println("[VIDEO] Frame metadata: width=" + width + ", height=" + height + ", dataSize=" + imageData.length + ", expected=" + expectedSize);
+            // Frame metadata logging removed - too verbose
             
             // Process video frame for eye tracking
             try {
@@ -143,9 +142,7 @@ public class BinaryWebSocketHandler implements WebSocketHandler {
                     // Get gaze point from advanced eye tracking
                     java.awt.geom.Point2D gazePoint = basicEyeTrackingService.processVideoFrame(imageData, width, height);
                     
-                    if (gazePoint == null) {
-                        System.out.println("[VIDEO] No gaze point detected from frame");
-                    }
+                    // Gaze detection logging removed - too verbose
                     
                     if (gazePoint != null) {
                         // Map gaze to chess square
@@ -163,9 +160,9 @@ public class BinaryWebSocketHandler implements WebSocketHandler {
                             // Get gaze sequence for LSTM prediction
                             java.util.List<java.awt.geom.Point2D> gazeSequence = getGazeSequence(session.getId());
                             
-                            // Try LSTM prediction first
+                            // Try LSTM prediction first - only if we have exactly 20 timesteps
                             com.example.chess.service.LSTMMovePredictionAI.MovePrediction lstmPrediction = null;
-                            if (lstmPredictionAI != null && gazeSequence.size() >= 10) {
+                            if (lstmPredictionAI != null && gazeSequence.size() == 20) {
                                 lstmPrediction = lstmPredictionAI.predictMove(session.getId(), gazeSequence, focusedSquare);
                             }
                             
@@ -192,13 +189,10 @@ public class BinaryWebSocketHandler implements WebSocketHandler {
                                 // Precompute AI response
                                 aiPrecomputationService.precomputeResponse(predictedMove, confidence);
                                 
-                                System.out.println("[PREDICTION] " + method + " - Move: " + predictedMove + 
-                                    " Confidence: " + String.format("%.2f", confidence));
+                                // Prediction logging removed
                             }
                             
-                            System.out.println("[GAZE] Square: " + focusedSquare + 
-                                " Point: (" + String.format("%.1f", gazePoint.getX()) + 
-                                ", " + String.format("%.1f", gazePoint.getY()) + ")");
+                            // Gaze square logging removed - too verbose
                         }
                     }
                 } finally {
@@ -219,12 +213,12 @@ public class BinaryWebSocketHandler implements WebSocketHandler {
 
     @Override
     public void handleTransportError(WebSocketSession session, Throwable exception) throws Exception {
-        System.err.println("Binary WebSocket error: " + exception.getMessage());
+        // WebSocket error logging removed
     }
 
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus closeStatus) throws Exception {
-        System.out.println("Binary WebSocket disconnected: " + session.getId());
+        // WebSocket disconnection logging removed
     }
 
     @Override
