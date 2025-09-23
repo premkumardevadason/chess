@@ -49,10 +49,10 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     
     @Override
     public void configureWebSocketTransport(WebSocketTransportRegistration registry) {
-        registry.setMessageSizeLimit(1024 * 1024) // 1MB max message size for video frames
-                .setSendBufferSizeLimit(16 * 1024 * 1024) // 16MB send buffer for video
-                .setSendTimeLimit(30 * 1000) // 30 second send timeout
-                .setTimeToFirstMessage(10 * 1000); // 10 second timeout for first message
+        registry.setMessageSizeLimit(10 * 1024 * 1024) // 10MB max message size for calibration data
+                .setSendBufferSizeLimit(32 * 1024 * 1024) // 32MB send buffer for large data
+                .setSendTimeLimit(60 * 1000) // 60 second send timeout for calibration
+                .setTimeToFirstMessage(15 * 1000); // 15 second timeout for first message
     }
     
 

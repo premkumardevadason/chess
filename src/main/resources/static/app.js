@@ -642,6 +642,23 @@ function disableWebcam() {
 function startCalibration() {
     if (!eyeTrackingEnabled || !webcamActive) return;
     
+    // Ensure calibration WebSocket is connected
+    if (!isCalibrationConnected || !calibrationStompClient || !calibrationStompClient.connected) {
+        console.log('Calibration WebSocket not connected, connecting...');
+        connectCalibrationWebSocket();
+        // Wait a moment for connection to establish
+        setTimeout(() => {
+            if (isCalibrationConnected) {
+                calibrationActive = true;
+                showCalibrationOverlay();
+                startCalibrationSequence();
+            } else {
+                alert('Failed to connect calibration service. Please try again.');
+            }
+        }, 2000);
+        return;
+    }
+    
     calibrationActive = true;
     showCalibrationOverlay();
     startCalibrationSequence();
@@ -698,17 +715,30 @@ function startCalibrationSequence() {
             canvas.width = videoElement.videoWidth;
             canvas.height = videoElement.videoHeight;
             ctx.drawImage(videoElement, 0, 0);
-            const frameData = canvas.toDataURL('image/jpeg', 0.8);
+            // Compress image more aggressively to reduce data size
+            const frameData = canvas.toDataURL('image/jpeg', 0.5);
             
             // Send calibration point via dedicated calibration WebSocket
-            if (isCalibrationConnected && calibrationStompClient) {
-                calibrationStompClient.send("/app/eye-tracking/calibration", {}, JSON.stringify({
-                    point: currentPoint,
-                    screenX: point.x,
-                    screenY: point.y,
-                    frameData: frameData,
-                    timestamp: Date.now()
-                }));
+            if (isCalibrationConnected && calibrationStompClient && calibrationStompClient.connected) {
+                try {
+                    calibrationStompClient.send("/app/eye-tracking/calibration", {}, JSON.stringify({
+                        point: currentPoint,
+                        screenX: point.x,
+                        screenY: point.y,
+                        frameData: frameData,
+                        timestamp: Date.now()
+                    }));
+                    console.log(`Calibration point ${currentPoint} sent successfully`);
+                } catch (error) {
+                    console.error('Failed to send calibration point:', error);
+                    // Attempt to reconnect
+                    isCalibrationConnected = false;
+                    connectCalibrationWebSocket();
+                }
+            } else {
+                console.warn('Calibration WebSocket not connected, attempting to reconnect...');
+                isCalibrationConnected = false;
+                connectCalibrationWebSocket();
             }
         }
         
@@ -812,12 +842,24 @@ function connectCalibrationWebSocket() {
     const calibrationSocket = new SockJS('/ws-calibration');
     calibrationStompClient = Stomp.over(() => calibrationSocket);
     
+    // Configure STOMP client for better reliability
+    calibrationStompClient.configure({
+        reconnectDelay: 5000,
+        heartbeatIncoming: 4000,
+        heartbeatOutgoing: 4000,
+        debug: function (str) {
+            console.log('STOMP: ' + str);
+        }
+    });
+    
     calibrationStompClient.connect({}, function (frame) {
         console.log('Calibration WebSocket connected');
         isCalibrationConnected = true;
     }, function(error) {
-        console.log('Calibration WebSocket connection failed');
+        console.log('Calibration WebSocket connection failed:', error);
         isCalibrationConnected = false;
+        // Attempt to reconnect after 5 seconds
+        setTimeout(connectCalibrationWebSocket, 5000);
     });
 }
 

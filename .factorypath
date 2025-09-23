@@ -50,7 +50,6 @@
     <factorypathentry kind="VARJAR" id="M2_REPO/org/deeplearning4j/deeplearning4j-modelimport/1.0.0-beta7/deeplearning4j-modelimport-1.0.0-beta7.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/com/google/code/gson/gson/2.13.1/gson-2.13.1.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/com/google/errorprone/error_prone_annotations/2.38.0/error_prone_annotations-2.38.0.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="VARJAR" id="M2_REPO/org/bytedeco/javacpp/1.5.3/javacpp-1.5.3.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/org/bytedeco/hdf5-platform/1.12.0-1.5.3/hdf5-platform-1.12.0-1.5.3.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/org/bytedeco/hdf5/1.12.0-1.5.3/hdf5-1.12.0-1.5.3.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/org/bytedeco/hdf5/1.12.0-1.5.3/hdf5-1.12.0-1.5.3-linux-x86.jar" enabled="true" runInBatchMode="false"/>
@@ -108,7 +107,6 @@
     <factorypathentry kind="VARJAR" id="M2_REPO/org/openpnp/opencv/4.9.0-0/opencv-4.9.0-0.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/org/bytedeco/javacv-platform/1.5.9/javacv-platform-1.5.9.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/org/bytedeco/javacv/1.5.9/javacv-1.5.9.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="VARJAR" id="M2_REPO/org/bytedeco/openblas/0.3.23-1.5.9/openblas-0.3.23-1.5.9.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/org/bytedeco/opencv/4.7.0-1.5.9/opencv-4.7.0-1.5.9.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/org/bytedeco/ffmpeg/6.0-1.5.9/ffmpeg-6.0-1.5.9.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/org/bytedeco/flycapture/2.13.3.31-1.5.9/flycapture-2.13.3.31-1.5.9.jar" enabled="true" runInBatchMode="false"/>
@@ -272,6 +270,8 @@
     <factorypathentry kind="VARJAR" id="M2_REPO/org/bytedeco/tesseract/5.3.1-1.5.9/tesseract-5.3.1-1.5.9-macosx-x86_64.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/org/bytedeco/tesseract/5.3.1-1.5.9/tesseract-5.3.1-1.5.9-windows-x86.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/org/bytedeco/tesseract/5.3.1-1.5.9/tesseract-5.3.1-1.5.9-windows-x86_64.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="VARJAR" id="M2_REPO/org/bytedeco/javacpp/1.5.9/javacpp-1.5.9.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="VARJAR" id="M2_REPO/org/bytedeco/openblas/0.3.23-1.5.9/openblas-0.3.23-1.5.9.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/org/nd4j/nd4j-native-platform/1.0.0-beta7/nd4j-native-platform-1.0.0-beta7.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/org/bytedeco/mkl-platform/2020.1-1.5.3/mkl-platform-2020.1-1.5.3.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/org/bytedeco/mkl/2020.1-1.5.3/mkl-2020.1-1.5.3.jar" enabled="true" runInBatchMode="false"/>
