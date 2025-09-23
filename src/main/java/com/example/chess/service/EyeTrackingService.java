@@ -242,6 +242,152 @@ public class EyeTrackingService {
         return new GazePattern();
     }
     
+    /**
+     * Extract eye region from face rectangle
+     */
+    private Rect extractEyeRegion(Rect face) {
+        // Calculate eye region based on face geometry
+        int eyeWidth = face.width / 4;
+        int eyeHeight = face.height / 6;
+        int eyeY = face.y + face.height / 3; // Eyes are in upper third of face
+        
+        // Left eye
+        Rect leftEye = new Rect(face.x + face.width / 8, eyeY, eyeWidth, eyeHeight);
+        
+        // Right eye  
+        Rect rightEye = new Rect(face.x + face.width * 5 / 8, eyeY, eyeWidth, eyeHeight);
+        
+        // Return the larger eye region (or combine them)
+        return leftEye.width > rightEye.width ? leftEye : rightEye;
+    }
+    
+    /**
+     * Detect faces using Haar cascades
+     */
+    private MatOfRect detectFaces(Mat frame) {
+        MatOfRect faces = new MatOfRect();
+        
+        try {
+            // Load face cascade classifier
+            if (faceDetector == null) {
+                String cascadePath = getClass().getResource("/haarcascade_frontalface_alt.xml").getPath();
+                faceDetector = new CascadeClassifier(cascadePath);
+            }
+            
+            // Convert to grayscale for face detection
+            Mat gray = new Mat();
+            Imgproc.cvtColor(frame, gray, Imgproc.COLOR_BGR2GRAY);
+            
+            // Detect faces
+            faceDetector.detectMultiScale(gray, faces, 1.1, 3, 0, 
+                new Size(30, 30), new Size(frame.width(), frame.height()));
+                
+        } catch (Exception e) {
+            logger.warn("Error detecting faces", e);
+        }
+        
+        return faces;
+    }
+    
+    /**
+     * Enhanced face detection with multiple strategies
+     */
+    private Rect detectFaceWithMultipleStrategies(Mat frame) {
+        // Strategy 1: Haar cascades
+        MatOfRect faces = detectFaces(frame);
+        Rect[] faceArray = faces.toArray();
+        
+        if (faceArray.length > 0) {
+            // Return the largest face
+            Rect largestFace = faceArray[0];
+            for (Rect face : faceArray) {
+                if (face.area() > largestFace.area()) {
+                    largestFace = face;
+                }
+            }
+            return largestFace;
+        }
+        
+        // Strategy 2: Template matching (fallback)
+        return detectFaceByTemplateMatching(frame);
+    }
+    
+    /**
+     * Template matching face detection (fallback)
+     */
+    private Rect detectFaceByTemplateMatching(Mat frame) {
+        // Simplified template matching - in production, use proper templates
+        int width = frame.width();
+        int height = frame.height();
+        
+        // Assume face is in center 60% of frame
+        int faceWidth = (int)(width * 0.6);
+        int faceHeight = (int)(height * 0.6);
+        int faceX = (width - faceWidth) / 2;
+        int faceY = (height - faceHeight) / 2;
+        
+        return new Rect(faceX, faceY, faceWidth, faceHeight);
+    }
+    
+    /**
+     * Enhanced gaze point calculation with noise reduction
+     */
+    private Point2D calculateGazePointEnhanced(Rect eyeRegion) {
+        try {
+            // Extract eye region from frame
+            Mat eyeMat = new Mat(frame, eyeRegion);
+            Mat gray = new Mat();
+            Imgproc.cvtColor(eyeMat, gray, Imgproc.COLOR_BGR2GRAY);
+            
+            // Apply Gaussian blur to reduce noise
+            Mat blurred = new Mat();
+            Imgproc.GaussianBlur(gray, blurred, new Size(5, 5), 0);
+            
+            // Apply adaptive threshold for better edge detection
+            Mat thresh = new Mat();
+            Imgproc.adaptiveThreshold(blurred, thresh, 255, 
+                Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C, Imgproc.THRESH_BINARY, 11, 2);
+            
+            // Detect pupil using HoughCircles
+            Mat circles = new Mat();
+            Imgproc.HoughCircles(thresh, circles, Imgproc.HOUGH_GRADIENT, 
+                1, 20, 50, 30, 5, 50);
+            
+            if (circles.cols() > 0) {
+                // Find the best circle (closest to center of eye region)
+                Point2D eyeCenter = new Point2D.Double(eyeRegion.width / 2.0, eyeRegion.height / 2.0);
+                double bestDistance = Double.MAX_VALUE;
+                Point2D bestPupil = null;
+                
+                for (int i = 0; i < circles.cols(); i++) {
+                    double[] circle = circles.get(0, i);
+                    Point2D pupil = new Point2D.Double(circle[0], circle[1]);
+                    double distance = eyeCenter.distance(pupil);
+                    
+                    if (distance < bestDistance) {
+                        bestDistance = distance;
+                        bestPupil = pupil;
+                    }
+                }
+                
+                if (bestPupil != null) {
+                    // Convert to global coordinates
+                    double globalX = eyeRegion.x + bestPupil.getX();
+                    double globalY = eyeRegion.y + bestPupil.getY();
+                    return new Point2D.Double(globalX, globalY);
+                }
+            }
+            
+            // Fallback: return center of eye region if no pupil detected
+            return new Point2D.Double(eyeRegion.x + eyeRegion.width / 2.0, 
+                                    eyeRegion.y + eyeRegion.height / 2.0);
+            
+        } catch (Exception e) {
+            logger.warn("Error calculating enhanced gaze point", e);
+            return null;
+        }
+    }
+    
     // Data classes
     public static class RawGazeData {
         public final double gazeX;

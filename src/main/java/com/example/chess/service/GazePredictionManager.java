@@ -5,8 +5,8 @@ import org.springframework.stereotype.Service;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Gaze prediction manager with real-time cancellation system
@@ -29,14 +29,20 @@ public class GazePredictionManager {
     @Autowired
     private MultiAgentPrecomputationService precomputationService;
     
-    // MovePredictionAI will be implemented when needed
-    // private MovePredictionAI predictionAI;
+    @Autowired
+    private MovePredictionAI predictionAI;
     
     @Autowired
     private PieceIntentionAnalyzer pieceIntentionAnalyzer;
     
     @Autowired
     private com.example.chess.WebSocketController webSocketController;
+    
+    @Autowired
+    private ChessGame chessGame;
+    
+    @Autowired
+    private VisualTrainingDataManager trainingDataManager;
     
     /**
      * Processes new gaze data and manages prediction lifecycle
@@ -63,8 +69,12 @@ public class GazePredictionManager {
                 logger.debug("Would send intention data: {}", intentionData);
             }
             
-            // Placeholder for move prediction - will be implemented with actual AI
-            MovePrediction newPrediction = new MovePrediction("e2-e4", 0.7);
+            // Convert GazePattern to MovePredictionAI.GazeSequence
+            MovePredictionAI.GazeSequence gazeSequence = convertToGazeSequence(newPattern);
+            
+            // Get prediction from LSTM AI
+            MovePredictionAI.MovePrediction aiPrediction = predictionAI.predictMove(gazeSequence);
+            MovePrediction newPrediction = new MovePrediction(aiPrediction.move, aiPrediction.confidence);
             long currentTime = System.currentTimeMillis();
             
             // Check if prediction has changed significantly
@@ -147,19 +157,194 @@ public class GazePredictionManager {
         }
     }
     
+    /**
+     * Record a successful prediction for training
+     */
     public void recordSuccessfulPrediction(String actualMove) {
-        logger.info("Successful prediction: {}", actualMove);
-        // Update prediction accuracy metrics
+        if (currentPrediction != null) {
+            // Train the LSTM AI on successful prediction
+            MovePredictionAI.GazeSequence gazeSequence = getCurrentGazeSequence();
+            if (gazeSequence != null) {
+                predictionAI.trainOnUserMove(gazeSequence, actualMove);
+            }
+            
+            // Save prediction result for analysis
+            trainingDataManager.saveMovePrediction(
+                currentPrediction.move, actualMove, currentPrediction.confidence, "current-session"
+            );
+            
+            logger.info("Recorded successful prediction: {} -> {} (confidence: {:.2f})",
+                currentPrediction.move, actualMove, currentPrediction.confidence);
+        }
     }
     
+    /**
+     * Record a missed prediction for training
+     */
     public void recordMissedPrediction(String actualMove) {
-        logger.info("Missed prediction: {}", actualMove);
-        // Update prediction accuracy metrics
+        if (currentPrediction != null) {
+            // Save missed prediction for analysis
+            trainingDataManager.saveMovePrediction(
+                currentPrediction.move, actualMove, currentPrediction.confidence, "current-session"
+            );
+            
+            logger.info("Recorded missed prediction: {} -> {} (confidence: {:.2f})",
+                currentPrediction.move, actualMove, currentPrediction.confidence);
+        }
     }
     
+    /**
+     * Convert GazePattern to MovePredictionAI.GazeSequence
+     */
+    private MovePredictionAI.GazeSequence convertToGazeSequence(GazePattern pattern) {
+        MovePredictionAI.GazeSequence sequence = new MovePredictionAI.GazeSequence();
+        
+        // Convert gaze points
+        if (pattern.getGazePoints() != null) {
+            for (GazePoint point : pattern.getGazePoints()) {
+                MovePredictionAI.GazePoint aiPoint = new MovePredictionAI.GazePoint();
+                aiPoint.x = point.getX();
+                aiPoint.y = point.getY();
+                aiPoint.chessSquareX = point.getChessSquareX();
+                aiPoint.chessSquareY = point.getChessSquareY();
+                aiPoint.timestamp = point.getTimestamp();
+                aiPoint.confidenceScore = point.getConfidence();
+                sequence.gazePoints.add(aiPoint);
+            }
+        }
+        
+        // Set chess context
+        sequence.gamePhase = getGamePhase();
+        sequence.materialBalance = getMaterialBalance();
+        sequence.kingSafety = getKingSafety();
+        sequence.centerControl = getCenterControl();
+        sequence.developmentScore = getDevelopmentScore();
+        sequence.pawnStructure = getPawnStructure();
+        sequence.pieceActivity = getPieceActivity();
+        sequence.tacticalThreats = getTacticalThreats();
+        sequence.positionalAdvantage = getPositionalAdvantage();
+        sequence.timeRemaining = getTimeRemaining();
+        sequence.moveNumber = getMoveNumber();
+        sequence.isInCheck = chessGame.isInCheck();
+        sequence.canCastle = canCastle();
+        sequence.numberOfLegalMoves = getNumberOfLegalMoves();
+        
+        return sequence;
+    }
+    
+    /**
+     * Get current gaze sequence for training
+     */
+    private MovePredictionAI.GazeSequence getCurrentGazeSequence() {
+        // This would return the current gaze sequence being tracked
+        // For now, return a placeholder
+        return new MovePredictionAI.GazeSequence();
+    }
+    
+    /**
+     * Get current board position as FEN string
+     */
     private String getCurrentPosition() {
-        // Get current chess position in FEN format
-        return "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"; // Placeholder
+        try {
+            return chessGame.getFEN();
+        } catch (Exception e) {
+            logger.warn("Error getting current position", e);
+            return "";
+        }
+    }
+    
+    // Chess context helper methods
+    private double getGamePhase() {
+        // Opening: 0-20 moves, Middle: 20-40 moves, Endgame: 40+ moves
+        int moveNumber = getMoveNumber();
+        if (moveNumber < 20) return 0.0; // Opening
+        if (moveNumber < 40) return 0.5; // Middle
+        return 1.0; // Endgame
+    }
+    
+    private double getMaterialBalance() {
+        // Calculate material balance (positive = white advantage)
+        try {
+            String[][] board = chessGame.getBoard();
+            int whiteMaterial = 0, blackMaterial = 0;
+            
+            for (int i = 0; i < 8; i++) {
+                for (int j = 0; j < 8; j++) {
+                    String piece = board[i][j];
+                    if (piece != null && !piece.isEmpty()) {
+                        int value = getPieceValue(piece);
+                        if (Character.isUpperCase(piece.charAt(0))) {
+                            whiteMaterial += value;
+                        } else {
+                            blackMaterial += value;
+                        }
+                    }
+                }
+            }
+            
+            return (whiteMaterial - blackMaterial) / 100.0; // Normalize
+        } catch (Exception e) {
+            return 0.0;
+        }
+    }
+    
+    private int getPieceValue(String piece) {
+        if (piece == null || piece.isEmpty()) return 0;
+        char p = Character.toLowerCase(piece.charAt(0));
+        switch (p) {
+            case 'p': return 1;
+            case 'n': case 'b': return 3;
+            case 'r': return 5;
+            case 'q': return 9;
+            case 'k': return 100;
+            default: return 0;
+        }
+    }
+    
+    private double getKingSafety() { return 0.5; } // Placeholder
+    private double getCenterControl() { return 0.5; } // Placeholder
+    private double getDevelopmentScore() { return 0.5; } // Placeholder
+    private double getPawnStructure() { return 0.5; } // Placeholder
+    private double getPieceActivity() { return 0.5; } // Placeholder
+    private double getTacticalThreats() { return 0.5; } // Placeholder
+    private double getPositionalAdvantage() { return 0.5; } // Placeholder
+    private double getTimeRemaining() { return 600.0; } // Placeholder
+    private int getMoveNumber() { return chessGame.getMoveNumber(); }
+    private boolean canCastle() { return true; } // Placeholder
+    private int getNumberOfLegalMoves() { return 20; } // Placeholder
+    
+    
+    // Data classes
+    public static class GazePattern {
+        private List<GazePoint> gazePoints = new ArrayList<>();
+        private String focusedSquare;
+        
+        public List<GazePoint> getGazePoints() { return gazePoints; }
+        public String getFocusedSquare() { return focusedSquare; }
+        public void setFocusedSquare(String square) { this.focusedSquare = square; }
+    }
+    
+    public static class GazePoint {
+        private double x, y;
+        private double chessSquareX, chessSquareY;
+        private long timestamp;
+        private double confidence;
+        
+        public GazePoint() {}
+        
+        public GazePoint(double x, double y, long timestamp, double confidence) {
+            this.x = x;
+            this.y = y;
+            this.timestamp = timestamp;
+            this.confidence = confidence;
+        }
+        
+        public double getX() { return x; }
+        public double getY() { return y; }
+        public double getChessSquareX() { return chessSquareX; }
+        public double getChessSquareY() { return chessSquareY; }
+        public long getTimestamp() { return timestamp; }
+        public double getConfidence() { return confidence; }
     }
     
     public static class MovePrediction {
@@ -169,13 +354,6 @@ public class GazePredictionManager {
         public MovePrediction(String move, double confidence) {
             this.move = move;
             this.confidence = confidence;
-        }
-    }
-    
-    public static class GazePattern {
-        // Placeholder for gaze pattern data
-        public String getFocusedSquare() {
-            return "e2"; // Placeholder
         }
     }
 }
