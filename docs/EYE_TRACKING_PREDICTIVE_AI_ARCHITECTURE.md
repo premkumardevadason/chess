@@ -11,6 +11,7 @@ This document outlines the integration of eye-tracking technology with the Chess
 - **Manual Control**: UI button to start/stop webcam
 - **User Games Only**: Webcam enabled only during human vs AI games
 - **AI Training**: Webcam automatically disabled during AI self-training
+- **Game Reset**: Webcam immediately OFF when user clicks "New Game" or "Reset Game"
 - **Data Flow**: Gaze data sent to backend only when webcam is ON
 
 ### **Target Interface: Original Thymeleaf Chess Board**
@@ -129,6 +130,12 @@ public class EyeTrackingService {
         if (!active) {
             disableWebcam(); // Auto-disable when not in user game
         }
+    }
+    
+    public void onGameReset() {
+        // EXPLICIT REQUIREMENT: Webcam OFF on New Game/Reset Game
+        disableWebcam();
+        logger.info("Game reset - webcam automatically disabled");
     }
     
     private boolean isAITraining() {
@@ -543,6 +550,19 @@ public void handleWebcamControl(@Payload Map<String, Object> controlData) {
         eyeTrackingService.disableWebcam();
         sendWebcamStatus(sessionId, false, "Webcam disabled");
     }
+}
+
+@MessageMapping("/newGame")
+@MessageMapping("/resetGame")
+public void handleGameReset(@Payload Map<String, Object> gameData) {
+    // EXPLICIT REQUIREMENT: Webcam OFF on New Game/Reset Game
+    String sessionId = (String) gameData.get("sessionId");
+    
+    eyeTrackingService.onGameReset();
+    sendWebcamStatus(sessionId, false, "Game reset - webcam disabled");
+    
+    // Continue with normal game reset logic
+    processGameReset(gameData);
 }
 
 @MessageMapping("/rawGazeData")
@@ -1786,6 +1806,7 @@ chess.eyetracking.enabled=false
 chess.eyetracking.default.webcam.on=false
 chess.eyetracking.user.games.only=true
 chess.eyetracking.disable.during.ai.training=true
+chess.eyetracking.disable.on.game.reset=true
 chess.eyetracking.camera.device=0
 chess.eyetracking.fps=30
 chess.eyetracking.prediction.confidence.threshold=0.7
