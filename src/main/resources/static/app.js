@@ -37,6 +37,18 @@ function connect() {
             }
         });
         
+        // Subscribe to square highlighting for gaze tracking
+        stompClient.subscribe('/topic/squareHighlight', function (message) {
+            const data = JSON.parse(message.body);
+            highlightGazeSquare(data.square, data.color, data.duration);
+        });
+        
+        // Subscribe to piece intention analysis
+        stompClient.subscribe('/topic/pieceIntention', function (message) {
+            const data = JSON.parse(message.body);
+            updatePredictionDisplay(data);
+        });
+        
         // Subscribe to training status
         stompClient.subscribe('/topic/training', function (message) {
             const status = JSON.parse(message.body);
@@ -457,11 +469,16 @@ function sendCalibrationDataBinary(point, screenX, screenY) {
         let offset = 0;
         view.setUint8(offset, 1); // messageType = 1 (calibration)
         offset += 1;
-        view.setInt32(offset, point, true);
+        view.setInt32(offset, point, false);
         offset += 4;
-        view.setFloat32(offset, screenX, true);
+        // Convert normalized coordinates to actual screen pixels as integers
+        const actualScreenX = Math.round(screenX * window.screen.width);
+        const actualScreenY = Math.round(screenY * window.screen.height);
+        
+        console.log('[JS] Sending calibration: point=' + point + ', screenX=' + actualScreenX + ', screenY=' + actualScreenY + ', normalized=(' + screenX + ', ' + screenY + ')');
+        view.setInt32(offset, actualScreenX, false);
         offset += 4;
-        view.setFloat32(offset, screenY, true);
+        view.setInt32(offset, actualScreenY, false);
         offset += 4;
         
         // Copy pixel data
@@ -503,20 +520,42 @@ function startVideoFrameStreaming() {
         return;
     }
     
-    console.log('Starting continuous video frame streaming...');
+    console.log('Starting adaptive video frame streaming...');
     
-    // Start streaming at 30 FPS (33ms interval)
-    const streamInterval = setInterval(() => {
+    let currentFrameRate = 30; // Start at 30 FPS
+    let frameInterval = 1000 / currentFrameRate;
+    
+    function adaptiveFrameStreaming() {
         if (!isBinaryConnected || !videoElement || !webcamActive) {
-            clearInterval(streamInterval);
             return;
         }
         
         sendVideoFrame();
-    }, 33); // ~30 FPS
+        
+        // Adaptive frame rate based on performance
+        const now = performance.now();
+        if (window.lastFrameTime) {
+            const actualInterval = now - window.lastFrameTime;
+            if (actualInterval > frameInterval * 1.5) {
+                // System is struggling, reduce frame rate
+                currentFrameRate = Math.max(10, currentFrameRate - 2);
+                frameInterval = 1000 / currentFrameRate;
+                console.log('Reduced frame rate to', currentFrameRate, 'FPS');
+            } else if (actualInterval < frameInterval * 0.8 && currentFrameRate < 30) {
+                // System can handle more, increase frame rate
+                currentFrameRate = Math.min(30, currentFrameRate + 1);
+                frameInterval = 1000 / currentFrameRate;
+                console.log('Increased frame rate to', currentFrameRate, 'FPS');
+            }
+        }
+        window.lastFrameTime = now;
+        
+        // Schedule next frame
+        setTimeout(adaptiveFrameStreaming, frameInterval);
+    }
     
-    // Store interval ID for cleanup
-    window.videoStreamInterval = streamInterval;
+    // Start adaptive streaming
+    adaptiveFrameStreaming();
 }
 
 function stopVideoFrameStreaming() {
@@ -535,8 +574,9 @@ function sendVideoFrame() {
     try {
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
-        canvas.width = videoElement.videoWidth;
-        canvas.height = videoElement.videoHeight;
+        // Reduce frame size to prevent buffer overflow
+        canvas.width = Math.min(videoElement.videoWidth, 160);
+        canvas.height = Math.min(videoElement.videoHeight, 120);
         ctx.drawImage(videoElement, 0, 0);
         
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
@@ -550,11 +590,13 @@ function sendVideoFrame() {
         let offset = 0;
         view.setUint8(offset, 2); // messageType = 2 (video frame)
         offset += 1;
-        view.setFloat64(offset, Date.now(), true);
+        view.setFloat64(offset, Date.now(), false);
         offset += 8;
-        view.setInt32(offset, canvas.width, true);
+        view.setInt32(offset, canvas.width, false);
         offset += 4;
-        view.setInt32(offset, canvas.height, true);
+        view.setInt32(offset, canvas.height, false);
+        
+        console.log('[JS] Sending video frame: width=' + canvas.width + ', height=' + canvas.height + ', dataSize=' + pixelData.length);
         offset += 4;
         
         // Copy pixel data
@@ -591,6 +633,47 @@ function updateEyeTrackingUI() {
 
 function generateSessionId() {
     return 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+}
+
+// Gaze highlighting functions
+function highlightGazeSquare(square, color, duration) {
+    if (!square || square.length < 2) return;
+    
+    // Convert chess notation to board coordinates
+    const col = square.charCodeAt(0) - 'a'.charCodeAt(0);
+    const row = 8 - parseInt(square.charAt(1));
+    
+    if (row < 0 || row > 7 || col < 0 || col > 7) return;
+    
+    const boardElement = document.getElementById('chess-board');
+    if (!boardElement || !boardElement.children[row] || !boardElement.children[row].children[col]) {
+        return;
+    }
+    
+    const squareElement = boardElement.children[row].children[col];
+    
+    // Remove any existing gaze highlight
+    document.querySelectorAll('.gaze-highlight').forEach(el => {
+        el.classList.remove('gaze-highlight');
+    });
+    
+    // Add gaze highlight
+    squareElement.classList.add('gaze-highlight');
+    
+    console.log(`Highlighting square ${square} in ${color} for ${duration}ms`);
+    
+    // Remove highlight after duration
+    setTimeout(() => {
+        squareElement.classList.remove('gaze-highlight');
+    }, duration || 3000);
+}
+
+function updatePredictionDisplay(data) {
+    const predictionStatus = document.getElementById('prediction-status');
+    if (predictionStatus && data.predictedMove) {
+        predictionStatus.textContent = `Prediction: ${data.predictedMove} (${Math.round(data.confidence * 100)}%)`;
+        predictionStatus.style.color = data.confidence > 0.7 ? '#28a745' : '#ffc107';
+    }
 }
 
 // Training functions

@@ -23,6 +23,9 @@ public class WebSocketController {
     @Autowired
     private ChessGame game;
     
+    @Autowired
+    private com.example.chess.service.AIPrecomputationService aiPrecomputationService;
+    
     private AsyncTrainingDataManager asyncDataManager;
     
     // Chess game handlers
@@ -33,7 +36,24 @@ public class WebSocketController {
             return new GameStateMessage(null, false, false, null, null, false, null, false, null, null, null);
         }
         
+        // Convert move to string format for precomputation check
+        String moveString = convertMoveToString(moveMessage);
+        
+        // Check for precomputed AI response
+        String precomputedResponse = null;
+        if (aiPrecomputationService != null) {
+            precomputedResponse = aiPrecomputationService.getPrecomputedResponse(moveString);
+        }
+        
         boolean success = game.makeMove(moveMessage.fromRow, moveMessage.fromCol, moveMessage.toRow, moveMessage.toCol);
+        
+        // Use precomputed response if available
+        if (success && precomputedResponse != null && !game.isGameOver()) {
+            System.out.println("[PRECOMPUTED] Using instant AI response: " + precomputedResponse);
+            // Apply precomputed AI move immediately
+            applyAIMove(precomputedResponse);
+        }
+        
         boolean checkmate = game.isGameOver() && game.getKingInCheckPosition() != null;
         String winner = checkmate ? (game.isWhiteTurn() ? "Black" : "White") : null;
         
@@ -48,7 +68,7 @@ public class WebSocketController {
             checkmate,
             winner,
             game.isAllAIEnabled() ? "All AIs" : game.getSelectedAIForGame(),
-            null
+            precomputedResponse != null ? "INSTANT" : null
         );
     }
     
@@ -56,6 +76,12 @@ public class WebSocketController {
     @SendTo("/topic/gameState")
     public GameStateMessage newGame() {
         game.resetGame();
+        
+        // Clear precomputation cache on new game
+        if (aiPrecomputationService != null) {
+            aiPrecomputationService.clearCache();
+        }
+        
         return new GameStateMessage(
             game.getBoard(),
             game.isWhiteTurn(),
@@ -314,6 +340,41 @@ public class WebSocketController {
         public EyeTrackingStatusMessage(boolean webcamEnabled, String message) {
             this.webcamEnabled = webcamEnabled;
             this.message = message;
+        }
+    }
+    
+    // Utility methods for precomputation
+    private String convertMoveToString(MoveMessage move) {
+        char fromFile = (char)('a' + move.fromCol);
+        int fromRank = 8 - move.fromRow;
+        char toFile = (char)('a' + move.toCol);
+        int toRank = 8 - move.toRow;
+        return "" + fromFile + fromRank + toFile + toRank;
+    }
+    
+    private void applyAIMove(String moveString) {
+        try {
+            if (moveString.length() >= 4) {
+                int fromCol = moveString.charAt(0) - 'a';
+                int fromRow = 8 - Character.getNumericValue(moveString.charAt(1));
+                int toCol = moveString.charAt(2) - 'a';
+                int toRow = 8 - Character.getNumericValue(moveString.charAt(3));
+                
+                game.makeMove(fromRow, fromCol, toRow, toCol);
+            }
+        } catch (Exception e) {
+            System.err.println("Error applying AI move: " + e.getMessage());
+        }
+    }
+    
+    // Method to send messages to all clients
+    public void sendToAll(String destination, Object message) {
+        try {
+            if (messagingTemplate != null) {
+                messagingTemplate.convertAndSend(destination, message);
+            }
+        } catch (Exception e) {
+            System.err.println("Error sending WebSocket message: " + e.getMessage());
         }
     }
 }

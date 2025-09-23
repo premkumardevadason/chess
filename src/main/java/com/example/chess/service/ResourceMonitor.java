@@ -1,182 +1,126 @@
 package com.example.chess.service;
 
 import org.springframework.stereotype.Component;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.lang.management.ManagementFactory;
 import java.lang.management.MemoryMXBean;
 import java.lang.management.OperatingSystemMXBean;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
-/**
- * Resource monitoring service for system resource tracking
- * Monitors CPU usage, memory usage, and system load
- */
 @Component
 public class ResourceMonitor {
     
-    private static final Logger logger = LoggerFactory.getLogger(ResourceMonitor.class);
-    
     private final OperatingSystemMXBean osBean = ManagementFactory.getOperatingSystemMXBean();
     private final MemoryMXBean memoryBean = ManagementFactory.getMemoryMXBean();
+    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
     
-    // Cached values for performance
-    private volatile double cachedCpuUsage = 0.0;
-    private volatile double cachedMemoryUsage = 0.0;
-    private final AtomicLong lastUpdateTime = new AtomicLong(0);
+    private volatile double cpuUsage = 0.0;
+    private volatile double memoryUsage = 0.0;
+    private volatile int activeFrameProcessing = 0;
+    private volatile long totalFramesProcessed = 0;
+    private volatile long lastFrameTime = 0;
     
-    private static final long UPDATE_INTERVAL_MS = 1000; // Update every second
+    private final AtomicInteger frameRate = new AtomicInteger(30);
+    private final AtomicLong frameProcessingTime = new AtomicLong(0);
     
-    /**
-     * Get current CPU usage as a percentage (0.0 to 1.0)
-     */
+    public void startMonitoring() {
+        scheduler.scheduleAtFixedRate(this::updateMetrics, 0, 1, TimeUnit.SECONDS);
+        System.out.println("Resource monitoring started");
+    }
+    
+    private void updateMetrics() {
+        try {
+            if (osBean instanceof com.sun.management.OperatingSystemMXBean) {
+                com.sun.management.OperatingSystemMXBean sunOsBean = 
+                    (com.sun.management.OperatingSystemMXBean) osBean;
+                cpuUsage = sunOsBean.getProcessCpuLoad();
+            } else {
+                cpuUsage = osBean.getSystemLoadAverage() / osBean.getAvailableProcessors();
+            }
+            
+            long usedMemory = memoryBean.getHeapMemoryUsage().getUsed();
+            long maxMemory = memoryBean.getHeapMemoryUsage().getMax();
+            memoryUsage = (double) usedMemory / maxMemory;
+            
+            adjustFrameRate();
+            
+        } catch (Exception e) {
+            System.err.println("Error updating resource metrics: " + e.getMessage());
+        }
+    }
+    
+    private void adjustFrameRate() {
+        int currentRate = frameRate.get();
+        
+        if (cpuUsage > 0.8 || memoryUsage > 0.8) {
+            int newRate = Math.max(10, currentRate - 5);
+            frameRate.set(newRate);
+            System.out.println("Reduced frame rate to " + newRate + " FPS due to high system load");
+        } else if (cpuUsage < 0.5 && memoryUsage < 0.5 && currentRate < 30) {
+            int newRate = Math.min(30, currentRate + 5);
+            frameRate.set(newRate);
+            System.out.println("Increased frame rate to " + newRate + " FPS");
+        }
+    }
+    
+    public boolean canProcessFrame() {
+        return cpuUsage < 0.9 && memoryUsage < 0.9 && activeFrameProcessing < 3;
+    }
+    
+    public void startFrameProcessing() {
+        activeFrameProcessing++;
+        lastFrameTime = System.currentTimeMillis();
+    }
+    
+    public void endFrameProcessing() {
+        activeFrameProcessing = Math.max(0, activeFrameProcessing - 1);
+        totalFramesProcessed++;
+        
+        long processingTime = System.currentTimeMillis() - lastFrameTime;
+        frameProcessingTime.addAndGet(processingTime);
+    }
+    
     public double getCpuUsage() {
-        updateCachedValues();
-        return cachedCpuUsage;
+        return Math.max(0.0, Math.min(1.0, cpuUsage));
     }
     
-    /**
-     * Get current memory usage as a percentage (0.0 to 1.0)
-     */
     public double getMemoryUsage() {
-        updateCachedValues();
-        return cachedMemoryUsage;
+        return Math.max(0.0, Math.min(1.0, memoryUsage));
     }
     
-    /**
-     * Get system load average
-     */
-    public double getSystemLoad() {
-        return osBean.getSystemLoadAverage();
+    public int getRecommendedFrameRate() {
+        return frameRate.get();
     }
     
-    /**
-     * Get available processors
-     */
-    public int getAvailableProcessors() {
-        return osBean.getAvailableProcessors();
+    public int getFrameInterval() {
+        return 1000 / frameRate.get();
     }
     
-    /**
-     * Check if system is under high load
-     */
-    public boolean isHighLoad() {
-        return getCpuUsage() > 0.8 || getMemoryUsage() > 0.85 || getSystemLoad() > 0.8;
+    public int getActiveFrameProcessing() {
+        return activeFrameProcessing;
     }
     
-    /**
-     * Check if system resources are sufficient for additional AI computation
-     */
-    public boolean canStartNewComputation() {
-        return getCpuUsage() < 0.7 && getMemoryUsage() < 0.8 && getSystemLoad() < 0.7;
+    public long getTotalFramesProcessed() {
+        return totalFramesProcessed;
     }
     
-    /**
-     * Get detailed resource information
-     */
-    public ResourceInfo getResourceInfo() {
-        updateCachedValues();
-        
-        long totalMemory = memoryBean.getHeapMemoryUsage().getMax();
-        long usedMemory = memoryBean.getHeapMemoryUsage().getUsed();
-        long freeMemory = totalMemory - usedMemory;
-        
-        return new ResourceInfo(
-            cachedCpuUsage,
-            cachedMemoryUsage,
-            getSystemLoad(),
-            totalMemory,
-            usedMemory,
-            freeMemory,
-            getAvailableProcessors()
+    public double getAverageFrameProcessingTime() {
+        return totalFramesProcessed > 0 ? 
+            (double) frameProcessingTime.get() / totalFramesProcessed : 0.0;
+    }
+    
+    public String getResourceStatus() {
+        return String.format(
+            "CPU: %.1f%%, Memory: %.1f%%, Frame Rate: %d FPS, Active Processing: %d, Total Frames: %d, Avg Processing: %.1fms",
+            cpuUsage * 100, memoryUsage * 100, frameRate.get(), 
+            activeFrameProcessing, totalFramesProcessed, getAverageFrameProcessingTime()
         );
     }
     
-    /**
-     * Update cached resource values if needed
-     */
-    private void updateCachedValues() {
-        long currentTime = System.currentTimeMillis();
-        long lastUpdate = lastUpdateTime.get();
-        
-        if (currentTime - lastUpdate > UPDATE_INTERVAL_MS) {
-            if (lastUpdateTime.compareAndSet(lastUpdate, currentTime)) {
-                updateCpuUsage();
-                updateMemoryUsage();
-            }
-        }
-    }
-    
-    /**
-     * Update CPU usage calculation
-     */
-    private void updateCpuUsage() {
-        try {
-            // Simple CPU usage estimation based on system load
-            double systemLoad = osBean.getSystemLoadAverage();
-            int processors = osBean.getAvailableProcessors();
-            
-            if (systemLoad >= 0) {
-                double cpuUsage = Math.min(systemLoad / processors, 1.0);
-                cachedCpuUsage = cpuUsage;
-            } else {
-                // Fallback to a conservative estimate
-                cachedCpuUsage = 0.5;
-            }
-        } catch (Exception e) {
-            logger.warn("Error calculating CPU usage", e);
-            cachedCpuUsage = 0.5; // Conservative fallback
-        }
-    }
-    
-    /**
-     * Update memory usage calculation
-     */
-    private void updateMemoryUsage() {
-        try {
-            long maxMemory = memoryBean.getHeapMemoryUsage().getMax();
-            long usedMemory = memoryBean.getHeapMemoryUsage().getUsed();
-            
-            if (maxMemory > 0) {
-                double memoryUsage = (double) usedMemory / maxMemory;
-                cachedMemoryUsage = memoryUsage;
-            } else {
-                cachedMemoryUsage = 0.5; // Conservative fallback
-            }
-        } catch (Exception e) {
-            logger.warn("Error calculating memory usage", e);
-            cachedMemoryUsage = 0.5; // Conservative fallback
-        }
-    }
-    
-    /**
-     * Resource information data class
-     */
-    public static class ResourceInfo {
-        public final double cpuUsage;
-        public final double memoryUsage;
-        public final double systemLoad;
-        public final long totalMemory;
-        public final long usedMemory;
-        public final long freeMemory;
-        public final int availableProcessors;
-        
-        public ResourceInfo(double cpuUsage, double memoryUsage, double systemLoad,
-                          long totalMemory, long usedMemory, long freeMemory, int availableProcessors) {
-            this.cpuUsage = cpuUsage;
-            this.memoryUsage = memoryUsage;
-            this.systemLoad = systemLoad;
-            this.totalMemory = totalMemory;
-            this.usedMemory = usedMemory;
-            this.freeMemory = freeMemory;
-            this.availableProcessors = availableProcessors;
-        }
-        
-        @Override
-        public String toString() {
-            return String.format("CPU: %.1f%%, Memory: %.1f%%, Load: %.2f, Processors: %d",
-                cpuUsage * 100, memoryUsage * 100, systemLoad, availableProcessors);
-        }
+    public void shutdown() {
+        scheduler.shutdown();
     }
 }

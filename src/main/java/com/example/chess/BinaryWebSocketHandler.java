@@ -14,7 +14,25 @@ public class BinaryWebSocketHandler implements WebSocketHandler {
     private CalibrationService calibrationService;
     
     @Autowired
-    private EyeTrackingService eyeTrackingService;
+    private com.example.chess.service.BasicEyeTrackingService basicEyeTrackingService;
+    
+    @Autowired
+    private com.example.chess.service.SimpleMovePredictor simpleMovePredictor;
+    
+    @Autowired
+    private com.example.chess.service.AIPrecomputationService aiPrecomputationService;
+    
+    @Autowired
+    private com.example.chess.service.LSTMMovePredictionAI lstmPredictionAI;
+    
+    @Autowired
+    private com.example.chess.service.DynamicBoardDetector boardDetector;
+    
+    @Autowired
+    private com.example.chess.service.ResourceMonitor resourceMonitor;
+    
+    @Autowired
+    private com.example.chess.service.VisualTrainingDataManager trainingDataManager;
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws Exception {
@@ -42,8 +60,14 @@ public class BinaryWebSocketHandler implements WebSocketHandler {
         try {
             // Extract calibration point info
             int point = payload.getInt();
-            float screenX = payload.getFloat();
-            float screenY = payload.getFloat();
+            int screenX = payload.getInt();
+            int screenY = payload.getInt();
+            
+            // Validate coordinates are reasonable
+            if (screenX < 0 || screenX > 10000 || screenY < 0 || screenY > 10000) {
+                System.err.println("[CALIBRATION] Invalid coordinates detected: (" + screenX + ", " + screenY + ")");
+                return;
+            }
             
             // Remaining bytes are image data
             byte[] imageData = new byte[payload.remaining()];
@@ -95,16 +119,86 @@ public class BinaryWebSocketHandler implements WebSocketHandler {
             byte[] imageData = new byte[payload.remaining()];
             payload.get(imageData);
             
-            System.out.println("[VIDEO] Frame received - " + width + "x" + height + 
-                " Size: " + imageData.length + " bytes at " + new java.util.Date(timestamp));
+            System.out.println("[VIDEO] Frame metadata: width=" + width + ", height=" + height + ", dataSize=" + imageData.length + ", expected=" + (width * height * 4));
             
             // Process video frame for eye tracking
             try {
-                // TODO: Integrate with actual eye tracking service
-                // eyeTrackingService.processFrameData(imageData, width, height);
+                // Check if system can handle frame processing
+                if (resourceMonitor != null && !resourceMonitor.canProcessFrame()) {
+                    return; // Skip frame due to high system load
+                }
                 
-                // For now, just acknowledge receipt
-                System.out.println("[VIDEO] Frame processed successfully");
+                if (resourceMonitor != null) {
+                    resourceMonitor.startFrameProcessing();
+                }
+                
+                try {
+                    // Get gaze point from advanced eye tracking
+                    java.awt.geom.Point2D gazePoint = basicEyeTrackingService.processVideoFrame(imageData, width, height);
+                    
+                    if (gazePoint == null) {
+                        System.out.println("[VIDEO] No gaze point detected from frame");
+                    }
+                    
+                    if (gazePoint != null) {
+                        // Map gaze to chess square
+                        String focusedSquare = basicEyeTrackingService.mapGazeToChessSquare(gazePoint);
+                        
+                        if (focusedSquare != null) {
+                            // Record gaze point for training
+                            basicEyeTrackingService.recordGazePoint(session.getId(), gazePoint);
+                            
+                            // Save encrypted training data
+                            if (trainingDataManager != null) {
+                                trainingDataManager.saveGazeData(session.getId(), gazePoint, focusedSquare, timestamp);
+                            }
+                            
+                            // Get gaze sequence for LSTM prediction
+                            java.util.List<java.awt.geom.Point2D> gazeSequence = getGazeSequence(session.getId());
+                            
+                            // Try LSTM prediction first
+                            com.example.chess.service.LSTMMovePredictionAI.MovePrediction lstmPrediction = null;
+                            if (lstmPredictionAI != null && gazeSequence.size() >= 10) {
+                                lstmPrediction = lstmPredictionAI.predictMove(session.getId(), gazeSequence, focusedSquare);
+                            }
+                            
+                            // Fallback to simple prediction
+                            com.example.chess.service.SimpleMovePredictor.MovePrediction simplePrediction = 
+                                simpleMovePredictor.predictMove(session.getId(), focusedSquare);
+                            
+                            // Use best prediction
+                            String predictedMove = null;
+                            double confidence = 0.0;
+                            String method = "none";
+                            
+                            if (lstmPrediction != null && lstmPrediction.confidence > 0.7) {
+                                predictedMove = lstmPrediction.move;
+                                confidence = lstmPrediction.confidence;
+                                method = "LSTM";
+                            } else if (simplePrediction.move != null && simplePrediction.confidence > 0.6) {
+                                predictedMove = simplePrediction.move;
+                                confidence = simplePrediction.confidence;
+                                method = "Simple";
+                            }
+                            
+                            if (predictedMove != null) {
+                                // Precompute AI response
+                                aiPrecomputationService.precomputeResponse(predictedMove, confidence);
+                                
+                                System.out.println("[PREDICTION] " + method + " - Move: " + predictedMove + 
+                                    " Confidence: " + String.format("%.2f", confidence));
+                            }
+                            
+                            System.out.println("[GAZE] Square: " + focusedSquare + 
+                                " Point: (" + String.format("%.1f", gazePoint.getX()) + 
+                                ", " + String.format("%.1f", gazePoint.getY()) + ")");
+                        }
+                    }
+                } finally {
+                    if (resourceMonitor != null) {
+                        resourceMonitor.endFrameProcessing();
+                    }
+                }
                 
             } catch (Exception e) {
                 System.err.println("[VIDEO] Error in eye tracking processing: " + e.getMessage());
@@ -130,4 +224,21 @@ public class BinaryWebSocketHandler implements WebSocketHandler {
     public boolean supportsPartialMessages() {
         return false;
     }
+    
+    private java.util.List<java.awt.geom.Point2D> getGazeSequence(String sessionId) {
+        // Get recent gaze points for LSTM prediction
+        java.util.List<java.awt.geom.Point2D> sequence = new java.util.ArrayList<>();
+        
+        // Get last 30 gaze points (1 second at 30 FPS)
+        for (int i = 0; i < 30; i++) {
+            java.awt.geom.Point2D lastPoint = basicEyeTrackingService.getLastGazePoint(sessionId);
+            if (lastPoint != null) {
+                sequence.add(lastPoint);
+            }
+        }
+        
+        return sequence;
+    }
+    
+
 }
