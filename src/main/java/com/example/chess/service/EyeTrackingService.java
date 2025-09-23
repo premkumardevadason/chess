@@ -178,14 +178,6 @@ public class EyeTrackingService {
         faces.fromArray(dummyFace);
     }
     
-    private Rect extractEyeRegion(Rect face) {
-        // Extract eye region from face rectangle
-        int eyeWidth = face.width / 3;
-        int eyeHeight = face.height / 4;
-        int eyeY = face.y + face.height / 3;
-        
-        return new Rect(face.x + face.width / 3, eyeY, eyeWidth, eyeHeight);
-    }
     
     private Point2D calculateGazePoint(Rect eyeRegion) {
         try {

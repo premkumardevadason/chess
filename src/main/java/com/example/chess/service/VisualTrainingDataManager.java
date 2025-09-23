@@ -229,7 +229,7 @@ public class VisualTrainingDataManager {
             while (fis.available() > 0) {
                 try {
                     byte[] encryptedData = (byte[]) ois.readObject();
-                    byte[] decryptedData = encryptionService.decrypt(encryptedData);
+                    byte[] decryptedData = encryptionService.decryptGazeData(encryptedData);
                     MovePredictionResult result = deserializeMovePredictionResult(decryptedData);
                     
                     predictionCache.computeIfAbsent(result.getSessionId(), k -> new ArrayList<>()).add(result);

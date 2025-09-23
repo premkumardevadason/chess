@@ -1,5 +1,6 @@
 package com.example.chess.service;
 
+import com.example.chess.ChessGame;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.slf4j.Logger;
@@ -225,7 +226,10 @@ public class GazePredictionManager {
         sequence.positionalAdvantage = getPositionalAdvantage();
         sequence.timeRemaining = getTimeRemaining();
         sequence.moveNumber = getMoveNumber();
-        sequence.isInCheck = chessGame.isInCheck();
+        // Check if current player is in check
+        // Since we don't have direct access to whose turn it is, we'll check both
+        // In a real implementation, this would be determined by the current game state
+        sequence.isInCheck = chessGame.isKingInDanger(true) || chessGame.isKingInDanger(false);
         sequence.canCastle = canCastle();
         sequence.numberOfLegalMoves = getNumberOfLegalMoves();
         
@@ -309,9 +313,14 @@ public class GazePredictionManager {
     private double getTacticalThreats() { return 0.5; } // Placeholder
     private double getPositionalAdvantage() { return 0.5; } // Placeholder
     private double getTimeRemaining() { return 600.0; } // Placeholder
-    private int getMoveNumber() { return chessGame.getMoveNumber(); }
+    private int getMoveNumber() { 
+        // Get move number from game state - this would need to be tracked in ChessGame
+        // For now, return a placeholder that could be enhanced
+        return 1; // TODO: Implement proper move counting in ChessGame
+    }
     private boolean canCastle() { return true; } // Placeholder
     private int getNumberOfLegalMoves() { return 20; } // Placeholder
+    // Removed placeholder method - now using chessGame.isKingInDanger() directly
     
     
     // Data classes

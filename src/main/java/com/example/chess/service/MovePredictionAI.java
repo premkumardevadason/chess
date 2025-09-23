@@ -1,5 +1,6 @@
 package com.example.chess.service;
 
+import com.example.chess.ChessGame;
 import org.deeplearning4j.nn.api.OptimizationAlgorithm;
 import org.deeplearning4j.nn.conf.MultiLayerConfiguration;
 import org.deeplearning4j.nn.conf.NeuralNetConfiguration;
@@ -13,7 +14,6 @@ import org.nd4j.linalg.activations.Activation;
 import org.nd4j.linalg.api.ndarray.INDArray;
 import org.nd4j.linalg.dataset.DataSet;
 import org.nd4j.linalg.dataset.api.iterator.DataSetIterator;
-import org.nd4j.linalg.dataset.api.iterator.impl.ListDataSetIterator;
 import org.nd4j.linalg.factory.Nd4j;
 import org.nd4j.linalg.learning.config.Adam;
 import org.nd4j.linalg.lossfunctions.LossFunctions;
@@ -134,15 +134,19 @@ public class MovePredictionAI {
         }
         
         try {
+            // Convert to GazeFeatureExtractor.GazeSequence
+            GazeFeatureExtractor.GazeSequence convertedSequence = convertToFeatureExtractorSequence(gazeSequence);
+            
             // Extract features from gaze sequence
-            INDArray sequenceInput = featureExtractor.extractSequence(gazeSequence);
-            INDArray chessContext = featureExtractor.extractChessContext(gazeSequence);
+            INDArray sequenceInput = featureExtractor.extractSequence(convertedSequence);
+            INDArray chessContext = featureExtractor.extractChessContext(convertedSequence);
             
             // Reshape for LSTM input: [batchSize=1, sequenceLength, features]
             INDArray reshapedSequence = sequenceInput.reshape(1, SEQUENCE_LENGTH, GAZE_FEATURES);
             
             // Get LSTM output
-            INDArray lstmOutput = network.feedForward(reshapedSequence)[2]; // Second LSTM layer output
+            List<INDArray> feedForwardOutput = network.feedForward(reshapedSequence);
+            INDArray lstmOutput = feedForwardOutput.get(2); // Second LSTM layer output
             
             // Combine LSTM output with chess context
             INDArray combinedInput = Nd4j.concat(1, lstmOutput, chessContext.reshape(1, CHESS_CONTEXT_FEATURES));
@@ -214,8 +218,9 @@ public class MovePredictionAI {
             for (int i = 0; i < batch.size(); i++) {
                 TrainingExample example = batch.get(i);
                 
-                // Extract sequence features
-                INDArray sequenceFeatures = featureExtractor.extractSequence(example.gazeSequence);
+                // Convert and extract sequence features
+                GazeFeatureExtractor.GazeSequence convertedSequence = convertToFeatureExtractorSequence(example.gazeSequence);
+                INDArray sequenceFeatures = featureExtractor.extractSequence(convertedSequence);
                 sequences.putRow(i, sequenceFeatures);
                 
                 // Create one-hot encoded label
@@ -227,7 +232,79 @@ public class MovePredictionAI {
             
             // Create dataset and train
             DataSet dataSet = new DataSet(sequences, labels);
-            DataSetIterator iterator = new ListDataSetIterator<>(Arrays.asList(dataSet), BATCH_SIZE);
+            // Create a simple iterator for single dataset
+            DataSetIterator iterator = new DataSetIterator() {
+                private boolean hasNext = true;
+                
+                @Override
+                public DataSet next() {
+                    hasNext = false;
+                    return dataSet;
+                }
+                
+                @Override
+                public boolean hasNext() {
+                    return hasNext;
+                }
+                
+                @Override
+                public DataSet next(int num) {
+                    return next();
+                }
+                
+                @Override
+                public boolean asyncSupported() {
+                    return false;
+                }
+                
+                @Override
+                public void reset() {
+                    hasNext = true;
+                }
+                
+                @Override
+                public int batch() {
+                    return BATCH_SIZE;
+                }
+                
+                @Override
+                public void setPreProcessor(org.nd4j.linalg.dataset.api.DataSetPreProcessor preProcessor) {
+                    // Not implemented
+                }
+                
+                @Override
+                public org.nd4j.linalg.dataset.api.DataSetPreProcessor getPreProcessor() {
+                    return null;
+                }
+                
+                @Override
+                public boolean resetSupported() {
+                    return true;
+                }
+                
+                public boolean hasAsync() {
+                    return false;
+                }
+                
+                public void shutdown() {
+                    // Not implemented
+                }
+                
+                @Override
+                public List<String> getLabels() {
+                    return new ArrayList<>(); // Return empty list for now
+                }
+                
+                @Override
+                public int totalOutcomes() {
+                    return MAX_LEGAL_MOVES; // Return the number of possible move outcomes
+                }
+                
+                @Override
+                public int inputColumns() {
+                    return GAZE_FEATURES; // Return the number of input features
+                }
+            };
             
             network.fit(iterator);
             trainingIterations.incrementAndGet();
@@ -245,12 +322,18 @@ public class MovePredictionAI {
     private List<MovePrediction> getTopPredictions(INDArray output, int topN) {
         List<MovePrediction> predictions = new ArrayList<>();
         
-        // Get sorted indices
-        INDArray sortedIndices = Nd4j.argsort(output, false);
+        // Get sorted indices manually since argsort is not available
+        List<Map.Entry<Integer, Double>> indexedValues = new ArrayList<>();
+        for (int i = 0; i < output.length(); i++) {
+            indexedValues.add(new AbstractMap.SimpleEntry<>(i, output.getDouble(i)));
+        }
+        
+        // Sort by confidence (descending)
+        indexedValues.sort((a, b) -> Double.compare(b.getValue(), a.getValue()));
         
         for (int i = 0; i < Math.min(topN, MAX_LEGAL_MOVES); i++) {
-            int moveIndex = sortedIndices.getInt(i);
-            double confidence = output.getDouble(moveIndex);
+            int moveIndex = indexedValues.get(i).getKey();
+            double confidence = indexedValues.get(i).getValue();
             String move = indexToMoveMap.get(moveIndex);
             
             if (move != null && confidence > 0.01) { // Minimum confidence threshold
@@ -444,5 +527,30 @@ public class MovePredictionAI {
             this.isInitialized = isInitialized;
             this.legalMovesCount = legalMovesCount;
         }
+    }
+    
+    /**
+     * Convert MovePredictionAI.GazeSequence to GazeFeatureExtractor.GazeSequence
+     */
+    private GazeFeatureExtractor.GazeSequence convertToFeatureExtractorSequence(GazeSequence gazeSequence) {
+        GazeFeatureExtractor.GazeSequence converted = new GazeFeatureExtractor.GazeSequence();
+        
+        // Copy common fields
+        converted.gamePhase = gazeSequence.gamePhase;
+        converted.materialBalance = gazeSequence.materialBalance;
+        converted.kingSafety = gazeSequence.kingSafety;
+        converted.centerControl = gazeSequence.centerControl;
+        converted.developmentScore = gazeSequence.developmentScore;
+        converted.pawnStructure = gazeSequence.pawnStructure;
+        converted.pieceActivity = gazeSequence.pieceActivity;
+        converted.tacticalThreats = gazeSequence.tacticalThreats;
+        converted.positionalAdvantage = gazeSequence.positionalAdvantage;
+        converted.timeRemaining = gazeSequence.timeRemaining;
+        converted.moveNumber = (double) gazeSequence.moveNumber;
+        converted.repetitionRisk = gazeSequence.repetitionRisk;
+        converted.complexityScore = gazeSequence.complexityScore;
+        converted.numberOfLegalMoves = (double) gazeSequence.numberOfLegalMoves;
+        
+        return converted;
     }
 }
