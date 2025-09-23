@@ -765,14 +765,12 @@ function finishCalibration() {
         }));
     }
     
-    console.log('Calibration completed');
+    console.log('Calibration completed, connecting to video WebSocket...');
     updateEyeTrackingUI();
     
-    // Now start video frame capture after calibration is done
-    setTimeout(() => {
-        startVideoFrameCapture();
-        console.log('Started video frame capture at 30 FPS after calibration');
-    }, 1000);
+    // Connect to video WebSocket and start frame capture
+    // The video WebSocket connection will automatically start frame capture when connected
+    connectVideoWebSocket();
 }
 
 function showPrivacySettings() {
@@ -818,8 +816,9 @@ function updateEyeTrackingUI() {
 // Manual function to start video capture (for users who skip calibration)
 function startEyeTracking() {
     if (webcamActive && !calibrationActive) {
-        startVideoFrameCapture();
-        console.log('Started video frame capture at 30 FPS (manual start)');
+        // Connect to video WebSocket first, then start frame capture
+        connectVideoWebSocket();
+        console.log('Connecting to video WebSocket for manual eye-tracking start...');
     }
 }
 
@@ -828,12 +827,28 @@ function connectVideoWebSocket() {
     const videoSocket = new SockJS('/ws-video');
     videoStompClient = Stomp.over(() => videoSocket);
     
+    // Configure STOMP client for better reliability
+    videoStompClient.configure({
+        reconnectDelay: 5000,
+        heartbeatIncoming: 4000,
+        heartbeatOutgoing: 4000,
+        debug: function (str) {
+            console.log('Video STOMP: ' + str);
+        }
+    });
+    
     videoStompClient.connect({}, function (frame) {
         console.log('Video WebSocket connected');
         isVideoConnected = true;
+        // Start video frame capture only after connection is established
+        if (webcamActive && !calibrationActive) {
+            startVideoFrameCapture();
+        }
     }, function(error) {
-        console.log('Video WebSocket connection failed');
+        console.log('Video WebSocket connection failed:', error);
         isVideoConnected = false;
+        // Attempt to reconnect after 5 seconds
+        setTimeout(connectVideoWebSocket, 5000);
     });
 }
 
@@ -944,9 +959,9 @@ function startVideoFrameCapture() {
             return;
         }
         
-        // Check WebSocket connection
-        if (!isConnected || !stompClient) {
-            console.log('WebSocket disconnected, stopping frame capture');
+        // Check video WebSocket connection
+        if (!isVideoConnected || !videoStompClient || !videoStompClient.connected) {
+            console.log('Video WebSocket disconnected, stopping frame capture');
             return;
         }
         
@@ -961,7 +976,7 @@ function startVideoFrameCapture() {
         const imageData = canvas.toDataURL('image/jpeg', 0.8);
         
         // Send frame via dedicated video WebSocket
-        if (!sending && isVideoConnected && videoStompClient) {
+        if (!sending && isVideoConnected && videoStompClient && videoStompClient.connected) {
             sending = true;
             try {
                 videoStompClient.send("/app/eye-tracking/frame", {}, JSON.stringify({
@@ -983,8 +998,15 @@ function startVideoFrameCapture() {
             } catch (error) {
                 console.error('Failed to send frame:', error);
                 sending = false;
+                // Attempt to reconnect video WebSocket
+                isVideoConnected = false;
+                connectVideoWebSocket();
                 return;
             }
+        } else if (!isVideoConnected || !videoStompClient || !videoStompClient.connected) {
+            console.warn('Video WebSocket not connected, attempting to reconnect...');
+            isVideoConnected = false;
+            connectVideoWebSocket();
         }
         
         // Capture next frame (30 FPS for eye-tracking)
