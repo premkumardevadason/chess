@@ -688,12 +688,12 @@ function updateEyeTrackingUI() {
     }
     
     if (webcamToggle) {
-        webcamToggle.disabled = !eyeTrackingEnabled;
+        webcamToggle.disabled = false; // Enable by default when services are available
         webcamToggle.textContent = webcamActive ? 'Disable Eye-Tracking' : 'Enable Eye-Tracking';
     }
     
     if (calibrationBtn) {
-        calibrationBtn.disabled = !eyeTrackingEnabled || !webcamActive;
+        calibrationBtn.disabled = !webcamActive; // Only require webcam to be active
     }
 }
 
@@ -772,6 +772,21 @@ function newGame() {
 window.onload = function() {
     console.log('Page loaded, initializing...');
     connect(); // Start WebSocket connection
-    updateEyeTrackingUI(); // Initialize eye-tracking UI
+    
+    // Enable eye-tracking buttons since services are configured
+    setTimeout(() => {
+        const webcamToggle = document.getElementById('webcam-toggle');
+        const calibrationBtn = document.getElementById('calibration-btn');
+        
+        if (webcamToggle) {
+            webcamToggle.disabled = false;
+        }
+        if (calibrationBtn) {
+            calibrationBtn.disabled = !webcamActive;
+        }
+        
+        updateEyeTrackingUI();
+    }, 1000); // Small delay to ensure DOM is ready
+    
     console.log('Page initialized');
 };
