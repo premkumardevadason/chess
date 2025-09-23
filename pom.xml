@@ -64,6 +64,18 @@
             <artifactId>javacv-platform</artifactId>
             <version>1.5.9</version>
         </dependency>
+        
+        <!-- Fix version mismatch: Align JavaCPP and OpenBLAS versions -->
+        <dependency>
+            <groupId>org.bytedeco</groupId>
+            <artifactId>javacpp</artifactId>
+            <version>1.5.9</version>
+        </dependency>
+        <dependency>
+            <groupId>org.bytedeco</groupId>
+            <artifactId>openblas</artifactId>
+            <version>0.3.23-1.5.9</version>
+        </dependency>
         <dependency>
             <groupId>org.nd4j</groupId>
             <artifactId>nd4j-native-platform</artifactId>

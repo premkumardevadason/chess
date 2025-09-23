@@ -6,6 +6,7 @@ import org.opencv.objdetect.CascadeClassifier;
 import org.opencv.videoio.VideoCapture;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.slf4j.Logger;
@@ -19,6 +20,7 @@ import java.awt.geom.Point2D;
  * Implements real-time gaze tracking with consent validation
  */
 @Service
+@ConditionalOnProperty(name = "chess.eyetracking.services.enabled", havingValue = "true", matchIfMissing = false)
 public class EyeTrackingService {
     
     private static final Logger logger = LoggerFactory.getLogger(EyeTrackingService.class);
@@ -26,7 +28,8 @@ public class EyeTrackingService {
     // OpenCV Dependencies
     private VideoCapture camera;
     private CascadeClassifier faceDetector;
-    private Mat frame = new Mat();
+    private Mat frame;
+    private boolean openCVInitialized = false;
     
     // MediaPipe Integration (placeholder for future implementation)
     // private FaceMeshDetector faceMesh;
@@ -54,11 +57,23 @@ public class EyeTrackingService {
     public void initialize() {
         try {
             // Load OpenCV native library
-            // nu.pattern.OpenCV.loadShared();
-            // System.loadLibrary(org.opencv.core.Core.NATIVE_LIBRARY_NAME);
+            try {
+                nu.pattern.OpenCV.loadShared();
+                logger.info("OpenCV native library loaded successfully");
+                
+                // Initialize OpenCV Mat only after library is loaded
+                frame = new Mat();
+                openCVInitialized = true;
+                
+            } catch (Exception e) {
+                logger.warn("Could not load OpenCV native library: {}", e.getMessage());
+                logger.info("Eye tracking will be disabled due to OpenCV initialization failure");
+                openCVInitialized = false;
+                return;
+            }
             
             // Initialize camera
-            // camera = new VideoCapture(cameraDevice);
+            camera = new VideoCapture(cameraDevice);
             if (!camera.isOpened()) {
                 logger.warn("Could not open camera device: {}", cameraDevice);
                 return;
@@ -72,7 +87,9 @@ public class EyeTrackingService {
             
             logger.info("EyeTrackingService initialized successfully");
         } catch (Exception e) {
-            logger.error("Failed to initialize EyeTrackingService", e);
+            logger.error("Failed to initialize EyeTrackingService: {}", e.getMessage());
+            logger.info("Eye tracking will be disabled due to initialization failure");
+            openCVInitialized = false;
         }
     }
     
@@ -80,14 +97,16 @@ public class EyeTrackingService {
     @Scheduled(fixedRate = 33) // 30 FPS
     public void captureAndAnalyze() {
         // KEY REQUIREMENT: Only capture during user games with webcam enabled
-        if (!webcamEnabled || !userGameActive || isAITraining()) {
+        if (!openCVInitialized || !webcamEnabled || !userGameActive || isAITraining()) {
             return; // Skip capture during AI training or when webcam disabled
         }
         
         try {
-            camera.read(frame);
-            if (!frame.empty()) {
-                processFrame(frame);
+            if (camera != null && frame != null) {
+                camera.read(frame);
+                if (!frame.empty()) {
+                    processFrame(frame);
+                }
             }
         } catch (Exception e) {
             logger.warn("Error during frame capture", e);

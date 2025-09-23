@@ -1,6 +1,7 @@
 package com.example.chess.service;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,6 +16,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * Handles 9-point calibration and gaze correction algorithms
  */
 @Service
+@ConditionalOnProperty(name = "chess.eyetracking.services.enabled", havingValue = "true", matchIfMissing = false)
 public class CalibrationService {
     
     private static final Logger logger = LoggerFactory.getLogger(CalibrationService.class);
