@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Eye-Tracking UI Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ccc; border-radius: 5px; }
+        .test-button { padding: 10px 15px; margin: 5px; background: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer; }
+        .test-button:hover { background: #0056b3; }
+        .chess-board { display: inline-block; border: 2px solid #333; margin: 10px; }
+        .board-row { display: flex; }
+        .board-cell { width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; font-size: 24px; cursor: pointer; }
+        .light { background-color: #f0d9b5; }
+        .dark { background-color: #b58863; }
+        .gaze-highlight { background-color: #007bff !important; box-shadow: 0 0 10px #007bff !important; animation: gaze-pulse 0.5s ease-in-out; }
+        @keyframes gaze-pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
+    </style>
+</head>
+<body>
+    <h1>Eye-Tracking UI Component Test</h1>
+    
+    <div class="test-section">
+        <h3>Square Highlighting Test</h3>
+        <p>Click buttons to test square highlighting functionality:</p>
+        <button class="test-button" onclick="testHighlight('e4')">Highlight e4</button>
+        <button class="test-button" onclick="testHighlight('d4')">Highlight d4</button>
+        <button class="test-button" onclick="testHighlight('c4')">Highlight c4</button>
+        <button class="test-button" onclick="clearHighlights()">Clear All</button>
+    </div>
+    
+    <div class="test-section">
+        <h3>Chess Board</h3>
+        <div class="chess-board" id="test-board"></div>
+    </div>
+    
+    <div class="test-section">
+        <h3>Eye-Tracking Controls Test</h3>
+        <div class="eye-tracking-controls">
+            <h4>Eye-Tracking AI Prediction</h4>
+            <div class="eye-tracking-status">
+                <span id="webcam-status">Webcam: OFF</span>
+                <span id="prediction-status">Prediction: None</span>
+            </div>
+            <div class="eye-tracking-buttons">
+                <button id="webcam-toggle" onclick="toggleWebcam()">Enable Eye-Tracking</button>
+                <button onclick="startCalibration()" id="calibration-btn" disabled>Calibrate Gaze</button>
+                <button onclick="showPrivacySettings()" id="privacy-btn">Privacy Settings</button>
+            </div>
+        </div>
+    </div>
+    
+    <div class="test-section">
+        <h3>Consent Modal Test</h3>
+        <button class="test-button" onclick="showConsentModal()">Show Consent Modal</button>
+        <div id="consent-modal" class="modal" style="display: none;">
+            <div class="modal-content">
+                <h3>Eye-Tracking Consent</h3>
+                <p>This application uses eye-tracking to predict your chess moves and provide instant AI responses.</p>
+                <div class="consent-buttons">
+                    <button onclick="acceptConsent()" class="accept-btn">Accept & Enable</button>
+                    <button onclick="declineConsent()" class="decline-btn">Decline</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Initialize test chess board
+        function initTestBoard() {
+            const boardElement = document.getElementById('test-board');
+            boardElement.innerHTML = '';
+            
+            for (let i = 0; i < 8; i++) {
+                const rowElement = document.createElement('div');
+                rowElement.className = 'board-row';
+                
+                for (let j = 0; j < 8; j++) {
+                    const cellElement = document.createElement('div');
+                    cellElement.className = `board-cell ${(i + j) % 2 === 0 ? 'light' : 'dark'}`;
+                    cellElement.id = `square-${i}-${j}`;
+                    cellElement.textContent = getPieceSymbol(i, j);
+                    rowElement.appendChild(cellElement);
+                }
+                
+                boardElement.appendChild(rowElement);
+            }
+        }
+        
+        function getPieceSymbol(row, col) {
+            // Simple piece placement for testing
+            if (row === 0) return ['♜', '♞', '♝', '♛', '♚', '♝', '♞', '♜'][col];
+            if (row === 1) return '♟';
+            if (row === 6) return '♙';
+            if (row === 7) return ['♖', '♘', '♗', '♕', '♔', '♗', '♘', '♖'][col];
+            return '';
+        }
+        
+        function testHighlight(square) {
+            const { row, col } = squareNotationToCoords(square);
+            if (row !== -1 && col !== -1) {
+                const squareElement = document.getElementById(`square-${row}-${col}`);
+                if (squareElement) {
+                    squareElement.classList.add('gaze-highlight');
+                    setTimeout(() => {
+                        squareElement.classList.remove('gaze-highlight');
+                    }, 3000);
+                }
+            }
+        }
+        
+        function clearHighlights() {
+            for (let i = 0; i < 8; i++) {
+                for (let j = 0; j < 8; j++) {
+                    const squareElement = document.getElementById(`square-${i}-${j}`);
+                    if (squareElement) {
+                        squareElement.classList.remove('gaze-highlight');
+                    }
+                }
+            }
+        }
+        
+        function squareNotationToCoords(square) {
+            if (!square || square.length !== 2) return { row: -1, col: -1 };
+            
+            const file = square.charAt(0).toLowerCase();
+            const rank = parseInt(square.charAt(1));
+            
+            if (file < 'a' || file > 'h' || rank < 1 || rank > 8) {
+                return { row: -1, col: -1 };
+            }
+            
+            const col = file.charCodeAt(0) - 'a'.charCodeAt(0);
+            const row = 8 - rank;
+            
+            return { row, col };
+        }
+        
+        // Eye-tracking test functions
+        let eyeTrackingEnabled = false;
+        let webcamActive = false;
+        
+        function toggleWebcam() {
+            if (!eyeTrackingEnabled) {
+                showConsentModal();
+                return;
+            }
+            
+            if (webcamActive) {
+                disableWebcam();
+            } else {
+                enableWebcam();
+            }
+        }
+        
+        function showConsentModal() {
+            document.getElementById('consent-modal').style.display = 'flex';
+        }
+        
+        function acceptConsent() {
+            document.getElementById('consent-modal').style.display = 'none';
+            eyeTrackingEnabled = true;
+            updateEyeTrackingUI();
+            enableWebcam();
+        }
+        
+        function declineConsent() {
+            document.getElementById('consent-modal').style.display = 'none';
+            eyeTrackingEnabled = false;
+            updateEyeTrackingUI();
+        }
+        
+        function enableWebcam() {
+            webcamActive = true;
+            updateEyeTrackingUI();
+            console.log('Webcam enabled for eye-tracking');
+        }
+        
+        function disableWebcam() {
+            webcamActive = false;
+            updateEyeTrackingUI();
+            console.log('Webcam disabled');
+        }
+        
+        function startCalibration() {
+            alert('Calibration would start here in the real application');
+        }
+        
+        function showPrivacySettings() {
+            alert('Privacy Settings:\n\n• Gaze data is encrypted and stored securely\n• Data is automatically deleted after 7 days\n• No personal information is collected\n• You can disable eye-tracking at any time\n• Data is used only for move prediction');
+        }
+        
+        function updateEyeTrackingUI() {
+            const webcamStatus = document.getElementById('webcam-status');
+            const webcamToggle = document.getElementById('webcam-toggle');
+            const calibrationBtn = document.getElementById('calibration-btn');
+            
+            if (webcamStatus) {
+                webcamStatus.textContent = webcamActive ? 'Webcam: ON' : 'Webcam: OFF';
+                webcamStatus.style.color = webcamActive ? '#28a745' : '#dc3545';
+            }
+            
+            if (webcamToggle) {
+                webcamToggle.disabled = !eyeTrackingEnabled;
+                webcamToggle.textContent = webcamActive ? 'Disable Eye-Tracking' : 'Enable Eye-Tracking';
+            }
+            
+            if (calibrationBtn) {
+                calibrationBtn.disabled = !eyeTrackingEnabled || !webcamActive;
+            }
+        }
+        
+        // Initialize when page loads
+        window.onload = function() {
+            initTestBoard();
+            updateEyeTrackingUI();
+        };
+    </script>
+    
+    <style>
+        .eye-tracking-controls {
+            background: #f8f9fa;
+            border: 2px solid #007bff;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 10px 0;
+            text-align: center;
+        }
+        
+        .eye-tracking-status {
+            display: flex;
+            justify-content: space-around;
+            margin: 10px 0;
+            font-weight: bold;
+        }
+        
+        .eye-tracking-buttons {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        
+        .eye-tracking-buttons button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.3s;
+        }
+        
+        .eye-tracking-buttons button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        
+        .eye-tracking-buttons button:not(:disabled) {
+            background-color: #007bff;
+            color: white;
+        }
+        
+        .eye-tracking-buttons button:not(:disabled):hover {
+            background-color: #0056b3;
+        }
+        
+        .modal {
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .modal-content {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            max-width: 500px;
+            width: 90%;
+            text-align: center;
+        }
+        
+        .consent-buttons {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin-top: 20px;
+        }
+        
+        .accept-btn {
+            background-color: #28a745;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        
+        .accept-btn:hover {
+            background-color: #218838;
+        }
+        
+        .decline-btn {
+            background-color: #dc3545;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        
+        .decline-btn:hover {
+            background-color: #c82333;
+        }
+    </style>
+</body>
+</html>

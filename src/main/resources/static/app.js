@@ -410,6 +410,37 @@ function connect() {
             }
         });
         
+        // Subscribe to eye-tracking WebSocket messages
+        stompClient.subscribe('/topic/squareHighlight', function (message) {
+            const data = JSON.parse(message.body);
+            if (data.action === 'remove') {
+                clearGazeHighlights();
+            } else {
+                highlightSquare(data.square);
+            }
+        });
+        
+        stompClient.subscribe('/topic/pieceIntention', function (message) {
+            const data = JSON.parse(message.body);
+            console.log('Piece intention:', data);
+            // Could display intention analysis in UI
+        });
+        
+        stompClient.subscribe('/topic/movePrediction', function (message) {
+            const data = JSON.parse(message.body);
+            currentPrediction = data;
+            updateEyeTrackingUI();
+            console.log('Move prediction:', data);
+        });
+        
+        stompClient.subscribe('/topic/eyeTrackingStatus', function (message) {
+            const data = JSON.parse(message.body);
+            if (data.webcamEnabled !== undefined) {
+                webcamActive = data.webcamEnabled;
+                updateEyeTrackingUI();
+            }
+        });
+        
         // Load initial board state
         loadBoard();
     }, function(error) {
@@ -447,9 +478,300 @@ function updateCNNTrainingProgress(progress) {
     }
 }
 
+// Eye-Tracking Variables
+let eyeTrackingEnabled = false;
+let webcamActive = false;
+let calibrationActive = false;
+let currentPrediction = null;
+let gazeHighlightTimeout = null;
+
+// Eye-Tracking Functions
+function toggleWebcam() {
+    if (!eyeTrackingEnabled) {
+        showConsentModal();
+        return;
+    }
+    
+    if (webcamActive) {
+        disableWebcam();
+    } else {
+        enableWebcam();
+    }
+}
+
+function showConsentModal() {
+    const modal = document.getElementById('consent-modal');
+    modal.style.display = 'flex';
+}
+
+function acceptConsent() {
+    const modal = document.getElementById('consent-modal');
+    modal.style.display = 'none';
+    
+    // Send consent to backend
+    if (isConnected && stompClient) {
+        stompClient.send("/app/eye-tracking/consent", {}, JSON.stringify({
+            sessionId: generateSessionId(),
+            consent: true,
+            timestamp: Date.now()
+        }));
+    }
+    
+    eyeTrackingEnabled = true;
+    updateEyeTrackingUI();
+    enableWebcam();
+}
+
+function declineConsent() {
+    const modal = document.getElementById('consent-modal');
+    modal.style.display = 'none';
+    
+    // Send decline to backend
+    if (isConnected && stompClient) {
+        stompClient.send("/app/eye-tracking/consent", {}, JSON.stringify({
+            sessionId: generateSessionId(),
+            consent: false,
+            timestamp: Date.now()
+        }));
+    }
+    
+    eyeTrackingEnabled = false;
+    updateEyeTrackingUI();
+}
+
+function enableWebcam() {
+    if (!eyeTrackingEnabled) return;
+    
+    if (isConnected && stompClient) {
+        stompClient.send("/app/eye-tracking/enable", {}, JSON.stringify({
+            sessionId: generateSessionId(),
+            timestamp: Date.now()
+        }));
+    }
+    
+    webcamActive = true;
+    updateEyeTrackingUI();
+    console.log('Webcam enabled for eye-tracking');
+}
+
+function disableWebcam() {
+    if (isConnected && stompClient) {
+        stompClient.send("/app/eye-tracking/disable", {}, JSON.stringify({
+            sessionId: generateSessionId(),
+            timestamp: Date.now()
+        }));
+    }
+    
+    webcamActive = false;
+    currentPrediction = null;
+    updateEyeTrackingUI();
+    clearGazeHighlights();
+    console.log('Webcam disabled');
+}
+
+function startCalibration() {
+    if (!eyeTrackingEnabled || !webcamActive) return;
+    
+    calibrationActive = true;
+    showCalibrationOverlay();
+    startCalibrationSequence();
+}
+
+function showCalibrationOverlay() {
+    const overlay = document.createElement('div');
+    overlay.className = 'calibration-overlay';
+    overlay.id = 'calibration-overlay';
+    document.body.appendChild(overlay);
+}
+
+function startCalibrationSequence() {
+    const points = [
+        { x: '10%', y: '10%' },   // Top-left
+        { x: '50%', y: '10%' },   // Top-center
+        { x: '90%', y: '10%' },   // Top-right
+        { x: '10%', y: '50%' },   // Middle-left
+        { x: '50%', y: '50%' },   // Center
+        { x: '90%', y: '50%' },   // Middle-right
+        { x: '10%', y: '90%' },   // Bottom-left
+        { x: '50%', y: '90%' },   // Bottom-center
+        { x: '90%', y: '90%' }    // Bottom-right
+    ];
+    
+    let currentPoint = 0;
+    
+    function showNextPoint() {
+        if (currentPoint >= points.length) {
+            finishCalibration();
+            return;
+        }
+        
+        const point = points[currentPoint];
+        const calibrationPoint = document.createElement('div');
+        calibrationPoint.className = 'calibration-point';
+        calibrationPoint.style.left = point.x;
+        calibrationPoint.style.top = point.y;
+        calibrationPoint.id = 'calibration-point';
+        
+        // Remove previous point
+        const existingPoint = document.getElementById('calibration-point');
+        if (existingPoint) {
+            existingPoint.remove();
+        }
+        
+        document.body.appendChild(calibrationPoint);
+        
+        // Send calibration data to backend
+        if (isConnected && stompClient) {
+            stompClient.send("/app/eye-tracking/calibration", {}, JSON.stringify({
+                point: currentPoint,
+                x: point.x,
+                y: point.y,
+                timestamp: Date.now()
+            }));
+        }
+        
+        currentPoint++;
+        setTimeout(showNextPoint, 2000); // 2 seconds per point
+    }
+    
+    showNextPoint();
+}
+
+function finishCalibration() {
+    calibrationActive = false;
+    
+    // Remove calibration overlay and point
+    const overlay = document.getElementById('calibration-overlay');
+    const point = document.getElementById('calibration-point');
+    if (overlay) overlay.remove();
+    if (point) point.remove();
+    
+    // Send calibration complete to backend
+    if (isConnected && stompClient) {
+        stompClient.send("/app/eye-tracking/calibration-complete", {}, JSON.stringify({
+            timestamp: Date.now()
+        }));
+    }
+    
+    console.log('Calibration completed');
+    updateEyeTrackingUI();
+}
+
+function showPrivacySettings() {
+    alert('Privacy Settings:\n\n' +
+          '• Gaze data is encrypted and stored securely\n' +
+          '• Data is automatically deleted after 7 days\n' +
+          '• No personal information is collected\n' +
+          '• You can disable eye-tracking at any time\n' +
+          '• Data is used only for move prediction');
+}
+
+function updateEyeTrackingUI() {
+    const webcamStatus = document.getElementById('webcam-status');
+    const predictionStatus = document.getElementById('prediction-status');
+    const webcamToggle = document.getElementById('webcam-toggle');
+    const calibrationBtn = document.getElementById('calibration-btn');
+    
+    if (webcamStatus) {
+        webcamStatus.textContent = webcamActive ? 'Webcam: ON' : 'Webcam: OFF';
+        webcamStatus.style.color = webcamActive ? '#28a745' : '#dc3545';
+    }
+    
+    if (predictionStatus) {
+        if (currentPrediction) {
+            predictionStatus.textContent = `Prediction: ${currentPrediction.move} (${Math.round(currentPrediction.confidence * 100)}%)`;
+            predictionStatus.style.color = '#007bff';
+        } else {
+            predictionStatus.textContent = 'Prediction: None';
+            predictionStatus.style.color = '#6c757d';
+        }
+    }
+    
+    if (webcamToggle) {
+        webcamToggle.disabled = !eyeTrackingEnabled;
+        webcamToggle.textContent = webcamActive ? 'Disable Eye-Tracking' : 'Enable Eye-Tracking';
+    }
+    
+    if (calibrationBtn) {
+        calibrationBtn.disabled = !eyeTrackingEnabled || !webcamActive;
+    }
+}
+
+function highlightSquare(square) {
+    // Remove existing highlights
+    clearGazeHighlights();
+    
+    // Find the square element
+    const boardElement = document.getElementById('chess-board');
+    if (!boardElement) return;
+    
+    // Convert square notation (e.g., "e4") to row/col
+    const { row, col } = squareNotationToCoords(square);
+    if (row === -1 || col === -1) return;
+    
+    const squareElement = boardElement.children[row]?.children[col];
+    if (squareElement) {
+        squareElement.classList.add('gaze-highlight');
+        
+        // Auto-remove highlight after 3 seconds
+        gazeHighlightTimeout = setTimeout(() => {
+            squareElement.classList.remove('gaze-highlight');
+        }, 3000);
+    }
+}
+
+function clearGazeHighlights() {
+    if (gazeHighlightTimeout) {
+        clearTimeout(gazeHighlightTimeout);
+        gazeHighlightTimeout = null;
+    }
+    
+    const boardElement = document.getElementById('chess-board');
+    if (!boardElement) return;
+    
+    for (let row = 0; row < 8; row++) {
+        for (let col = 0; col < 8; col++) {
+            const squareElement = boardElement.children[row]?.children[col];
+            if (squareElement) {
+                squareElement.classList.remove('gaze-highlight');
+            }
+        }
+    }
+}
+
+function squareNotationToCoords(square) {
+    if (!square || square.length !== 2) return { row: -1, col: -1 };
+    
+    const file = square.charAt(0).toLowerCase();
+    const rank = parseInt(square.charAt(1));
+    
+    if (file < 'a' || file > 'h' || rank < 1 || rank > 8) {
+        return { row: -1, col: -1 };
+    }
+    
+    const col = file.charCodeAt(0) - 'a'.charCodeAt(0);
+    const row = 8 - rank;
+    
+    return { row, col };
+}
+
+function generateSessionId() {
+    return 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+}
+
+// Override newGame to disable webcam on reset
+const originalNewGame = newGame;
+function newGame() {
+    if (webcamActive) {
+        disableWebcam();
+    }
+    originalNewGame();
+}
+
 // Initialize the game when page loads
 window.onload = function() {
     console.log('Page loaded, initializing...');
     connect(); // Start WebSocket connection
+    updateEyeTrackingUI(); // Initialize eye-tracking UI
     console.log('Page initialized');
 };

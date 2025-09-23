@@ -664,6 +664,120 @@ public class WebSocketController {
         } catch (Exception ignored) {}
     }
     
+    // Eye-Tracking WebSocket Message Handlers
+    @MessageMapping("/eye-tracking/consent")
+    public void handleEyeTrackingConsent(ConsentMessage consentMessage) {
+        try {
+            // Log consent decision for audit trail
+            System.out.println("Eye-tracking consent: " + consentMessage.consent + " for session: " + consentMessage.sessionId);
+            
+            // Send status update to frontend
+            if (messagingTemplate != null) {
+                messagingTemplate.convertAndSend("/topic/eyeTrackingStatus", 
+                    new EyeTrackingStatusMessage(consentMessage.consent, "Consent processed"));
+            }
+        } catch (Exception e) {
+            System.err.println("Error handling eye-tracking consent: " + e.getMessage());
+        }
+    }
+    
+    @MessageMapping("/eye-tracking/enable")
+    public void handleEyeTrackingEnable(EnableMessage enableMessage) {
+        try {
+            System.out.println("Eye-tracking enabled for session: " + enableMessage.sessionId);
+            
+            // Send status update to frontend
+            if (messagingTemplate != null) {
+                messagingTemplate.convertAndSend("/topic/eyeTrackingStatus", 
+                    new EyeTrackingStatusMessage(true, "Eye-tracking enabled"));
+            }
+        } catch (Exception e) {
+            System.err.println("Error enabling eye-tracking: " + e.getMessage());
+        }
+    }
+    
+    @MessageMapping("/eye-tracking/disable")
+    public void handleEyeTrackingDisable(DisableMessage disableMessage) {
+        try {
+            System.out.println("Eye-tracking disabled for session: " + disableMessage.sessionId);
+            
+            // Send status update to frontend
+            if (messagingTemplate != null) {
+                messagingTemplate.convertAndSend("/topic/eyeTrackingStatus", 
+                    new EyeTrackingStatusMessage(false, "Eye-tracking disabled"));
+            }
+        } catch (Exception e) {
+            System.err.println("Error disabling eye-tracking: " + e.getMessage());
+        }
+    }
+    
+    @MessageMapping("/eye-tracking/calibration")
+    public void handleCalibration(CalibrationMessage calibrationMessage) {
+        try {
+            System.out.println("Calibration point " + calibrationMessage.point + " at (" + 
+                calibrationMessage.x + ", " + calibrationMessage.y + ")");
+            
+            // Process calibration data (could be stored for gaze correction)
+            // This would integrate with the CalibrationService
+            
+        } catch (Exception e) {
+            System.err.println("Error handling calibration: " + e.getMessage());
+        }
+    }
+    
+    @MessageMapping("/eye-tracking/calibration-complete")
+    public void handleCalibrationComplete(CalibrationCompleteMessage completeMessage) {
+        try {
+            System.out.println("Calibration completed at: " + completeMessage.timestamp);
+            
+            // Send completion status to frontend
+            if (messagingTemplate != null) {
+                messagingTemplate.convertAndSend("/topic/eyeTrackingStatus", 
+                    new EyeTrackingStatusMessage(true, "Calibration completed"));
+            }
+        } catch (Exception e) {
+            System.err.println("Error handling calibration completion: " + e.getMessage());
+        }
+    }
+    
+    // Eye-Tracking Message Classes
+    public static class ConsentMessage {
+        public String sessionId;
+        public boolean consent;
+        public long timestamp;
+    }
+    
+    public static class EnableMessage {
+        public String sessionId;
+        public long timestamp;
+    }
+    
+    public static class DisableMessage {
+        public String sessionId;
+        public long timestamp;
+    }
+    
+    public static class CalibrationMessage {
+        public int point;
+        public String x;
+        public String y;
+        public long timestamp;
+    }
+    
+    public static class CalibrationCompleteMessage {
+        public long timestamp;
+    }
+    
+    public static class EyeTrackingStatusMessage {
+        public boolean webcamEnabled;
+        public String message;
+        
+        public EyeTrackingStatusMessage(boolean webcamEnabled, String message) {
+            this.webcamEnabled = webcamEnabled;
+            this.message = message;
+        }
+    }
+    
     // Cleanup method for session management
     public void cleanupSession(String sessionId) {
         requestCounts.remove(sessionId);
