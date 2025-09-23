@@ -53,25 +53,108 @@ function connect() {
     });
 }
 
-function connectBinaryWebSocket() {
-    binaryWebSocket = new WebSocket('ws://localhost:8081/ws-binary');
-    binaryWebSocket.binaryType = 'arraybuffer';
+// Binary WebSocket Manager with exponential backoff
+class BinaryWebSocketManager {
+    constructor() {
+        this.reconnectAttempts = 0;
+        this.maxReconnectAttempts = 10;
+        this.baseReconnectDelay = 1000; // 1 second
+        this.maxReconnectDelay = 30000; // 30 seconds
+        this.isConnected = false;
+        this.reconnectTimeout = null;
+    }
     
-    binaryWebSocket.onopen = function() {
-        console.log('Binary WebSocket connected');
-        isBinaryConnected = true;
-    };
+    connect() {
+        try {
+            console.log(`Attempting binary WebSocket connection (attempt ${this.reconnectAttempts + 1})`);
+            
+            this.binaryWebSocket = new WebSocket('ws://localhost:8081/ws-binary');
+            this.binaryWebSocket.binaryType = 'arraybuffer';
+            
+            this.binaryWebSocket.onopen = () => {
+                console.log('Binary WebSocket connected successfully');
+                this.isConnected = true;
+                this.reconnectAttempts = 0;
+                isBinaryConnected = true;
+                updateEyeTrackingUI();
+            };
+            
+            this.binaryWebSocket.onclose = (event) => {
+                console.log(`Binary WebSocket disconnected: ${event.code} - ${event.reason}`);
+                this.isConnected = false;
+                isBinaryConnected = false;
+                updateEyeTrackingUI();
+                
+                // Stop video streaming if active
+                stopVideoFrameStreaming();
+                
+                // Attempt reconnection if not a clean close
+                if (event.code !== 1000 && this.reconnectAttempts < this.maxReconnectAttempts) {
+                    this.scheduleReconnect();
+                }
+            };
+            
+            this.binaryWebSocket.onerror = (error) => {
+                console.error('Binary WebSocket error:', error);
+                this.isConnected = false;
+                isBinaryConnected = false;
+            };
+            
+        } catch (error) {
+            console.error('Failed to create binary WebSocket:', error);
+            this.scheduleReconnect();
+        }
+    }
     
-    binaryWebSocket.onclose = function() {
-        console.log('Binary WebSocket disconnected');
+    scheduleReconnect() {
+        if (this.reconnectTimeout) {
+            clearTimeout(this.reconnectTimeout);
+        }
+        
+        const delay = Math.min(
+            this.baseReconnectDelay * Math.pow(2, this.reconnectAttempts),
+            this.maxReconnectDelay
+        );
+        
+        console.log(`Scheduling reconnection in ${delay}ms (attempt ${this.reconnectAttempts + 1}/${this.maxReconnectAttempts})`);
+        
+        this.reconnectTimeout = setTimeout(() => {
+            this.reconnectAttempts++;
+            this.connect();
+        }, delay);
+    }
+    
+    disconnect() {
+        if (this.reconnectTimeout) {
+            clearTimeout(this.reconnectTimeout);
+            this.reconnectTimeout = null;
+        }
+        
+        if (this.binaryWebSocket) {
+            this.binaryWebSocket.close(1000, 'Client disconnecting');
+            this.binaryWebSocket = null;
+        }
+        
+        this.isConnected = false;
         isBinaryConnected = false;
-        // Reconnect after 5 seconds
-        setTimeout(connectBinaryWebSocket, 5000);
-    };
+    }
     
-    binaryWebSocket.onerror = function(error) {
-        console.error('Binary WebSocket error:', error);
-    };
+    send(data) {
+        if (this.isConnected && this.binaryWebSocket && this.binaryWebSocket.readyState === WebSocket.OPEN) {
+            this.binaryWebSocket.send(data);
+            return true;
+        } else {
+            console.warn('Binary WebSocket not connected, cannot send data');
+            return false;
+        }
+    }
+}
+
+// Create global instance
+const binaryWebSocketManager = new BinaryWebSocketManager();
+
+function connectBinaryWebSocket() {
+    binaryWebSocketManager.connect();
 }
 
 function renderBoard() {
@@ -291,6 +374,7 @@ function disableWebcam() {
     }
     
     webcamActive = false;
+    stopVideoFrameStreaming();
     updateEyeTrackingUI();
     console.log('Webcam disabled');
 }
@@ -341,7 +425,7 @@ function startCalibrationSequence() {
         document.body.appendChild(calibrationPoint);
         
         // Send calibration data via binary WebSocket
-        if (isBinaryConnected && binaryWebSocket && videoElement) {
+        if (isBinaryConnected && videoElement) {
             sendCalibrationDataBinary(currentPoint, point.x, point.y);
         }
         
@@ -383,8 +467,11 @@ function sendCalibrationDataBinary(point, screenX, screenY) {
         // Copy pixel data
         new Uint8Array(buffer, offset).set(pixelData);
         
-        binaryWebSocket.send(buffer);
-        console.log(`Calibration point ${point} sent via binary WebSocket (${buffer.byteLength} bytes)`);
+        if (binaryWebSocketManager.send(buffer)) {
+            console.log(`Calibration point ${point} sent via binary WebSocket (${buffer.byteLength} bytes)`);
+        } else {
+            console.error('Failed to send calibration data - WebSocket not connected');
+        }
         
     } catch (error) {
         console.error('Failed to send calibration data:', error);
@@ -405,8 +492,81 @@ function finishCalibration() {
         }));
     }
     
-    console.log('Calibration completed');
+    console.log('Calibration completed, starting video frame streaming...');
+    startVideoFrameStreaming();
     updateEyeTrackingUI();
+}
+
+function startVideoFrameStreaming() {
+    if (!isBinaryConnected || !videoElement || !webcamActive) {
+        console.log('Cannot start video streaming - missing requirements');
+        return;
+    }
+    
+    console.log('Starting continuous video frame streaming...');
+    
+    // Start streaming at 30 FPS (33ms interval)
+    const streamInterval = setInterval(() => {
+        if (!isBinaryConnected || !videoElement || !webcamActive) {
+            clearInterval(streamInterval);
+            return;
+        }
+        
+        sendVideoFrame();
+    }, 33); // ~30 FPS
+    
+    // Store interval ID for cleanup
+    window.videoStreamInterval = streamInterval;
+}
+
+function stopVideoFrameStreaming() {
+    if (window.videoStreamInterval) {
+        clearInterval(window.videoStreamInterval);
+        window.videoStreamInterval = null;
+        console.log('Video frame streaming stopped');
+    }
+}
+
+function sendVideoFrame() {
+    if (!isBinaryConnected || !videoElement) {
+        return;
+    }
+    
+    try {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = videoElement.videoWidth;
+        canvas.height = videoElement.videoHeight;
+        ctx.drawImage(videoElement, 0, 0);
+        
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const pixelData = new Uint8Array(imageData.data);
+        
+        // Create binary message for video frame
+        const headerSize = 1 + 8 + 4 + 4; // messageType + timestamp + width + height
+        const buffer = new ArrayBuffer(headerSize + pixelData.length);
+        const view = new DataView(buffer);
+        
+        let offset = 0;
+        view.setUint8(offset, 2); // messageType = 2 (video frame)
+        offset += 1;
+        view.setFloat64(offset, Date.now(), true);
+        offset += 8;
+        view.setInt32(offset, canvas.width, true);
+        offset += 4;
+        view.setInt32(offset, canvas.height, true);
+        offset += 4;
+        
+        // Copy pixel data
+        new Uint8Array(buffer, offset).set(pixelData);
+        
+        if (!binaryWebSocketManager.send(buffer)) {
+            console.warn('Failed to send video frame - WebSocket not connected');
+        }
+        
+    } catch (error) {
+        console.error('Failed to send video frame:', error);
+    }
 }
 
 function updateEyeTrackingUI() {

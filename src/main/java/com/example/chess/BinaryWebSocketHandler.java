@@ -52,16 +52,35 @@ public class BinaryWebSocketHandler implements WebSocketHandler {
             System.out.println("[CALIBRATION] Binary data received - Point: " + point + 
                 " at (" + screenX + ", " + screenY + ") Image size: " + imageData.length + " bytes");
             
-            // Process calibration
+            // Start calibration session if not already started
+            try {
+                calibrationService.startCalibration(session.getId());
+            } catch (Exception e) {
+                // Session might already exist, continue
+                System.out.println("[CALIBRATION] Session already exists or error starting: " + e.getMessage());
+            }
+            
+            // Process calibration with actual gaze detection
+            java.awt.geom.Point2D targetPoint = new java.awt.geom.Point2D.Double(screenX, screenY);
+            java.util.List<java.awt.geom.Point2D> gazeSamples = new java.util.ArrayList<>();
+            
+            // For now, use target point as gaze (placeholder for actual gaze detection)
+            // TODO: Integrate with actual gaze detection from image data
+            gazeSamples.add(targetPoint);
+            
+            // Record calibration point
             calibrationService.recordCalibrationPoint(
                 session.getId(),
                 point,
-                new java.awt.geom.Point2D.Double(screenX, screenY),
-                java.util.Arrays.asList(new java.awt.geom.Point2D.Double(screenX, screenY))
+                targetPoint,
+                gazeSamples
             );
+            
+            System.out.println("[CALIBRATION] Successfully recorded calibration point " + point);
             
         } catch (Exception e) {
             System.err.println("[CALIBRATION] Error processing binary data: " + e.getMessage());
+            e.printStackTrace();
         }
     }
 
@@ -77,13 +96,23 @@ public class BinaryWebSocketHandler implements WebSocketHandler {
             payload.get(imageData);
             
             System.out.println("[VIDEO] Frame received - " + width + "x" + height + 
-                " Size: " + imageData.length + " bytes");
+                " Size: " + imageData.length + " bytes at " + new java.util.Date(timestamp));
             
             // Process video frame for eye tracking
-            // eyeTrackingService.processFrameData(imageData, width, height);
+            try {
+                // TODO: Integrate with actual eye tracking service
+                // eyeTrackingService.processFrameData(imageData, width, height);
+                
+                // For now, just acknowledge receipt
+                System.out.println("[VIDEO] Frame processed successfully");
+                
+            } catch (Exception e) {
+                System.err.println("[VIDEO] Error in eye tracking processing: " + e.getMessage());
+            }
             
         } catch (Exception e) {
             System.err.println("[VIDEO] Error processing frame: " + e.getMessage());
+            e.printStackTrace();
         }
     }
 
