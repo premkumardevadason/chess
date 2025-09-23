@@ -43,6 +43,32 @@ When eye-tracking predicts a move with 70%+ confidence:
 - **All 12 AIs**: Simultaneously prepare responses
 - **Result**: 95% reduction in response time
 
+## Development Requirements
+
+### **REQUIREMENT 5: Git Branch Management**
+- **Branch Name**: `VISUAL-CHESS`
+- **Purpose**: All eye-tracking implementation changes isolated from main branch
+- **Commands**:
+```bash
+git checkout -b VISUAL-CHESS
+git push -u origin VISUAL-CHESS
+```
+
+### **REQUIREMENT 6: Visual Training Data Persistence**
+- **Storage Location**: `state/visual-training/` directory
+- **Transport**: WebSocket messages to backend
+- **Data Format**: Binary format (.dat) for performance with large gaze datasets
+- **File Structure**:
+```
+state/
+├── visual-training/
+│   ├── gaze-patterns.dat
+│   ├── move-predictions.dat
+│   └── user-sessions/
+│       ├── session-{uuid}.dat
+│       └── ...
+```
+
 ## Technical Implementation Specifications
 
 ### 1. **EyeTrackingService - Webcam Integration**
@@ -85,7 +111,7 @@ public class EyeTrackingService {
             // 4. Map to chess coordinates
             String chessSquare = mapToChessSquare(gazePoint);
             
-            // 5. Update gaze history
+            // 5. Update gaze history and persist training data
             updateGazeHistory(gazePoint, chessSquare);
         }
     }
@@ -109,7 +135,7 @@ public class EyeTrackingService {
 }
 ```
 
-### 2. **ChessBoardMapper - Screen Coordinate Mapping**
+### 2. **ChessBoardMapper - Dynamic Screen Detection & Square Highlighting**
 
 ```java
 @Component
@@ -117,17 +143,29 @@ public class ChessBoardMapper {
     
     private Rectangle chessBoardBounds;
     private Rectangle[][] squareBounds = new Rectangle[8][8];
+    private String currentHighlightedSquare = null;
+    private long highlightStartTime = 0;
+    private static final long HIGHLIGHT_DURATION = 3000; // 3 seconds
+    
+    @Autowired
+    private WebSocketController webSocketController;
     
     @PostConstruct
     public void initializeMapping() {
-        // Auto-detect chess board on screen
-        detectChessBoard();
-        calculateSquareBounds();
+        // Continuously detect chess board position (handles browser movement)
+        startDynamicDetection();
+    }
+    
+    private void startDynamicDetection() {
+        ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
+        scheduler.scheduleAtFixedRate(() -> {
+            detectChessBoard();
+            calculateSquareBounds();
+        }, 0, 500, TimeUnit.MILLISECONDS); // Update every 500ms
     }
     
     private void detectChessBoard() {
-        // Target the original Thymeleaf chess board (index.html)
-        // Look for the HTML table-based chess board structure
+        // REQUIREMENT 1: Precisely locate chess board anywhere on screen
         Mat template = Imgcodecs.imread("thymeleaf_chess_board_template.png");
         Mat screen = captureScreen();
         
@@ -137,13 +175,16 @@ public class ChessBoardMapper {
         Core.MinMaxLocResult mmr = Core.minMaxLoc(result);
         Point topLeft = mmr.maxLoc;
         
-        // Map to Thymeleaf chess board coordinates
-        chessBoardBounds = new Rectangle(
+        // Update chess board position dynamically
+        Rectangle newBounds = new Rectangle(
             (int)topLeft.x, (int)topLeft.y, 
             template.cols(), template.rows()
         );
         
-        logger.info("Detected Thymeleaf chess board at: {}", chessBoardBounds);
+        if (!newBounds.equals(chessBoardBounds)) {
+            chessBoardBounds = newBounds;
+            logger.info("Chess board position updated: {}", chessBoardBounds);
+        }
     }
     
     private void calculateSquareBounds() {
@@ -162,19 +203,200 @@ public class ChessBoardMapper {
     }
     
     public String mapToChessSquare(Point2D gazePoint) {
-        // Map gaze point to Thymeleaf chess board squares
+        // TOLERANCE: Built-in error handling for eye-tracking inaccuracy
+        return mapToChessSquareWithTolerance(gazePoint);
+    }
+    
+    private String mapToChessSquareWithTolerance(Point2D gazePoint) {
+        // Primary detection: Exact square boundaries
+        String exactSquare = getExactSquare(gazePoint);
+        if (exactSquare != null) {
+            handleSquareHighlight(exactSquare);
+            return exactSquare;
+        }
+        
+        // TOLERANCE LEVEL 1: Expand square boundaries by 15% for edge cases
+        String tolerantSquare = getSquareWithExpansion(gazePoint, 0.15);
+        if (tolerantSquare != null) {
+            logger.debug("Gaze mapped with 15% tolerance: {}", tolerantSquare);
+            handleSquareHighlight(tolerantSquare);
+            return tolerantSquare;
+        }
+        
+        // TOLERANCE LEVEL 2: Find nearest square within 25% of square size
+        String nearestSquare = getNearestSquare(gazePoint, 0.25);
+        if (nearestSquare != null) {
+            logger.debug("Gaze mapped to nearest square: {}", nearestSquare);
+            handleSquareHighlight(nearestSquare);
+            return nearestSquare;
+        }
+        
+        // TOLERANCE LEVEL 3: Probabilistic mapping with confidence scoring
+        return getProbabilisticSquare(gazePoint);
+    }
+    
+    private String getExactSquare(Point2D gazePoint) {
         for (int row = 0; row < 8; row++) {
             for (int col = 0; col < 8; col++) {
                 if (squareBounds[row][col].contains(gazePoint)) {
-                    char file = (char)('a' + col);
-                    int rank = 8 - row; // Thymeleaf board: rank 8 at top
-                    String square = "" + file + rank;
-                    logger.debug("Gaze mapped to Thymeleaf square: {}", square);
-                    return square;
+                    return getSquareName(row, col);
                 }
             }
         }
         return null;
+    }
+    
+    private String getSquareWithExpansion(Point2D gazePoint, double expansionFactor) {
+        int squareWidth = chessBoardBounds.width / 8;
+        int squareHeight = chessBoardBounds.height / 8;
+        int expandX = (int)(squareWidth * expansionFactor);
+        int expandY = (int)(squareHeight * expansionFactor);
+        
+        for (int row = 0; row < 8; row++) {
+            for (int col = 0; col < 8; col++) {
+                Rectangle expanded = new Rectangle(
+                    squareBounds[row][col].x - expandX,
+                    squareBounds[row][col].y - expandY,
+                    squareBounds[row][col].width + 2 * expandX,
+                    squareBounds[row][col].height + 2 * expandY
+                );
+                if (expanded.contains(gazePoint)) {
+                    return getSquareName(row, col);
+                }
+            }
+        }
+        return null;
+    }
+    
+    private String getNearestSquare(Point2D gazePoint, double maxDistanceFactor) {
+        int squareWidth = chessBoardBounds.width / 8;
+        int squareHeight = chessBoardBounds.height / 8;
+        double maxDistance = Math.min(squareWidth, squareHeight) * maxDistanceFactor;
+        
+        double minDistance = Double.MAX_VALUE;
+        String nearestSquare = null;
+        
+        for (int row = 0; row < 8; row++) {
+            for (int col = 0; col < 8; col++) {
+                Rectangle square = squareBounds[row][col];
+                Point2D center = new Point2D.Double(
+                    square.getCenterX(), square.getCenterY());
+                
+                double distance = gazePoint.distance(center);
+                if (distance < maxDistance && distance < minDistance) {
+                    minDistance = distance;
+                    nearestSquare = getSquareName(row, col);
+                }
+            }
+        }
+        
+        return nearestSquare;
+    }
+    
+    private String getProbabilisticSquare(Point2D gazePoint) {
+        // Calculate probability for each square based on distance
+        Map<String, Double> squareProbabilities = new HashMap<>();
+        double totalWeight = 0;
+        
+        for (int row = 0; row < 8; row++) {
+            for (int col = 0; col < 8; col++) {
+                Rectangle square = squareBounds[row][col];
+                Point2D center = new Point2D.Double(
+                    square.getCenterX(), square.getCenterY());
+                
+                double distance = gazePoint.distance(center);
+                double weight = 1.0 / (1.0 + distance); // Inverse distance weighting
+                
+                String squareName = getSquareName(row, col);
+                squareProbabilities.put(squareName, weight);
+                totalWeight += weight;
+            }
+        }
+        
+        // Return square with highest probability if above threshold
+        String bestSquare = null;
+        double maxProbability = 0;
+        
+        for (Map.Entry<String, Double> entry : squareProbabilities.entrySet()) {
+            double probability = entry.getValue() / totalWeight;
+            if (probability > maxProbability) {
+                maxProbability = probability;
+                bestSquare = entry.getKey();
+            }
+        }
+        
+        // Only return if confidence is above minimum threshold (20%)
+        if (maxProbability > 0.20) {
+            logger.debug("Probabilistic mapping: {} (confidence: {:.2f})", 
+                bestSquare, maxProbability);
+            handleSquareHighlight(bestSquare);
+            return bestSquare;
+        }
+        
+        logger.debug("Gaze point outside tolerance range: ({}, {})", 
+            gazePoint.getX(), gazePoint.getY());
+        return null;
+    }
+    
+    private String getSquareName(int row, int col) {
+        char file = (char)('a' + col);
+        int rank = 8 - row;
+        return "" + file + rank;
+    }
+    
+    private void handleSquareHighlight(String square) {
+        long currentTime = System.currentTimeMillis();
+        
+        if (square.equals(currentHighlightedSquare)) {
+            // REQUIREMENT 3: Continue looking at same square - re-highlight
+            if (currentTime - highlightStartTime >= HIGHLIGHT_DURATION) {
+                highlightSquare(square);
+                highlightStartTime = currentTime;
+            }
+        } else {
+            // REQUIREMENT 2: New square focused - highlight in BLUE
+            highlightSquare(square);
+            currentHighlightedSquare = square;
+            highlightStartTime = currentTime;
+        }
+        
+        // Schedule highlight removal after 3 seconds
+        scheduleHighlightRemoval(square, currentTime);
+    }
+    
+    private void highlightSquare(String square) {
+        // Send WebSocket message to highlight square in BLUE
+        Map<String, Object> highlightData = new HashMap<>();
+        highlightData.put("square", square);
+        highlightData.put("color", "blue");
+        highlightData.put("duration", HIGHLIGHT_DURATION);
+        
+        webSocketController.sendToAll("/topic/squareHighlight", highlightData);
+        logger.info("Highlighting square {} in BLUE for 3 seconds", square);
+    }
+    
+    private void scheduleHighlightRemoval(String square, long startTime) {
+        ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
+        scheduler.schedule(() -> {
+            if (square.equals(currentHighlightedSquare) && 
+                startTime == highlightStartTime) {
+                removeHighlight(square);
+            }
+        }, HIGHLIGHT_DURATION, TimeUnit.MILLISECONDS);
+    }
+    
+    private void removeHighlight(String square) {
+        Map<String, Object> removeData = new HashMap<>();
+        removeData.put("square", square);
+        removeData.put("action", "remove");
+        
+        webSocketController.sendToAll("/topic/squareHighlight", removeData);
+        logger.info("Removing highlight from square {}", square);
+        
+        if (square.equals(currentHighlightedSquare)) {
+            currentHighlightedSquare = null;
+            highlightStartTime = 0;
+        }
     }
     
     /**
@@ -195,7 +417,223 @@ public class ChessBoardMapper {
 }
 ```
 
-### 3. **MovePredictionAI - Neural Network Implementation**
+### 3. **VisualTrainingDataManager - STATE Folder Persistence**
+
+```java
+@Service
+public class VisualTrainingDataManager {
+    
+    private static final String VISUAL_TRAINING_DIR = "state/visual-training/";
+    private ObjectMapper objectMapper = new ObjectMapper();
+    
+    @PostConstruct
+    public void initializeStorage() {
+        createDirectoryIfNotExists(VISUAL_TRAINING_DIR);
+        createDirectoryIfNotExists(VISUAL_TRAINING_DIR + "user-sessions/");
+    }
+    
+    @EventListener
+    public void handleVisualTrainingData(VisualTrainingEvent event) {
+        // REQUIREMENT 6: Save visual training data to STATE folder
+        try {
+            String sessionFile = VISUAL_TRAINING_DIR + "user-sessions/session-" + 
+                event.getSessionId() + ".json";
+            
+            List<GazeDataPoint> sessionData = loadSessionData(sessionFile);
+            sessionData.add(event.getGazeDataPoint());
+            
+            // Use binary format for better performance with large gaze datasets
+            try (ObjectOutputStream oos = new ObjectOutputStream(
+                    new FileOutputStream(sessionFile))) {
+                oos.writeObject(sessionData);
+            }
+            
+            // Also append to main gaze patterns file
+            appendToGazePatternsFile(event.getGazeDataPoint());
+            
+        } catch (IOException e) {
+            logger.error("Failed to persist visual training data", e);
+        }
+    }
+    
+    private void appendToGazePatternsFile(GazeDataPoint dataPoint) throws IOException {
+        String gazeFile = VISUAL_TRAINING_DIR + "gaze-patterns.json";
+        List<GazeDataPoint> allData = loadGazePatterns(gazeFile);
+        allData.add(dataPoint);
+        try (ObjectOutputStream oos = new ObjectOutputStream(
+                new FileOutputStream(gazeFile))) {
+            oos.writeObject(allData);
+        }
+    }
+    
+    public void saveMovePrediction(String predictedMove, String actualMove, double confidence) {
+        // Save prediction accuracy data
+        try {
+            String predictionFile = VISUAL_TRAINING_DIR + "move-predictions.json";
+            List<MovePredictionResult> predictions = loadMovePredictions(predictionFile);
+            
+            predictions.add(new MovePredictionResult(
+                predictedMove, actualMove, confidence, System.currentTimeMillis()));
+                
+            try (ObjectOutputStream oos = new ObjectOutputStream(
+                    new FileOutputStream(predictionFile))) {
+                oos.writeObject(predictions);
+            }
+        } catch (IOException e) {
+            logger.error("Failed to save move prediction data", e);
+        }
+    }
+}
+```
+
+### 4. **WebSocket Visual Training Handler**
+
+```java
+@MessageMapping("/visualTraining")
+public void handleVisualTrainingData(@Payload Map<String, Object> trainingData) {
+    // REQUIREMENT 6: Receive visual training data via WebSocket
+    String sessionId = (String) trainingData.get("sessionId");
+    Double gazeX = (Double) trainingData.get("gazeX");
+    Double gazeY = (Double) trainingData.get("gazeY");
+    String square = (String) trainingData.get("square");
+    Long timestamp = (Long) trainingData.get("timestamp");
+    
+    GazeDataPoint dataPoint = new GazeDataPoint(
+        new Point2D.Double(gazeX, gazeY), square, timestamp);
+    
+    // Publish event for persistence in STATE folder
+    applicationEventPublisher.publishEvent(
+        new VisualTrainingEvent(sessionId, dataPoint));
+}
+```
+
+### 5. **PieceIntentionAnalyzer - User Thinking Pattern Detection**
+
+```java
+@Component
+public class PieceIntentionAnalyzer {
+    
+    @Autowired
+    private ChessGame chessGame;
+    
+    /**
+     * REQUIREMENT 4: Determine which piece user is thinking about
+     * and predict their strategic intention
+     */
+    public PieceIntention analyzePieceIntention(String focusedSquare, GazePattern pattern) {
+        String[][] board = chessGame.getBoard();
+        String piece = board[getRow(focusedSquare)][getCol(focusedSquare)];
+        
+        if (piece == null || piece.isEmpty()) {
+            return new PieceIntention(focusedSquare, "empty", "none", new ArrayList<>());
+        }
+        
+        boolean isWhitePiece = Character.isUpperCase(piece.charAt(0));
+        boolean isUserTurn = chessGame.isWhiteTurn();
+        
+        if (isWhitePiece && isUserTurn) {
+            // User looking at their own white piece - predict possible moves
+            return analyzeUserPieceIntention(focusedSquare, piece, pattern);
+        } else if (!isWhitePiece && !isUserTurn) {
+            // User looking at AI's black piece - predict where AI might move
+            return analyzeAIPieceIntention(focusedSquare, piece, pattern);
+        }
+        
+        return new PieceIntention(focusedSquare, piece, "observation", new ArrayList<>());
+    }
+    
+    private PieceIntention analyzeUserPieceIntention(String square, String piece, GazePattern pattern) {
+        List<String> possibleMoves = chessGame.getLegalMovesForPiece(square);
+        
+        // Analyze gaze pattern to predict most likely moves
+        List<String> predictedMoves = new ArrayList<>();
+        
+        for (String move : possibleMoves) {
+            String targetSquare = extractTargetSquare(move);
+            double moveConfidence = calculateMoveConfidence(square, targetSquare, pattern);
+            
+            if (moveConfidence > 0.6) {
+                predictedMoves.add(move);
+            }
+        }
+        
+        // Sort by confidence
+        predictedMoves.sort((m1, m2) -> {
+            double conf1 = calculateMoveConfidence(square, extractTargetSquare(m1), pattern);
+            double conf2 = calculateMoveConfidence(square, extractTargetSquare(m2), pattern);
+            return Double.compare(conf2, conf1);
+        });
+        
+        String intention = predictedMoves.isEmpty() ? "considering" : "planning_move";
+        
+        logger.info("User thinking about {} piece at {}: {} (predicted moves: {})", 
+            piece, square, intention, predictedMoves.size());
+            
+        return new PieceIntention(square, piece, intention, predictedMoves);
+    }
+    
+    private PieceIntention analyzeAIPieceIntention(String square, String piece, GazePattern pattern) {
+        // User looking at AI piece - predict where AI might move it
+        List<String> aiPossibleMoves = chessGame.getLegalMovesForPiece(square);
+        
+        // Use current AI to predict its most likely moves with this piece
+        String selectedAI = chessGame.getSelectedAI();
+        List<String> aiPredictedMoves = predictAIMoves(selectedAI, square, aiPossibleMoves);
+        
+        String intention = "anticipating_ai_move";
+        
+        logger.info("User anticipating AI {} piece at {}: {} possible moves", 
+            piece, square, aiPossibleMoves.size());
+            
+        return new PieceIntention(square, piece, intention, aiPredictedMoves);
+    }
+    
+    private List<String> predictAIMoves(String aiName, String square, List<String> possibleMoves) {
+        // Quick evaluation of AI's likely moves with this piece
+        List<String> predictedMoves = new ArrayList<>();
+        
+        for (String move : possibleMoves) {
+            double aiMoveScore = evaluateAIMoveScore(aiName, move);
+            if (aiMoveScore > 0.7) {
+                predictedMoves.add(move);
+            }
+        }
+        
+        return predictedMoves.subList(0, Math.min(3, predictedMoves.size()));
+    }
+    
+    private double calculateMoveConfidence(String fromSquare, String toSquare, GazePattern pattern) {
+        // Analyze gaze transitions between source and target squares
+        double transitionScore = pattern.getTransitionScore(fromSquare, toSquare);
+        double fixationScore = pattern.getFixationScore(toSquare);
+        double temporalScore = pattern.getTemporalScore();
+        
+        return (transitionScore * 0.4 + fixationScore * 0.4 + temporalScore * 0.2);
+    }
+    
+    private double evaluateAIMoveScore(String aiName, String move) {
+        // Quick heuristic evaluation of how likely AI is to make this move
+        // This could be enhanced with actual AI evaluation calls
+        return 0.5 + Math.random() * 0.5; // Placeholder
+    }
+}
+
+public class PieceIntention {
+    public final String square;
+    public final String piece;
+    public final String intention; // "planning_move", "considering", "anticipating_ai_move", "observation"
+    public final List<String> predictedMoves;
+    
+    public PieceIntention(String square, String piece, String intention, List<String> predictedMoves) {
+        this.square = square;
+        this.piece = piece;
+        this.intention = intention;
+        this.predictedMoves = predictedMoves;
+    }
+}
+```
+
+### 4. **MovePredictionAI - LSTM with Attention for Visual Sequences**
 
 ```java
 @Component
@@ -204,35 +642,44 @@ public class MovePredictionAI {
     private MultiLayerNetwork network;
     private GazeFeatureExtractor featureExtractor;
     private List<TrainingExample> trainingData = new ArrayList<>();
+    private static final int SEQUENCE_LENGTH = 30; // 1 second at 30 FPS
     
     @PostConstruct
     public void initializeNetwork() {
+        // OPTIMAL DL4J METHOD: LSTM with Attention for visual cue sequences
         MultiLayerConfiguration conf = new NeuralNetConfiguration.Builder()
             .seed(12345)
             .updater(new Adam(0.001))
             .list()
-            // Input layer: 60 features (gaze + chess context)
-            .layer(new DenseLayer.Builder()
-                .nIn(60)
+            // Input layer: Sequential gaze data (30 timesteps x 20 features)
+            .layer(new LSTM.Builder()
+                .nIn(20) // Gaze coordinates + temporal features
                 .nOut(128)
-                .activation(Activation.RELU)
+                .activation(Activation.TANH)
+                .gateActivationFunction(Activation.SIGMOID)
                 .build())
-            // Hidden layers for pattern recognition
-            .layer(new DenseLayer.Builder()
+            // Bidirectional LSTM for forward/backward gaze analysis
+            .layer(new Bidirectional(new LSTM.Builder()
                 .nIn(128)
+                .nOut(64)
+                .activation(Activation.TANH)
+                .build()))
+            // Attention mechanism for focusing on relevant gaze patterns
+            .layer(new SelfAttentionLayer.Builder()
+                .nIn(128) // Bidirectional output
+                .nOut(128)
+                .nHeads(8) // Multi-head attention
+                .build())
+            // Dense layer for chess context integration
+            .layer(new DenseLayer.Builder()
+                .nIn(128 + 40) // Attention output + chess context
                 .nOut(256)
                 .activation(Activation.RELU)
                 .dropOut(0.3)
                 .build())
-            .layer(new DenseLayer.Builder()
-                .nIn(256)
-                .nOut(128)
-                .activation(Activation.RELU)
-                .dropOut(0.3)
-                .build())
-            // Output layer: 4096 possible moves
+            // Output layer: Move probabilities
             .layer(new OutputLayer.Builder(LossFunctions.LossFunction.NEGATIVELOGLIKELIHOOD)
-                .nIn(128)
+                .nIn(256)
                 .nOut(4096)
                 .activation(Activation.SOFTMAX)
                 .build())
@@ -242,11 +689,16 @@ public class MovePredictionAI {
         network.init();
     }
     
-    public MovePrediction predictMove(GazePattern pattern) {
-        INDArray features = featureExtractor.extract(pattern);
-        INDArray output = network.output(features);
+    public MovePrediction predictMove(GazeSequence gazeSequence) {
+        // LSTM requires sequential input: [batchSize, sequenceLength, features]
+        INDArray sequenceInput = featureExtractor.extractSequence(gazeSequence);
+        INDArray chessContext = featureExtractor.extractChessContext(gazeSequence);
         
-        // Get top 3 predictions
+        // Combine LSTM output with chess context
+        INDArray combinedInput = Nd4j.concat(1, sequenceInput, chessContext);
+        INDArray output = network.output(combinedInput);
+        
+        // Get top 3 predictions with attention weights
         INDArray sorted = Nd4j.sort(output, false);
         List<MovePrediction> predictions = new ArrayList<>();
         
@@ -254,20 +706,42 @@ public class MovePredictionAI {
             int moveIndex = sorted.getInt(i);
             double confidence = output.getDouble(moveIndex);
             String move = indexToMove(moveIndex);
-            predictions.add(new MovePrediction(move, confidence));
+            
+            // Extract attention weights for interpretability
+            INDArray attentionWeights = getAttentionWeights(gazeSequence);
+            predictions.add(new MovePrediction(move, confidence, attentionWeights));
         }
         
         return predictions.get(0); // Return highest confidence
     }
     
-    public void trainOnUserMove(GazePattern pattern, String actualMove) {
-        TrainingExample example = new TrainingExample(pattern, actualMove);
+    public void trainOnUserMove(GazeSequence gazeSequence, String actualMove) {
+        // LSTM training with sequence data
+        TrainingExample example = new TrainingExample(gazeSequence, actualMove);
         trainingData.add(example);
         
-        // Retrain every 50 examples
-        if (trainingData.size() % 50 == 0) {
-            retrainNetwork();
+        // Online learning with mini-batches for LSTM stability
+        if (trainingData.size() % 32 == 0) { // Batch size 32 for LSTM
+            trainLSTMBatch();
         }
+    }
+    
+    private void trainLSTMBatch() {
+        // Prepare sequential training data for LSTM
+        List<TrainingExample> batch = trainingData.subList(
+            Math.max(0, trainingData.size() - 32), trainingData.size());
+            
+        INDArray sequences = Nd4j.zeros(32, SEQUENCE_LENGTH, 20);
+        INDArray labels = Nd4j.zeros(32, 4096);
+        
+        for (int i = 0; i < batch.size(); i++) {
+            TrainingExample example = batch.get(i);
+            sequences.putRow(i, featureExtractor.extractSequence(example.gazeSequence));
+            labels.putScalar(i, moveToIndex(example.actualMove), 1.0);
+        }
+        
+        DataSet dataSet = new DataSet(sequences, labels);
+        network.fit(dataSet);
     }
 }
 ```
@@ -488,37 +962,115 @@ public class MultiAgentPrecomputationService {
 }
 ```
 
-### 5. **GazeFeatureExtractor - Pattern Analysis**
+### 5. **GazeFeatureExtractor - Sequential Pattern Analysis for LSTM**
 
 ```java
 @Component
 public class GazeFeatureExtractor {
     
-    public INDArray extract(GazePattern pattern) {
-        double[] features = new double[60];
+    /**
+     * Extract sequential features for LSTM input
+     * Shape: [sequenceLength, features] = [30, 20]
+     */
+    public INDArray extractSequence(GazeSequence gazeSequence) {
+        List<GazePoint> points = gazeSequence.getGazePoints();
+        int seqLen = Math.min(points.size(), 30); // Last 30 points (1 second)
+        
+        INDArray sequence = Nd4j.zeros(seqLen, 20);
+        
+        for (int t = 0; t < seqLen; t++) {
+            GazePoint point = points.get(points.size() - seqLen + t);
+            double[] features = extractPointFeatures(point, t);
+            sequence.putRow(t, Nd4j.create(features));
+        }
+        
+        return sequence;
+    }
+    
+    private double[] extractPointFeatures(GazePoint point, int timeStep) {
+        return new double[] {
+            // Spatial features (8 dimensions)
+            point.x / 1920.0,           // Normalized screen X
+            point.y / 1080.0,           // Normalized screen Y
+            point.chessSquareX / 8.0,   // Chess board X (0-7)
+            point.chessSquareY / 8.0,   // Chess board Y (0-7)
+            point.gazeVelocityX,        // Velocity X
+            point.gazeVelocityY,        // Velocity Y
+            point.fixationDuration,     // How long looking at this point
+            point.saccadeAmplitude,     // Jump distance from previous
+            
+            // Temporal features (6 dimensions)
+            timeStep / 30.0,            // Normalized time in sequence
+            point.timestamp,            // Absolute timestamp
+            point.deltaTime,            // Time since previous point
+            point.isFixation ? 1.0 : 0.0, // Fixation vs saccade
+            point.blinkDetected ? 1.0 : 0.0, // Blink detection
+            point.confidenceScore,      // Eye tracking confidence
+            
+            // Chess context features (6 dimensions)
+            point.pieceType,            // What piece is being looked at
+            point.isLegalMoveTarget ? 1.0 : 0.0, // Valid move destination
+            point.threatLevel,          // Tactical importance of square
+            point.isPlayerPiece ? 1.0 : 0.0,     // Own vs opponent piece
+            point.moveNumber / 100.0,   // Game progress
+            point.timeRemaining / 600.0 // Normalized time pressure
+        };
+    }
+    
+    /**
+     * Extract chess context features for dense layer
+     * Shape: [40] features
+     */
+    public INDArray extractChessContext(GazeSequence gazeSequence) {
+        double[] context = new double[40];
         int idx = 0;
         
-        // Temporal features (20 dimensions)
-        features[idx++] = pattern.totalGazeDuration;
-        features[idx++] = pattern.averageFixationTime;
-        features[idx++] = pattern.numberOfFixations;
-        features[idx++] = pattern.gazeVelocity;
-        features[idx++] = pattern.scanPathLength;
-        features[idx++] = pattern.backtrackCount;
-        features[idx++] = pattern.hesitationTime;
-        features[idx++] = pattern.decisionTime;
-        features[idx++] = pattern.sourceFixationTime;
-        features[idx++] = pattern.targetFixationTime;
-        features[idx++] = pattern.transitionTime;
-        features[idx++] = pattern.confirmationLooks;
-        features[idx++] = pattern.alternativeConsiderations;
-        features[idx++] = pattern.timeToFirstFixation;
-        features[idx++] = pattern.timeToDecision;
-        features[idx++] = pattern.gazeStability;
-        features[idx++] = pattern.movementSmoothness;
-        features[idx++] = pattern.attentionSpread;
-        features[idx++] = pattern.focusIntensity;
-        features[idx++] = pattern.cognitiveLoad;
+        // Game state features (20 dimensions)
+        context[idx++] = gazeSequence.gamePhase;        // Opening/Middle/Endgame
+        context[idx++] = gazeSequence.materialBalance;  // Piece advantage
+        context[idx++] = gazeSequence.kingSafety;       // King safety score
+        context[idx++] = gazeSequence.centerControl;    // Center control
+        context[idx++] = gazeSequence.developmentScore; // Piece development
+        context[idx++] = gazeSequence.pawnStructure;    // Pawn structure score
+        context[idx++] = gazeSequence.pieceActivity;    // Piece mobility
+        context[idx++] = gazeSequence.tacticalThreats;  // Immediate threats
+        context[idx++] = gazeSequence.positionalAdvantage; // Long-term advantage
+        context[idx++] = gazeSequence.timeRemaining;    // Clock pressure
+        context[idx++] = gazeSequence.moveNumber;       // Game progress
+        context[idx++] = gazeSequence.repetitionRisk;   // Draw risk
+        context[idx++] = gazeSequence.complexityScore;  // Position complexity
+        context[idx++] = gazeSequence.numberOfLegalMoves; // Move options
+        context[idx++] = gazeSequence.isInCheck ? 1.0 : 0.0; // Check status
+        context[idx++] = gazeSequence.canCastle ? 1.0 : 0.0;  // Castling rights
+        context[idx++] = gazeSequence.enPassantAvailable ? 1.0 : 0.0; // En passant
+        context[idx++] = gazeSequence.promotionPossible ? 1.0 : 0.0;  // Promotion
+        context[idx++] = gazeSequence.playerSkillLevel; // User skill estimate
+        context[idx++] = gazeSequence.historicalAccuracy; // Past prediction accuracy
+        
+        // Attention pattern features (20 dimensions)
+        context[idx++] = gazeSequence.attentionSpread;     // How scattered is gaze
+        context[idx++] = gazeSequence.focusIntensity;      // Concentration level
+        context[idx++] = gazeSequence.scanPathLength;      // Total gaze distance
+        context[idx++] = gazeSequence.backtrackCount;      // Revisiting squares
+        context[idx++] = gazeSequence.hesitationTime;      // Decision uncertainty
+        context[idx++] = gazeSequence.confirmationLooks;   // Double-checking
+        context[idx++] = gazeSequence.alternativeConsiderations; // Options explored
+        context[idx++] = gazeSequence.cognitiveLoad;       // Mental effort
+        context[idx++] = gazeSequence.gazeStability;       // Steadiness
+        context[idx++] = gazeSequence.movementSmoothness;  // Smooth vs jerky
+        context[idx++] = gazeSequence.boundaryProximity;   // Edge vs center focus
+        context[idx++] = gazeSequence.centerBias;          // Center preference
+        context[idx++] = gazeSequence.diagonalPreference;  // Diagonal patterns
+        context[idx++] = gazeSequence.horizontalMovement;  // Horizontal scanning
+        context[idx++] = gazeSequence.verticalMovement;    // Vertical scanning
+        context[idx++] = gazeSequence.knightMovePattern;   // L-shaped patterns
+        context[idx++] = gazeSequence.castlingPattern;     // Castling consideration
+        context[idx++] = gazeSequence.capturePattern;      // Capture focus
+        context[idx++] = gazeSequence.defensivePattern;    // Defensive attention
+        context[idx++] = gazeSequence.timeToDecision;      // Decision speed
+        
+        return Nd4j.create(context);
+    }
         
         // Spatial features (20 dimensions)
         features[idx++] = pattern.sourceSquareX;
@@ -597,11 +1149,33 @@ public class GazePredictionManager {
     @Autowired
     private MovePredictionAI predictionAI;
     
+    @Autowired
+    private PieceIntentionAnalyzer pieceIntentionAnalyzer;
+    
+    @Autowired
+    private WebSocketController webSocketController;
+    
     /**
      * Processes new gaze data and manages prediction lifecycle
+     * Enhanced with piece intention analysis
      */
     public void processGazeUpdate(GazePattern newPattern) {
         synchronized (predictionLock) {
+            // REQUIREMENT 4: Analyze piece intention first
+            String focusedSquare = newPattern.getFocusedSquare();
+            if (focusedSquare != null) {
+                PieceIntention intention = pieceIntentionAnalyzer.analyzePieceIntention(focusedSquare, newPattern);
+                
+                // Send intention analysis to frontend
+                Map<String, Object> intentionData = new HashMap<>();
+                intentionData.put("square", intention.square);
+                intentionData.put("piece", intention.piece);
+                intentionData.put("intention", intention.intention);
+                intentionData.put("predictedMoves", intention.predictedMoves);
+                
+                webSocketController.sendToAll("/topic/pieceIntention", intentionData);
+            }
+            
             MovePrediction newPrediction = predictionAI.predictMove(newPattern);
             long currentTime = System.currentTimeMillis();
             
@@ -1158,15 +1732,43 @@ chess.eyetracking.target.url=http://localhost:8081
 chess.eyetracking.board.template=thymeleaf_chess_board_template.png
 chess.eyetracking.exclude.react=true
 
+# Dynamic Board Detection (REQUIREMENT 1)
+chess.eyetracking.board.detection.interval=500ms
+chess.eyetracking.board.detection.accuracy=0.8
+chess.eyetracking.board.position.tracking=true
+
+# Eye-Tracking Tolerance Configuration
+chess.eyetracking.tolerance.expansion.factor=0.15
+chess.eyetracking.tolerance.nearest.distance=0.25
+chess.eyetracking.tolerance.probability.threshold=0.20
+chess.eyetracking.tolerance.calibration.enabled=true
+chess.eyetracking.tolerance.adaptive.learning=true
+
+# Square Highlighting (REQUIREMENTS 2 & 3)
+chess.eyetracking.highlight.enabled=true
+chess.eyetracking.highlight.color=blue
+chess.eyetracking.highlight.duration=3000ms
+chess.eyetracking.highlight.repeat.enabled=true
+
+# Piece Intention Analysis (REQUIREMENT 4)
+chess.eyetracking.intention.analysis.enabled=true
+chess.eyetracking.intention.confidence.threshold=0.6
+chess.eyetracking.intention.move.prediction.count=3
+
 # Performance Settings
 chess.eyetracking.threads=4
 chess.eyetracking.gpu.enabled=true
 chess.eyetracking.memory.limit=1GB
 
-# Training Configuration
+# Training Configuration - LSTM Optimized
 chess.eyetracking.training.enabled=true
-chess.eyetracking.training.batch.size=50
+chess.eyetracking.training.method=LSTM_ATTENTION
+chess.eyetracking.training.sequence.length=30
+chess.eyetracking.training.batch.size=32
 chess.eyetracking.training.learning.rate=0.001
+chess.eyetracking.training.attention.heads=8
+chess.eyetracking.training.lstm.units=128
+chess.eyetracking.training.bidirectional=true
 
 # Privacy Settings
 chess.eyetracking.data.retention.days=7
@@ -1222,28 +1824,40 @@ chess.eyetracking.consent.required=true
 ### Phase 1: Eye Tracking Foundation (6 weeks)
 - OpenCV webcam integration
 - Face and eye detection
-- Chess board coordinate mapping
+- **REQUIREMENT 1**: Dynamic chess board detection and position tracking
 - Basic gaze point calculation
 
-### Phase 2: Move Prediction AI (8 weeks)
+### Phase 2: Visual Feedback System (4 weeks)
+- **REQUIREMENT 2**: Square highlighting in BLUE for 3 seconds
+- **REQUIREMENT 3**: Continuous highlighting for sustained gaze
+- WebSocket integration for real-time highlighting
+- Frontend highlighting animations
+
+### Phase 3: Piece Intention Analysis (6 weeks)
+- **REQUIREMENT 4**: Piece thinking pattern detection
+- User move prediction for white pieces
+- AI move anticipation for black pieces
+- Strategic intention classification
+
+### Phase 4: Move Prediction AI (8 weeks)
 - Neural network architecture
 - Feature extraction pipeline
 - Training data collection
 - Initial model training
 
-### Phase 3: Multi-Agent Integration (6 weeks)
+### Phase 5: Multi-Agent Integration (6 weeks)
 - Parallel AI precomputation
 - Response caching system
 - Performance optimization
 - Integration testing
 
-### Phase 4: Production Features (4 weeks)
+### Phase 6: Production Features (4 weeks)
 - User interface enhancements
 - Privacy controls
 - Performance monitoring
 - Documentation and deployment
 
-**Total Implementation Time**: 24 weeks
+**Total Implementation Time**: 28 weeks
 
 ## User Experience: Unchanged Interaction, Enhanced Performance
 
@@ -1305,7 +1919,39 @@ Result: Normal AI computation (2-3 seconds)
 - **Prediction Errors**: No impact on game validity or user experience
 - **Resource Constraints**: Automatic fallback to essential AIs only
 
-This architecture creates a revolutionary chess experience where eye-tracking enables instant AI responses through predictive multi-agent processing, while preserving the familiar mouse-based interaction model that users expect.
+## New Requirements Implementation Summary
+
+### **REQUIREMENT 1: Dynamic Chess Board Detection**
+- **Implementation**: Enhanced `ChessBoardMapper` with continuous board position tracking
+- **Frequency**: Updates every 500ms to handle browser window movement
+- **Accuracy**: Template matching with 80% confidence threshold
+- **Benefit**: Maintains precise square mapping regardless of browser position
+
+### **REQUIREMENT 2: Blue Square Highlighting (3 seconds)**
+- **Implementation**: WebSocket-based real-time highlighting system
+- **Color**: Blue highlighting via CSS class injection
+- **Duration**: Exactly 3 seconds before automatic revert
+- **Trigger**: Immediate highlighting when gaze focuses on any square
+
+### **REQUIREMENT 3: Sustained Gaze Re-highlighting**
+- **Implementation**: Gaze continuity detection with re-highlighting logic
+- **Behavior**: Re-highlights same square if user continues looking after 3 seconds
+- **Cycle**: Repeatable 3-second highlight cycles for sustained attention
+- **State Management**: Tracks current highlighted square and timing
+
+### **REQUIREMENT 4: Piece Thinking Analysis**
+- **White Pieces**: Predicts user's possible moves when looking at their pieces
+- **Black Pieces**: Anticipates AI's likely moves when user examines AI pieces
+- **Analysis**: `PieceIntentionAnalyzer` determines strategic thinking patterns
+- **Output**: Real-time intention classification and move predictions
+
+### **Integration Benefits**
+- **Precision**: Exact square detection regardless of board position on screen
+- **Visual Feedback**: Immediate blue highlighting confirms gaze tracking accuracy
+- **Strategic Insight**: Understanding user's thought process for both offensive and defensive planning
+- **Enhanced Prediction**: More accurate move prediction based on piece-specific gaze patterns
+
+This architecture creates a revolutionary chess experience where eye-tracking enables instant AI responses through predictive multi-agent processing, while providing precise visual feedback and strategic intention analysis that preserves the familiar mouse-based interaction model users expect.
 
 ## Architectural Review Recommendations and Implementations
 
