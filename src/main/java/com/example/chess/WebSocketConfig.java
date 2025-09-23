@@ -25,19 +25,34 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
+        // Main WebSocket for chess game and control messages
         registry.addEndpoint("/ws")
                 .setAllowedOriginPatterns("http://localhost:*", "https://localhost:*")
                 .withSockJS()
                 .setSessionCookieNeeded(false)
-                .setHeartbeatTime(60000); // Increased to 60 seconds for training
+                .setHeartbeatTime(60000);
+        
+        // Dedicated WebSocket for video frames (high bandwidth)
+        registry.addEndpoint("/ws-video")
+                .setAllowedOriginPatterns("http://localhost:*", "https://localhost:*")
+                .withSockJS()
+                .setSessionCookieNeeded(false)
+                .setHeartbeatTime(30000);
+        
+        // Dedicated WebSocket for calibration data
+        registry.addEndpoint("/ws-calibration")
+                .setAllowedOriginPatterns("http://localhost:*", "https://localhost:*")
+                .withSockJS()
+                .setSessionCookieNeeded(false)
+                .setHeartbeatTime(30000);
     }
     
     @Override
     public void configureWebSocketTransport(WebSocketTransportRegistration registry) {
-        registry.setMessageSizeLimit(512 * 1024) // 512KB max message size for training data
-                .setSendBufferSizeLimit(8 * 1024 * 1024) // 8MB send buffer for training
-                .setSendTimeLimit(60 * 1000) // 60 second send timeout for training
-                .setTimeToFirstMessage(30 * 1000); // 30 second timeout for first message
+        registry.setMessageSizeLimit(1024 * 1024) // 1MB max message size for video frames
+                .setSendBufferSizeLimit(16 * 1024 * 1024) // 16MB send buffer for video
+                .setSendTimeLimit(30 * 1000) // 30 second send timeout
+                .setTimeToFirstMessage(10 * 1000); // 10 second timeout for first message
     }
     
 

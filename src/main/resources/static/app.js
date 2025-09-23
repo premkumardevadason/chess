@@ -3,7 +3,11 @@ let selectedSquare = null;
 let lastMoveTime = 0;
 const MOVE_COOLDOWN = 100; // Prevent rapid-fire moves
 let stompClient = null;
+let videoStompClient = null;
+let calibrationStompClient = null;
 let isConnected = false;
+let isVideoConnected = false;
+let isCalibrationConnected = false;
 
 function loadBoard() {
     if (isConnected && stompClient) {
@@ -443,6 +447,13 @@ function connect() {
         
         // Load initial board state
         loadBoard();
+        
+        // Connect video WebSocket
+        connectVideoWebSocket();
+        
+        // Connect calibration WebSocket
+        connectCalibrationWebSocket();
+        
     }, function(error) {
         console.log('WebSocket connection failed');
         isConnected = false;
@@ -484,6 +495,8 @@ let webcamActive = false;
 let calibrationActive = false;
 let currentPrediction = null;
 let gazeHighlightTimeout = null;
+let videoStream = null;
+let videoElement = null;
 
 // Eye-Tracking Functions
 function toggleWebcam() {
@@ -539,22 +552,79 @@ function declineConsent() {
     updateEyeTrackingUI();
 }
 
-function enableWebcam() {
+async function enableWebcam() {
     if (!eyeTrackingEnabled) return;
     
-    if (isConnected && stompClient) {
-        stompClient.send("/app/eye-tracking/enable", {}, JSON.stringify({
-            sessionId: generateSessionId(),
-            timestamp: Date.now()
-        }));
+    try {
+        // Request webcam access from browser
+        videoStream = await navigator.mediaDevices.getUserMedia({ 
+            video: { 
+                width: { ideal: 640 }, 
+                height: { ideal: 480 },
+                facingMode: 'user'
+            } 
+        });
+        
+        // Create video element if it doesn't exist
+        if (!videoElement) {
+            videoElement = document.createElement('video');
+            videoElement.id = 'eye-tracking-video';
+            videoElement.style.display = 'none'; // Hidden video element
+            videoElement.autoplay = true;
+            videoElement.muted = true;
+            document.body.appendChild(videoElement);
+        }
+        
+        // Set video source to webcam stream
+        videoElement.srcObject = videoStream;
+        
+        // Wait for video to be ready
+        await new Promise((resolve) => {
+            videoElement.onloadedmetadata = () => {
+                videoElement.play();
+                resolve();
+            };
+        });
+        
+        // Send enable message to backend
+        if (isConnected && stompClient) {
+            stompClient.send("/app/eye-tracking/enable", {}, JSON.stringify({
+                sessionId: generateSessionId(),
+                timestamp: Date.now(),
+                videoWidth: videoElement.videoWidth,
+                videoHeight: videoElement.videoHeight
+            }));
+        }
+        
+        webcamActive = true;
+        updateEyeTrackingUI();
+        console.log('Webcam enabled for eye-tracking:', videoElement.videoWidth + 'x' + videoElement.videoHeight);
+        
+        // Don't start video capture immediately - wait for user action
+        console.log('Webcam ready - video capture will start after calibration or user interaction');
+        
+    } catch (error) {
+        console.error('Failed to access webcam:', error);
+        alert('Failed to access webcam. Please ensure you have granted camera permissions and your camera is not being used by another application.');
+        webcamActive = false;
+        updateEyeTrackingUI();
     }
-    
-    webcamActive = true;
-    updateEyeTrackingUI();
-    console.log('Webcam enabled for eye-tracking');
 }
 
 function disableWebcam() {
+    // Stop video stream
+    if (videoStream) {
+        videoStream.getTracks().forEach(track => track.stop());
+        videoStream = null;
+    }
+    
+    // Remove video element
+    if (videoElement) {
+        videoElement.remove();
+        videoElement = null;
+    }
+    
+    // Send disable message to backend
     if (isConnected && stompClient) {
         stompClient.send("/app/eye-tracking/disable", {}, JSON.stringify({
             sessionId: generateSessionId(),
@@ -620,14 +690,26 @@ function startCalibrationSequence() {
         
         document.body.appendChild(calibrationPoint);
         
-        // Send calibration data to backend
-        if (isConnected && stompClient) {
-            stompClient.send("/app/eye-tracking/calibration", {}, JSON.stringify({
-                point: currentPoint,
-                x: point.x,
-                y: point.y,
-                timestamp: Date.now()
-            }));
+        // Capture actual gaze data during calibration
+        if (isConnected && stompClient && videoElement) {
+            // Capture current video frame for gaze analysis
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = videoElement.videoWidth;
+            canvas.height = videoElement.videoHeight;
+            ctx.drawImage(videoElement, 0, 0);
+            const frameData = canvas.toDataURL('image/jpeg', 0.8);
+            
+            // Send calibration point via dedicated calibration WebSocket
+            if (isCalibrationConnected && calibrationStompClient) {
+                calibrationStompClient.send("/app/eye-tracking/calibration", {}, JSON.stringify({
+                    point: currentPoint,
+                    screenX: point.x,
+                    screenY: point.y,
+                    frameData: frameData,
+                    timestamp: Date.now()
+                }));
+            }
         }
         
         currentPoint++;
@@ -655,6 +737,12 @@ function finishCalibration() {
     
     console.log('Calibration completed');
     updateEyeTrackingUI();
+    
+    // Now start video frame capture after calibration is done
+    setTimeout(() => {
+        startVideoFrameCapture();
+        console.log('Started video frame capture at 30 FPS after calibration');
+    }, 1000);
 }
 
 function showPrivacySettings() {
@@ -695,6 +783,42 @@ function updateEyeTrackingUI() {
     if (calibrationBtn) {
         calibrationBtn.disabled = !webcamActive; // Only require webcam to be active
     }
+}
+
+// Manual function to start video capture (for users who skip calibration)
+function startEyeTracking() {
+    if (webcamActive && !calibrationActive) {
+        startVideoFrameCapture();
+        console.log('Started video frame capture at 30 FPS (manual start)');
+    }
+}
+
+// Connect video WebSocket
+function connectVideoWebSocket() {
+    const videoSocket = new SockJS('/ws-video');
+    videoStompClient = Stomp.over(() => videoSocket);
+    
+    videoStompClient.connect({}, function (frame) {
+        console.log('Video WebSocket connected');
+        isVideoConnected = true;
+    }, function(error) {
+        console.log('Video WebSocket connection failed');
+        isVideoConnected = false;
+    });
+}
+
+// Connect calibration WebSocket
+function connectCalibrationWebSocket() {
+    const calibrationSocket = new SockJS('/ws-calibration');
+    calibrationStompClient = Stomp.over(() => calibrationSocket);
+    
+    calibrationStompClient.connect({}, function (frame) {
+        console.log('Calibration WebSocket connected');
+        isCalibrationConnected = true;
+    }, function(error) {
+        console.log('Calibration WebSocket connection failed');
+        isCalibrationConnected = false;
+    });
 }
 
 function highlightSquare(square) {
@@ -757,6 +881,76 @@ function squareNotationToCoords(square) {
 
 function generateSessionId() {
     return 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+}
+
+// Video frame capture for eye-tracking analysis
+function startVideoFrameCapture() {
+    if (!webcamActive || !videoElement) {
+        console.log('Cannot start frame capture: webcamActive=' + webcamActive + ', videoElement=' + !!videoElement);
+        return;
+    }
+    
+    console.log('Starting video frame capture...');
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    let frameCount = 0;
+    let sending = false; // Prevent frame queue buildup
+    
+    function captureFrame() {
+        if (!webcamActive || !videoElement) {
+            console.log('Stopping frame capture: webcamActive=' + webcamActive + ', videoElement=' + !!videoElement);
+            return;
+        }
+        
+        // Check WebSocket connection
+        if (!isConnected || !stompClient) {
+            console.log('WebSocket disconnected, stopping frame capture');
+            return;
+        }
+        
+        // Set canvas size to match video
+        canvas.width = videoElement.videoWidth || 640;
+        canvas.height = videoElement.videoHeight || 480;
+        
+        // Draw current video frame to canvas
+        ctx.drawImage(videoElement, 0, 0);
+        
+        // Convert to base64 image data
+        const imageData = canvas.toDataURL('image/jpeg', 0.8);
+        
+        // Send frame via dedicated video WebSocket
+        if (!sending && isVideoConnected && videoStompClient) {
+            sending = true;
+            try {
+                videoStompClient.send("/app/eye-tracking/frame", {}, JSON.stringify({
+                    sessionId: generateSessionId(),
+                    imageData: imageData,
+                    timestamp: Date.now(),
+                    width: canvas.width,
+                    height: canvas.height
+                }));
+                
+                frameCount++;
+                if (frameCount % 30 === 0) { // Log every second
+                    console.log('Sent frame #' + frameCount + ' (' + canvas.width + 'x' + canvas.height + ') size: ' + Math.round(imageData.length/1024) + 'KB');
+                }
+                
+                // Reset sending flag after a short delay
+                setTimeout(() => { sending = false; }, 10);
+                
+            } catch (error) {
+                console.error('Failed to send frame:', error);
+                sending = false;
+                return;
+            }
+        }
+        
+        // Capture next frame (30 FPS for eye-tracking)
+        setTimeout(captureFrame, 33);
+    }
+    
+    // Start capturing frames
+    captureFrame();
 }
 
 // Override newGame to disable webcam on reset

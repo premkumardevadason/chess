@@ -73,10 +73,15 @@ public class EyeTrackingService {
             }
             
             // Initialize camera
+            logger.info("Attempting to open camera device: {}", cameraDevice);
             camera = new VideoCapture(cameraDevice);
             if (!camera.isOpened()) {
-                logger.warn("Could not open camera device: {}", cameraDevice);
+                logger.error("WEBCAM FAILED: Could not open camera device: {}", cameraDevice);
+                logger.error("WEBCAM STATUS: Camera is NOT working - running in simulation mode");
                 return;
+            } else {
+                logger.info("WEBCAM SUCCESS: Camera device {} opened successfully", cameraDevice);
+                logger.info("WEBCAM STATUS: Camera is working and ready for capture");
             }
             
             // Initialize face detector
@@ -123,9 +128,20 @@ public class EyeTrackingService {
             throw new SecurityException("Valid consent required for webcam access");
         }
         
+        // Check if camera was properly initialized
+        if (camera == null) {
+            logger.error("WEBCAM ERROR: Camera object is null - initialization failed");
+            return;
+        }
+        
+        if (!camera.isOpened()) {
+            logger.error("WEBCAM ERROR: Camera device {} is not opened", cameraDevice);
+            return;
+        }
+        
         webcamEnabled = true;
         privacyService.logAccess(sessionId, "WEBCAM_ENABLED");
-        logger.info("Webcam enabled for eye-tracking with user consent");
+        logger.info("WEBCAM ACTIVE: Physical webcam enabled for eye-tracking with user consent");
     }
     
     public void disableWebcam() {

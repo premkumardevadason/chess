@@ -169,13 +169,60 @@
             updateEyeTrackingUI();
         }
         
-        function enableWebcam() {
-            webcamActive = true;
-            updateEyeTrackingUI();
-            console.log('Webcam enabled for eye-tracking');
+        async function enableWebcam() {
+            try {
+                // Request webcam access from browser
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { 
+                        width: { ideal: 640 }, 
+                        height: { ideal: 480 },
+                        facingMode: 'user'
+                    } 
+                });
+                
+                // Create video element for testing
+                let videoElement = document.getElementById('test-video');
+                if (!videoElement) {
+                    videoElement = document.createElement('video');
+                    videoElement.id = 'test-video';
+                    videoElement.style.width = '320px';
+                    videoElement.style.height = '240px';
+                    videoElement.style.border = '2px solid #007bff';
+                    videoElement.autoplay = true;
+                    videoElement.muted = true;
+                    
+                    // Add video to test section
+                    const testSection = document.querySelector('.test-section:last-child');
+                    testSection.appendChild(document.createElement('br'));
+                    testSection.appendChild(document.createElement('br'));
+                    testSection.appendChild(document.createTextNode('Live Webcam Feed:'));
+                    testSection.appendChild(document.createElement('br'));
+                    testSection.appendChild(videoElement);
+                }
+                
+                // Set video source to webcam stream
+                videoElement.srcObject = stream;
+                
+                webcamActive = true;
+                updateEyeTrackingUI();
+                console.log('Webcam enabled for eye-tracking:', videoElement.videoWidth + 'x' + videoElement.videoHeight);
+                
+            } catch (error) {
+                console.error('Failed to access webcam:', error);
+                alert('Failed to access webcam. Please ensure you have granted camera permissions.');
+                webcamActive = false;
+                updateEyeTrackingUI();
+            }
         }
         
         function disableWebcam() {
+            // Stop video stream
+            const videoElement = document.getElementById('test-video');
+            if (videoElement && videoElement.srcObject) {
+                videoElement.srcObject.getTracks().forEach(track => track.stop());
+                videoElement.remove();
+            }
+            
             webcamActive = false;
             updateEyeTrackingUI();
             console.log('Webcam disabled');
