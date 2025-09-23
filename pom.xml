@@ -49,6 +49,28 @@
             <artifactId>deeplearning4j-core</artifactId>
             <version>1.0.0-beta7</version>
         </dependency>
+        
+        <!-- Eye-Tracking Dependencies -->
+        <!-- OpenCV for computer vision -->
+        <dependency>
+            <groupId>org.openpnp</groupId>
+            <artifactId>opencv</artifactId>
+            <version>4.9.0-0</version>
+        </dependency>
+
+        <!-- JavaCV for video processing -->
+        <dependency>
+            <groupId>org.bytedeco</groupId>
+            <artifactId>javacv-platform</artifactId>
+            <version>1.5.9</version>
+        </dependency>
+
+        <!-- MediaPipe for face detection -->
+        <dependency>
+            <groupId>com.google.mediapipe</groupId>
+            <artifactId>mediapipe_java</artifactId>
+            <version>0.10.7</version>
+        </dependency>
         <dependency>
             <groupId>org.nd4j</groupId>
             <artifactId>nd4j-native-platform</artifactId>

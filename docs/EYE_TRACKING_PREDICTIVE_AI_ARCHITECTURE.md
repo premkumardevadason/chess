@@ -13,6 +13,9 @@ This document outlines the integration of eye-tracking technology with the Chess
 - **AI Training**: Webcam automatically disabled during AI self-training
 - **Game Reset**: Webcam immediately OFF when user clicks "New Game" or "Reset Game"
 - **Data Flow**: Gaze data sent to backend only when webcam is ON
+- **Privacy Compliance**: Explicit user consent required before webcam activation
+- **Data Encryption**: All gaze data encrypted in transit and at rest
+- **Audit Logging**: Complete audit trail of webcam access and data collection
 
 ### **Target Interface: Original Thymeleaf Chess Board**
 
@@ -42,16 +45,21 @@ Traditional Flow:
 User Mouse Click → AI Thinks (2-5s) → AI Response
 
 Predictive Flow:
-User Gaze → Predict Move (70% confidence) → All 12 AIs Pre-compute → User Mouse Click → Instant Response (<100ms)
+User Gaze → Predict Move (70% confidence) → Selected AIs Pre-compute → User Mouse Click → Fast Response (<500ms)
 ```
+
+**REVISED PERFORMANCE TARGETS:**
+- **Prediction Hit Response**: <500ms (realistic for precomputed responses)
+- **Prediction Miss Response**: 3-5s (normal AI computation)
+- **Eye Tracking Latency**: <100ms (processing overhead)
+- **Board Detection**: <200ms (optimized template matching)
 
 ### 2. **Multi-Agent Parallel Processing**
 When eye-tracking predicts a move with 70%+ confidence:
-- **AlphaZero**: Calculates strategic response (0.2s)
-- **Leela Chess Zero**: Computes human-like response (0.3s)
-- **AlphaFold3**: Analyzes tactical patterns (0.4s)
-- **All 12 AIs**: Simultaneously prepare responses
-- **Result**: 95% reduction in response time
+- **Resource-Aware Selection**: Only 6 fastest AIs run concurrently (system load dependent)
+- **Priority AIs**: Negamax, QLearning, MCTS, AlphaZero (always included)
+- **Adaptive Scaling**: Additional AIs added based on available system resources
+- **Result**: 80-90% reduction in response time (realistic target)
 
 ## Development Requirements
 
@@ -64,20 +72,22 @@ git checkout -b VISUAL-CHESS
 git push -u origin VISUAL-CHESS
 ```
 
-### **REQUIREMENT 6: Raw Gaze Data Collection & Backend Training**
+### **REQUIREMENT 6: Privacy-Compliant Gaze Data Collection & Backend Training**
 - **UI Sends**: Raw gaze coordinates, timestamps, user actions via WebSocket
 - **Backend Receives**: Raw data and converts to training features
 - **Training Location**: 100% server-side processing and ML training
 - **Storage Location**: `state/visual-training/` directory
-- **Data Format**: Binary format (.dat) for performance with large datasets
+- **Data Format**: Encrypted binary format (.dat) for performance and security
+- **Privacy Compliance**: GDPR-compliant with user consent, data anonymization, and audit logging
 - **File Structure**:
 ```
 state/
 ├── visual-training/
-│   ├── gaze-patterns.dat
-│   ├── move-predictions.dat
+│   ├── encrypted-gaze-patterns.dat
+│   ├── anonymized-move-predictions.dat
+│   ├── user-consent-records.json
 │   └── user-sessions/
-│       ├── session-{uuid}.dat
+│       ├── session-{anonymized-uuid}.dat
 │       └── ...
 ```
 
@@ -115,13 +125,24 @@ public class EyeTrackingService {
         }
     }
     
-    public void enableWebcam() {
+    public void enableWebcam(String sessionId, boolean userConsent) {
+        if (!userConsent) {
+            throw new SecurityException("User consent required for webcam access");
+        }
+        
+        // Verify consent is still valid
+        if (!consentManager.hasValidConsent(sessionId, ConsentType.GAZE_DATA_COLLECTION)) {
+            throw new SecurityException("Valid consent required for webcam access");
+        }
+        
         webcamEnabled = true;
-        logger.info("Webcam enabled for eye-tracking");
+        auditLogger.logWebcamAccess(sessionId, "ENABLED");
+        logger.info("Webcam enabled for eye-tracking with user consent");
     }
     
     public void disableWebcam() {
         webcamEnabled = false;
+        auditLogger.logWebcamAccess("system", "DISABLED");
         logger.info("Webcam disabled");
     }
     
@@ -213,25 +234,43 @@ public class ChessBoardMapper {
     }
     
     private void detectChessBoard() {
-        // REQUIREMENT 1: Precisely locate chess board anywhere on screen
-        Mat template = Imgcodecs.imread("thymeleaf_chess_board_template.png");
-        Mat screen = captureScreen();
+        // REQUIREMENT 1: Multi-strategy board detection for robustness
+        BoardDetectionResult result = null;
         
-        Mat result = new Mat();
-        Imgproc.matchTemplate(screen, template, result, Imgproc.TM_CCOEFF_NORMED);
+        // Strategy 1: Template matching (primary)
+        try {
+            result = templateMatchingStrategy.detectBoard();
+        } catch (Exception e) {
+            logger.warn("Template matching failed: {}", e.getMessage());
+        }
         
-        Core.MinMaxLocResult mmr = Core.minMaxLoc(result);
-        Point topLeft = mmr.maxLoc;
+        // Strategy 2: ML-based detection (fallback)
+        if (result == null || result.confidence < 0.8) {
+            try {
+                result = mlDetectionStrategy.detectBoard();
+            } catch (Exception e) {
+                logger.warn("ML detection failed: {}", e.getMessage());
+            }
+        }
         
-        // Update chess board position dynamically
-        Rectangle newBounds = new Rectangle(
-            (int)topLeft.x, (int)topLeft.y, 
-            template.cols(), template.rows()
-        );
+        // Strategy 3: Edge detection (last resort)
+        if (result == null || result.confidence < 0.6) {
+            try {
+                result = edgeDetectionStrategy.detectBoard();
+            } catch (Exception e) {
+                logger.warn("Edge detection failed: {}", e.getMessage());
+            }
+        }
         
-        if (!newBounds.equals(chessBoardBounds)) {
-            chessBoardBounds = newBounds;
-            logger.info("Chess board position updated: {}", chessBoardBounds);
+        if (result != null && result.confidence > 0.6) {
+            Rectangle newBounds = result.bounds;
+            if (!newBounds.equals(chessBoardBounds)) {
+                chessBoardBounds = newBounds;
+                logger.info("Chess board position updated: {} (confidence: {})", 
+                    chessBoardBounds, result.confidence);
+            }
+        } else {
+            logger.warn("All board detection strategies failed, using cached position");
         }
     }
     
@@ -759,10 +798,10 @@ public class MovePredictionAI {
                 .activation(Activation.RELU)
                 .dropOut(0.3)
                 .build())
-            // Output layer: Move probabilities
+            // Output layer: Legal move probabilities only (not all possible moves)
             .layer(new OutputLayer.Builder(LossFunctions.LossFunction.NEGATIVELOGLIKELIHOOD)
                 .nIn(256)
-                .nOut(4096)
+                .nOut(50)  // Maximum legal moves in chess (typically 20-40)
                 .activation(Activation.SOFTMAX)
                 .build())
             .build();
@@ -848,8 +887,12 @@ public class MultiAgentPrecomputationService {
     @Autowired private AlphaFold3AI alphaFold3AI;
     @Autowired private AsynchronousAdvantageActorCriticAI a3cAI;
     
-    // Thread pool for parallel computation
-    private ExecutorService aiExecutor = Executors.newFixedThreadPool(12);
+    // Dynamic thread pool with work-stealing for better resource utilization
+    private ExecutorService aiExecutor = Executors.newWorkStealingPool();
+    
+    // Resource monitoring and management
+    private ResourceMonitor resourceMonitor = new ResourceMonitor();
+    private CircuitBreaker circuitBreaker = new CircuitBreaker();
     
     // Cache for pre-computed responses
     private Map<String, Map<String, PrecomputedResponse>> responseCache = new ConcurrentHashMap<>();
@@ -861,6 +904,12 @@ public class MultiAgentPrecomputationService {
     
     public void preComputeAllResponses(String predictedMove, String currentPosition) {
         synchronized (computationLock) {
+            // Check system resources before starting computation
+            if (!canStartNewComputation()) {
+                logger.warn("System resources insufficient, skipping precomputation for: {}", predictedMove);
+                return;
+            }
+            
             // Cancel previous computation if different move predicted
             if (activeComputation != null && !predictedMove.equals(currentPredictedMove)) {
                 logger.info("Canceling previous precomputation for: {} (new: {})", 
@@ -883,9 +932,16 @@ public class MultiAgentPrecomputationService {
             currentPredictedMove = predictedMove;
             Map<String, PrecomputedResponse> responses = new ConcurrentHashMap<>();
             
-            // Create cancellable AI computation tasks
-            activeComputation = startCancellableComputation(predictedMove, responses, cacheKey);
+            // Create resource-aware AI computation tasks
+            activeComputation = startResourceAwareComputation(predictedMove, responses, cacheKey);
         }
+    }
+    
+    private boolean canStartNewComputation() {
+        return circuitBreaker.isOpen() && 
+               resourceMonitor.getCpuUsage() < 0.8 && 
+               resourceMonitor.getMemoryUsage() < 0.8 &&
+               getActiveComputationCount() < 6; // Max 6 concurrent AIs
     }
     
     private CompletableFuture<Void> startCancellableComputation(
@@ -1798,6 +1854,52 @@ public class ChessGame {
 }
 ```
 
+## Privacy and Security Requirements
+
+### **GDPR Compliance**
+- **User Consent**: Explicit consent required before webcam activation
+- **Data Minimization**: Only collect necessary gaze data for prediction
+- **Encryption**: All sensitive data encrypted at rest and in transit
+- **Right to Erasure**: Users can request complete data deletion
+- **Data Portability**: Users can export their anonymized data
+- **Audit Trail**: Complete logging of all data processing activities
+
+### **Data Protection Implementation**
+```java
+@Service
+public class PrivacyCompliantDataCollectionService {
+    
+    @Autowired
+    private EncryptionService encryptionService;
+    
+    @Autowired
+    private ConsentManager consentManager;
+    
+    @Autowired
+    private DataRetentionManager retentionManager;
+    
+    public void collectGazeData(String sessionId, RawGazeData rawData) {
+        // 1. Verify user consent
+        if (!consentManager.hasConsent(sessionId, ConsentType.GAZE_DATA_COLLECTION)) {
+            logger.warn("Gaze data collection attempted without consent for session: {}", sessionId);
+            return;
+        }
+        
+        // 2. Anonymize data immediately
+        AnonymizedGazeData anonymizedData = anonymizeGazeData(rawData);
+        
+        // 3. Encrypt sensitive data
+        EncryptedGazeData encryptedData = encryptionService.encrypt(anonymizedData);
+        
+        // 4. Store with retention policy
+        String dataId = storeWithRetention(encryptedData, sessionId);
+        
+        // 5. Log data processing
+        auditLogger.logDataCollection(sessionId, dataId, rawData.getTimestamp());
+    }
+}
+```
+
 ## Configuration Properties
 
 ```properties
@@ -1860,6 +1962,16 @@ chess.eyetracking.training.bidirectional=true
 chess.eyetracking.data.retention.days=7
 chess.eyetracking.auto.delete=true
 chess.eyetracking.consent.required=true
+chess.eyetracking.encryption.enabled=true
+chess.eyetracking.audit.logging=true
+chess.eyetracking.gdpr.compliance=true
+chess.eyetracking.data.anonymization=true
+
+# Resource Management
+chess.eyetracking.max.concurrent.ais=6
+chess.eyetracking.cpu.usage.limit=0.8
+chess.eyetracking.memory.usage.limit=0.85
+chess.eyetracking.circuit.breaker.enabled=true
 ```
 
 ## Maven Dependencies
@@ -1889,61 +2001,70 @@ chess.eyetracking.consent.required=true
 
 ## Performance Targets
 
-### Prediction Accuracy
-- **Beginner Players**: 60% accuracy
-- **Intermediate Players**: 70% accuracy  
-- **Expert Players**: 80% accuracy
+### Prediction Accuracy (Realistic Targets)
+- **Beginner Players**: 50% accuracy (simpler, more predictable moves)
+- **Intermediate Players**: 65% accuracy (moderate complexity)
+- **Expert Players**: 75% accuracy (consistent patterns)
 
-### Response Time Improvements
-- **Traditional AI**: 2-5 seconds
-- **Predictive AI**: <100ms (95% improvement)
-- **Total Speedup**: 20-50x faster gameplay
+### Response Time Improvements (Revised)
+- **Traditional AI**: 3-5 seconds
+- **Prediction Hit**: <500ms (80-90% improvement)
+- **Prediction Miss**: 3-5s (normal AI computation)
+- **Eye Tracking Latency**: <100ms
+- **Board Detection**: <200ms
 
-### System Requirements
-- **CPU**: 4+ cores for parallel AI processing
-- **RAM**: 8GB+ for neural networks and caching
+### System Requirements (Updated)
+- **CPU**: 6+ cores for parallel AI processing
+- **RAM**: 12GB+ for LSTM + 6 AIs + caching
 - **GPU**: Optional for accelerated computer vision
 - **Webcam**: 720p+ resolution, 30 FPS
+- **Concurrent AIs**: Maximum 6 (resource-constrained)
 
-## Implementation Timeline
+## Implementation Timeline (Revised)
 
-### Phase 1: Eye Tracking Foundation (6 weeks)
-- OpenCV webcam integration
+### Phase 1: Privacy & Security Foundation (4 weeks)
+- GDPR-compliant data collection system
+- User consent management
+- Data encryption and anonymization
+- Audit logging implementation
+
+### Phase 2: Eye Tracking Foundation (6 weeks)
+- OpenCV webcam integration with consent validation
 - Face and eye detection
-- **REQUIREMENT 1**: Dynamic chess board detection and position tracking
-- Basic gaze point calculation
+- **REQUIREMENT 1**: Multi-strategy board detection
+- Basic gaze point calculation with calibration
 
-### Phase 2: Visual Feedback System (4 weeks)
+### Phase 3: Resource Management (3 weeks)
+- Dynamic thread pools and work-stealing
+- Circuit breaker patterns
+- Resource monitoring and adaptive scaling
+- Performance validation system
+
+### Phase 4: Visual Feedback System (4 weeks)
 - **REQUIREMENT 2**: Square highlighting in BLUE for 3 seconds
 - **REQUIREMENT 3**: Continuous highlighting for sustained gaze
 - WebSocket integration for real-time highlighting
 - Frontend highlighting animations
 
-### Phase 3: Piece Intention Analysis (6 weeks)
-- **REQUIREMENT 4**: Piece thinking pattern detection
-- User move prediction for white pieces
-- AI move anticipation for black pieces
-- Strategic intention classification
+### Phase 5: Optimized Move Prediction AI (6 weeks)
+- Realistic LSTM architecture (50 legal moves max)
+- Enhanced feature extraction pipeline
+- Privacy-compliant training data collection
+- Legal move filtering and validation
 
-### Phase 4: Move Prediction AI (8 weeks)
-- Neural network architecture
-- Feature extraction pipeline
-- Training data collection
-- Initial model training
-
-### Phase 5: Multi-Agent Integration (6 weeks)
-- Parallel AI precomputation
-- Response caching system
-- Performance optimization
+### Phase 6: Multi-Agent Integration (5 weeks)
+- Resource-aware AI precomputation (max 6 AIs)
+- Response caching with eviction policies
+- Performance optimization and monitoring
 - Integration testing
 
-### Phase 6: Production Features (4 weeks)
+### Phase 7: Production Features (4 weeks)
 - User interface enhancements
-- Privacy controls
-- Performance monitoring
+- Comprehensive error handling
+- Performance monitoring dashboard
 - Documentation and deployment
 
-**Total Implementation Time**: 28 weeks
+**Total Implementation Time**: 32 weeks (increased due to privacy and resource management requirements)
 
 ## User Experience: Unchanged Interaction, Enhanced Performance
 
