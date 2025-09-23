@@ -2,7 +2,16 @@
 
 ## Executive Summary
 
+**KEY REQUIREMENT**: Webcam eye-tracking is **ONLY enabled during user vs AI gameplay**. When AI systems are self-training, the webcam remains OFF to preserve system resources and privacy.
+
 This document outlines the integration of eye-tracking technology with the Chess application's 12 AI systems to create a **Predictive Multi-Agent Chess Engine**. By analyzing user eye movements and gaze patterns, the system will anticipate user moves 2-5 seconds in advance, enabling all AI agents to pre-compute optimal responses.
+
+### **Webcam Control Requirements**
+- **Default State**: Webcam OFF (user must manually enable)
+- **Manual Control**: UI button to start/stop webcam
+- **User Games Only**: Webcam enabled only during human vs AI games
+- **AI Training**: Webcam automatically disabled during AI self-training
+- **Data Flow**: Gaze data sent to backend only when webcam is ON
 
 ### **Target Interface: Original Thymeleaf Chess Board**
 
@@ -88,13 +97,43 @@ public class EyeTrackingService {
     private FaceMeshDetector faceMesh;
     private EyeLandmarkDetector eyeDetector;
     
-    // Real-time processing
+    private volatile boolean webcamEnabled = false;
+    private volatile boolean userGameActive = false;
+    
+    // Real-time processing - ONLY during user games with webcam ON
     @Scheduled(fixedRate = 33) // 30 FPS
     public void captureAndAnalyze() {
+        // KEY REQUIREMENT: Only capture during user games with webcam enabled
+        if (!webcamEnabled || !userGameActive || isAITraining()) {
+            return; // Skip capture during AI training or when webcam disabled
+        }
+        
         camera.read(frame);
         if (!frame.empty()) {
             processFrame(frame);
         }
+    }
+    
+    public void enableWebcam() {
+        webcamEnabled = true;
+        logger.info("Webcam enabled for eye-tracking");
+    }
+    
+    public void disableWebcam() {
+        webcamEnabled = false;
+        logger.info("Webcam disabled");
+    }
+    
+    public void setUserGameActive(boolean active) {
+        userGameActive = active;
+        if (!active) {
+            disableWebcam(); // Auto-disable when not in user game
+        }
+    }
+    
+    private boolean isAITraining() {
+        // Check if any AI system is currently training
+        return trainingManager.isAnyAITraining();
     }
     
     private void processFrame(Mat frame) {
@@ -491,9 +530,28 @@ public class VisualTrainingDataManager {
 ### 4. **WebSocket Visual Training Handler**
 
 ```java
+@MessageMapping("/webcamControl")
+public void handleWebcamControl(@Payload Map<String, Object> controlData) {
+    // Handle webcam start/stop from UI button
+    Boolean enable = (Boolean) controlData.get("enable");
+    String sessionId = (String) controlData.get("sessionId");
+    
+    if (enable && isUserGameActive()) {
+        eyeTrackingService.enableWebcam();
+        sendWebcamStatus(sessionId, true, "Webcam enabled for eye-tracking");
+    } else {
+        eyeTrackingService.disableWebcam();
+        sendWebcamStatus(sessionId, false, "Webcam disabled");
+    }
+}
+
 @MessageMapping("/rawGazeData")
 public void handleRawGazeData(@Payload Map<String, Object> rawData) {
-    // REQUIREMENT 6: Receive RAW gaze data from UI (not processed training data)
+    // REQUIREMENT 6: Receive RAW gaze data ONLY when webcam is enabled
+    if (!eyeTrackingService.isWebcamEnabled()) {
+        return; // Ignore gaze data when webcam is disabled
+    }
+    
     String sessionId = (String) rawData.get("sessionId");
     Double gazeX = (Double) rawData.get("gazeX");
     Double gazeY = (Double) rawData.get("gazeY");
@@ -1725,6 +1783,9 @@ public class ChessGame {
 ```properties
 # Eye Tracking Configuration
 chess.eyetracking.enabled=false
+chess.eyetracking.default.webcam.on=false
+chess.eyetracking.user.games.only=true
+chess.eyetracking.disable.during.ai.training=true
 chess.eyetracking.camera.device=0
 chess.eyetracking.fps=30
 chess.eyetracking.prediction.confidence.threshold=0.7
