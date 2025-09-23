@@ -758,9 +758,9 @@ function finishCalibration() {
     if (overlay) overlay.remove();
     if (point) point.remove();
     
-    // Send calibration complete to backend
-    if (isConnected && stompClient) {
-        stompClient.send("/app/eye-tracking/calibration-complete", {}, JSON.stringify({
+    // Send calibration complete to backend via calibration WebSocket
+    if (isCalibrationConnected && calibrationStompClient && calibrationStompClient.connected) {
+        calibrationStompClient.send("/app/eye-tracking/calibration-complete", {}, JSON.stringify({
             timestamp: Date.now()
         }));
     }

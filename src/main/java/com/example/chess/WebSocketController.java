@@ -711,62 +711,7 @@ public class WebSocketController {
         }
     }
     
-    @MessageMapping("/eye-tracking/calibration")
-    public void handleCalibration(CalibrationMessage calibrationMessage) {
-        try {
-            System.out.println("Calibration point " + calibrationMessage.point + " at (" + 
-                calibrationMessage.screenX + ", " + calibrationMessage.screenY + ")");
-            
-            // TODO: Process actual video frame for gaze detection
-            // byte[] frameBytes = Base64.getDecoder().decode(calibrationMessage.frameData.split(",")[1]);
-            // Point2D gazePoint = eyeTrackingService.detectGazeInFrame(frameBytes);
-            // calibrationService.addCalibrationPoint(calibrationMessage.screenX, calibrationMessage.screenY, gazePoint);
-            
-            System.out.println("Received calibration frame data: " + 
-                (calibrationMessage.frameData != null ? "Present" : "Missing"));
-            
-        } catch (Exception e) {
-            System.err.println("Error handling calibration: " + e.getMessage());
-        }
-    }
     
-    @MessageMapping("/eye-tracking/calibration-complete")
-    public void handleCalibrationComplete(CalibrationCompleteMessage completeMessage) {
-        try {
-            System.out.println("Calibration completed at: " + completeMessage.timestamp);
-            
-            // Send completion status to frontend
-            if (messagingTemplate != null) {
-                messagingTemplate.convertAndSend("/topic/eyeTrackingStatus", 
-                    new EyeTrackingStatusMessage(true, "Calibration completed"));
-            }
-        } catch (Exception e) {
-            System.err.println("Error handling calibration completion: " + e.getMessage());
-        }
-    }
-    
-    @MessageMapping("/eye-tracking/frame")
-    public void handleVideoFrame(VideoFrameMessage frameMessage) {
-        try {
-            // Process video frame for eye-tracking analysis
-            System.out.println("[FRAME] Received video frame: " + frameMessage.width + "x" + frameMessage.height + 
-                " from session: " + frameMessage.sessionId + " at " + frameMessage.timestamp);
-            
-            // Log frame data size for debugging
-            if (frameMessage.imageData != null) {
-                System.out.println("[FRAME] Frame data size: " + frameMessage.imageData.length() + " characters");
-            } else {
-                System.out.println("[FRAME] WARNING: No frame data received");
-            }
-            
-            // TODO: Integrate with EyeTrackingService to process the frame
-            // For now, just acknowledge receipt
-            
-        } catch (Exception e) {
-            System.err.println("[FRAME] Error processing video frame: " + e.getMessage());
-            e.printStackTrace();
-        }
-    }
     
     // Eye-Tracking Message Classes
     public static class ConsentMessage {
@@ -785,25 +730,7 @@ public class WebSocketController {
         public long timestamp;
     }
     
-    public static class CalibrationMessage {
-        public int point;
-        public String screenX;
-        public String screenY;
-        public String frameData; // Base64 encoded video frame
-        public long timestamp;
-    }
     
-    public static class CalibrationCompleteMessage {
-        public long timestamp;
-    }
-    
-    public static class VideoFrameMessage {
-        public String sessionId;
-        public String imageData; // Base64 encoded image
-        public long timestamp;
-        public int width;
-        public int height;
-    }
     
     public static class EyeTrackingStatusMessage {
         public boolean webcamEnabled;

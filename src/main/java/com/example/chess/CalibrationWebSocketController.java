@@ -2,6 +2,7 @@ package com.example.chess;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.messaging.handler.annotation.MessageMapping;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
 import com.example.chess.service.CalibrationService;
 import com.example.chess.service.EyeTrackingService;
@@ -18,6 +19,9 @@ public class CalibrationWebSocketController {
     
     @Autowired
     private EyeTrackingService eyeTrackingService;
+    
+    @Autowired
+    private SimpMessagingTemplate messagingTemplate;
     
     @MessageMapping("/eye-tracking/calibration")
     public void handleCalibration(CalibrationMessage calibrationMessage) {
@@ -47,11 +51,43 @@ public class CalibrationWebSocketController {
         }
     }
     
+    @MessageMapping("/eye-tracking/calibration-complete")
+    public void handleCalibrationComplete(CalibrationCompleteMessage completeMessage) {
+        try {
+            System.out.println("[CALIBRATION] Calibration completed at: " + completeMessage.timestamp);
+            
+            // Complete the calibration session
+            calibrationService.completeCalibration("calibration-session");
+            
+            // Send completion status to frontend
+            if (messagingTemplate != null) {
+                messagingTemplate.convertAndSend("/topic/eyeTrackingStatus", 
+                    new EyeTrackingStatusMessage(true, "Calibration completed"));
+            }
+        } catch (Exception e) {
+            System.err.println("[CALIBRATION] Error handling calibration completion: " + e.getMessage());
+        }
+    }
+    
     public static class CalibrationMessage {
         public int point;
         public String screenX;
         public String screenY;
         public String frameData;
         public long timestamp;
+    }
+    
+    public static class CalibrationCompleteMessage {
+        public long timestamp;
+    }
+    
+    public static class EyeTrackingStatusMessage {
+        public boolean enabled;
+        public String message;
+        
+        public EyeTrackingStatusMessage(boolean enabled, String message) {
+            this.enabled = enabled;
+            this.message = message;
+        }
     }
 }
