@@ -6,13 +6,8 @@ import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBr
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
 import org.springframework.web.socket.config.annotation.WebSocketTransportRegistration;
-import org.springframework.messaging.simp.config.ChannelRegistration;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.socket.server.support.DefaultHandshakeHandler;
 
-/**
- * WebSocket configuration with security and performance optimizations.
- * Supports real-time chess gameplay and AI training visualization.
- */
 @Configuration
 @EnableWebSocketMessageBroker
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
@@ -25,35 +20,24 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
-        // Main WebSocket for chess game and control messages
+        // Single WebSocket for all communication
         registry.addEndpoint("/ws")
                 .setAllowedOriginPatterns("http://localhost:*", "https://localhost:*")
                 .withSockJS()
                 .setSessionCookieNeeded(false)
                 .setHeartbeatTime(60000);
         
-        // Dedicated WebSocket for video frames (high bandwidth)
-        registry.addEndpoint("/ws-video")
+        // Binary WebSocket for large data (calibration/video frames)
+        registry.addEndpoint("/ws-binary")
                 .setAllowedOriginPatterns("http://localhost:*", "https://localhost:*")
-                .withSockJS()
-                .setSessionCookieNeeded(false)
-                .setHeartbeatTime(30000);
-        
-        // Dedicated WebSocket for calibration data
-        registry.addEndpoint("/ws-calibration")
-                .setAllowedOriginPatterns("http://localhost:*", "https://localhost:*")
-                .withSockJS()
-                .setSessionCookieNeeded(false)
-                .setHeartbeatTime(30000);
+                .setHandshakeHandler(new DefaultHandshakeHandler());
     }
     
     @Override
     public void configureWebSocketTransport(WebSocketTransportRegistration registry) {
-        registry.setMessageSizeLimit(10 * 1024 * 1024) // 10MB max message size for calibration data
-                .setSendBufferSizeLimit(32 * 1024 * 1024) // 32MB send buffer for large data
-                .setSendTimeLimit(60 * 1000) // 60 second send timeout for calibration
-                .setTimeToFirstMessage(15 * 1000); // 15 second timeout for first message
+        registry.setMessageSizeLimit(10 * 1024 * 1024)
+                .setSendBufferSizeLimit(32 * 1024 * 1024)
+                .setSendTimeLimit(60 * 1000)
+                .setTimeToFirstMessage(15 * 1000);
     }
-    
-
 }
