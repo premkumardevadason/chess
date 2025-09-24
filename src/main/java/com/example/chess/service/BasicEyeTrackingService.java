@@ -183,15 +183,21 @@ public class BasicEyeTrackingService {
                 } else {
                     logger.warn("*** NO FACES DETECTED in {}x{} frame after all strategies ***", width, height);
                     // Use center-point fallback when no face detected
-                    Point2D centerPoint = new Point2D.Double(width / 2.0, height / 2.0);
-                    logger.debug("Using center fallback: ({}, {})", centerPoint.getX(), centerPoint.getY());
-                    return centerPoint;
+                    Point2D videoCenterPoint = new Point2D.Double(width / 2.0, height / 2.0);
+                    Point2D screenCenterPoint = transformVideoToScreen(videoCenterPoint);
+                    logger.debug("Using center fallback: video=({}, {}) -> screen=({}, {})", 
+                        String.format("%.1f", videoCenterPoint.getX()), String.format("%.1f", videoCenterPoint.getY()),
+                        String.format("%.1f", screenCenterPoint.getX()), String.format("%.1f", screenCenterPoint.getY()));
+                    return screenCenterPoint;
                 }
             } else {
                 logger.warn("*** FACE DETECTOR IS NULL - using center fallback ***");
-                Point2D centerPoint = new Point2D.Double(width / 2.0, height / 2.0);
-                logger.info("Using center-point fallback: ({}, {})", centerPoint.getX(), centerPoint.getY());
-                return centerPoint;
+                Point2D videoCenterPoint = new Point2D.Double(width / 2.0, height / 2.0);
+                Point2D screenCenterPoint = transformVideoToScreen(videoCenterPoint);
+                logger.info("Using center-point fallback: video=({}, {}) -> screen=({}, {})", 
+                    String.format("%.1f", videoCenterPoint.getX()), String.format("%.1f", videoCenterPoint.getY()),
+                    String.format("%.1f", screenCenterPoint.getX()), String.format("%.1f", screenCenterPoint.getY()));
+                return screenCenterPoint;
             }
             
         } catch (Exception e) {
@@ -318,35 +324,63 @@ public class BasicEyeTrackingService {
             return null;
         }
         
+        // Transform from video coordinates (320x240) to screen coordinates
+        Point2D screenGaze = transformVideoToScreen(currentGaze);
+        
         long currentTime = System.currentTimeMillis();
         
         // If no previous gaze, use current
         if (lastStableGaze == null) {
-            lastStableGaze = currentGaze;
+            lastStableGaze = screenGaze;
             lastGazeTime = currentTime;
-            return currentGaze;
+            logger.debug("First gaze point: video=({}, {}) -> screen=({}, {})", 
+                String.format("%.1f", currentGaze.getX()), String.format("%.1f", currentGaze.getY()),
+                String.format("%.1f", screenGaze.getX()), String.format("%.1f", screenGaze.getY()));
+            return screenGaze;
         }
         
         // Calculate distance from last stable gaze
         double distance = Math.sqrt(
-            Math.pow(currentGaze.getX() - lastStableGaze.getX(), 2) +
-            Math.pow(currentGaze.getY() - lastStableGaze.getY(), 2)
+            Math.pow(screenGaze.getX() - lastStableGaze.getX(), 2) +
+            Math.pow(screenGaze.getY() - lastStableGaze.getY(), 2)
         );
         
         // If movement is small, keep using stable gaze
         if (distance < GAZE_MOVEMENT_THRESHOLD) {
+            logger.debug("Gaze stable: distance={} < threshold={}", String.format("%.1f", distance), GAZE_MOVEMENT_THRESHOLD);
             return lastStableGaze;
         }
         
         // If movement is large, check if it's been stable for threshold time
         if (currentTime - lastGazeTime > GAZE_STABILITY_THRESHOLD) {
-            lastStableGaze = currentGaze;
+            lastStableGaze = screenGaze;
             lastGazeTime = currentTime;
-            return currentGaze;
+            logger.debug("Gaze updated: video=({}, {}) -> screen=({}, {}) distance={}", 
+                String.format("%.1f", currentGaze.getX()), String.format("%.1f", currentGaze.getY()),
+                String.format("%.1f", screenGaze.getX()), String.format("%.1f", screenGaze.getY()),
+                String.format("%.1f", distance));
+            return screenGaze;
         }
         
         // Movement detected but not stable enough yet
+        logger.debug("Gaze movement detected but not stable: distance={}, time_elapsed={}ms", 
+            String.format("%.1f", distance), currentTime - lastGazeTime);
         return lastStableGaze;
+    }
+    
+    /**
+     * Transform coordinates from video frame (320x240) to screen coordinates
+     */
+    private Point2D transformVideoToScreen(Point2D videoPoint) {
+        // Assume screen is 1920x1080 and video is 320x240
+        // Scale factors
+        double scaleX = 1920.0 / 320.0; // 6.0
+        double scaleY = 1080.0 / 240.0; // 4.5
+        
+        double screenX = videoPoint.getX() * scaleX;
+        double screenY = videoPoint.getY() * scaleY;
+        
+        return new Point2D.Double(screenX, screenY);
     }
     
     /**

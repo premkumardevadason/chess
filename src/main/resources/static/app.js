@@ -519,15 +519,15 @@ function startCalibrationSequence() {
         const roundTotal = 64;
         updateCalibrationProgress(currentPoint + 1, 128, `${roundText}: ${point.square} (${roundProgress + 1}/${roundTotal})`);
         
-        // Wait 1.5 seconds for eye saccade before capturing
+        // Wait 2.5 seconds for eye saccade and focusing before capturing
         setTimeout(() => {
             if (isBinaryConnected && videoElement) {
                 sendCalibrationDataBinary(currentPoint, x, y);
             }
-        }, 1500);
+        }, 2500);
         
         currentPoint++;
-        setTimeout(showNextPoint, 3000); // 3 seconds per square
+        setTimeout(showNextPoint, 4000); // 4 seconds per square (2.5s focus + 1.5s buffer)
     }
     
     // Show initial message
