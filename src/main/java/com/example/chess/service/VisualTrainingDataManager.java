@@ -2,6 +2,8 @@ package com.example.chess.service;
 
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import java.io.*;
 import java.nio.file.*;
 import java.util.*;
@@ -12,6 +14,7 @@ import javax.annotation.PostConstruct;
 @Service
 public class VisualTrainingDataManager {
     
+    private static final Logger logger = LoggerFactory.getLogger(VisualTrainingDataManager.class);
     private static final String VISUAL_TRAINING_DIR = "state/visual-training/";
     private static final String USER_SESSIONS_DIR = VISUAL_TRAINING_DIR + "user-sessions/";
     
@@ -25,7 +28,7 @@ public class VisualTrainingDataManager {
         try {
             createDirectoryIfNotExists(VISUAL_TRAINING_DIR);
             createDirectoryIfNotExists(USER_SESSIONS_DIR);
-            System.out.println("Visual training data storage initialized");
+            logger.info("Visual training data storage initialized");
         } catch (Exception e) {
             System.err.println("Error initializing storage: " + e.getMessage());
         }

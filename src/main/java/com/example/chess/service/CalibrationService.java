@@ -1,19 +1,24 @@
 package com.example.chess.service;
 
+import java.awt.geom.Point2D;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
+import javax.annotation.PostConstruct;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import javax.annotation.PostConstruct;
-
-import java.awt.geom.Point2D;
-import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.io.*;
-import java.nio.file.*;
-import java.nio.file.StandardOpenOption;
 
 /**
  * Calibration service for gaze accuracy improvement
@@ -26,9 +31,9 @@ public class CalibrationService {
     private static final Logger logger = LoggerFactory.getLogger(CalibrationService.class);
     
     // Calibration configuration
-    private static final int CALIBRATION_POINTS = 9; // 3x3 grid
+    private static final int CALIBRATION_POINTS = 64; // 8x8 chess board
     private static final double CALIBRATION_ACCURACY_THRESHOLD = 0.8;
-    private static final long CALIBRATION_TIMEOUT_MS = 30000; // 30 seconds per point
+    private static final long CALIBRATION_TIMEOUT_MS = 3000; // 3 seconds per point
     
     @Autowired
     private EyeTrackingService eyeTrackingService;
@@ -45,8 +50,8 @@ public class CalibrationService {
     // Calibration model
     private CalibrationModel calibrationModel = null;
     
-    // Calibration data file path
-    private static final String CALIBRATION_DATA_FILE = "calibration_data.dat";
+    // Global calibration data file path (single user)
+    private static final String CALIBRATION_DATA_FILE = "global_calibration.dat";
     
     @PostConstruct
     public void loadCalibrationData() {
@@ -60,8 +65,8 @@ public class CalibrationService {
                 // Parse and restore calibration model
                 calibrationModel = deserializeCalibrationModel(calibrationJson);
                 if (calibrationModel != null) {
-                    logger.info("Loaded calibration data with accuracy: {:.2f}%", 
-                        calibrationModel.getAccuracy() * 100);
+                    logger.info("Loaded calibration data with accuracy: {}%", 
+                        String.format("%.2f", calibrationModel.getAccuracy() * 100));
                 } else {
                     logger.warn("Failed to parse calibration data, starting fresh");
                 }
@@ -89,24 +94,24 @@ public class CalibrationService {
         }
         
         isCalibrating = true;
-        currentSessionId = sessionId;
+        currentSessionId = "global"; // Single user calibration
         
-        CalibrationSession session = new CalibrationSession(sessionId);
-        activeSessions.put(sessionId, session);
+        CalibrationSession session = new CalibrationSession("global");
+        activeSessions.put("global", session);
         
-        logger.info("Started calibration session: {}", sessionId);
+        logger.info("Started global calibration session");
         return session;
     }
     
     /**
-     * Record calibration data for a specific point
+     * Record calibration data for a specific chess square
      */
     public void recordCalibrationPoint(String sessionId, int pointIndex, Point2D targetPoint, 
                                      List<Point2D> gazeSamples) {
         try {
-            CalibrationSession session = activeSessions.get(sessionId);
+            CalibrationSession session = activeSessions.get("global");
             if (session == null) {
-                logger.warn("No active calibration session found for: {}", sessionId);
+                logger.warn("No active global calibration session found");
                 return;
             }
             
@@ -122,13 +127,14 @@ public class CalibrationService {
             calibrationPoints.put(pointIndex, calibPoint);
             session.addCalibrationPoint(calibPoint);
             
-            logger.debug("Recorded calibration point {}: target=({:.1f},{:.1f}), gaze=({:.1f},{:.1f})",
-                pointIndex, targetPoint.getX(), targetPoint.getY(),
+            String square = indexToSquare(pointIndex);
+            logger.info("*** CALIBRATION RECEIVED: Square {} (point {}): target=({},{}) gaze=({},{}) ***",
+                square, pointIndex, targetPoint.getX(), targetPoint.getY(),
                 averageGaze.getX(), averageGaze.getY());
             
             // Check if calibration is complete
             if (session.getCalibrationPoints().size() >= CALIBRATION_POINTS) {
-                completeCalibration(sessionId);
+                completeCalibration("global");
             }
             
         } catch (Exception e) {
@@ -141,7 +147,7 @@ public class CalibrationService {
      */
     public CalibrationResult completeCalibration(String sessionId) {
         try {
-            CalibrationSession session = activeSessions.get(sessionId);
+            CalibrationSession session = activeSessions.get("global");
             if (session == null) {
                 throw new IllegalStateException("No active calibration session found");
             }
@@ -154,19 +160,18 @@ public class CalibrationService {
             
             // Create result
             CalibrationResult result = new CalibrationResult(
-                sessionId, accuracy, calibrationModel, session.getCalibrationPoints()
+                "global", accuracy, calibrationModel, session.getCalibrationPoints()
             );
             
             // Store calibration data securely
-            storeCalibrationData(sessionId, result);
+            storeCalibrationData("global", result);
             
             // Clean up
-            activeSessions.remove(sessionId);
+            activeSessions.remove("global");
             isCalibrating = false;
             currentSessionId = null;
             
-            logger.info("Completed calibration session {} with accuracy: {:.2f}%", 
-                sessionId, accuracy * 100);
+            logger.info("Completed global calibration with accuracy: {}%", String.format("%.2f", accuracy * 100));
             
             return result;
             
@@ -182,12 +187,55 @@ public class CalibrationService {
      * Cancel the current calibration
      */
     public void cancelCalibration(String sessionId) {
-        if (currentSessionId != null && currentSessionId.equals(sessionId)) {
-            activeSessions.remove(sessionId);
-            isCalibrating = false;
-            currentSessionId = null;
-            logger.info("Cancelled calibration session: {}", sessionId);
+        activeSessions.remove("global");
+        isCalibrating = false;
+        currentSessionId = null;
+        logger.info("Cancelled global calibration session");
+    }
+    
+    /**
+     * Get chess board calibration sequence (sequential)
+     */
+    public List<String> getSequentialCalibrationOrder() {
+        List<String> sequence = new ArrayList<>();
+        for (int rank = 1; rank <= 8; rank++) {
+            for (char file = 'a'; file <= 'h'; file++) {
+                sequence.add("" + file + rank);
+            }
         }
+        return sequence;
+    }
+    
+    /**
+     * Get chess board calibration sequence (random)
+     */
+    public List<String> getRandomCalibrationOrder() {
+        List<String> sequence = getSequentialCalibrationOrder();
+        Collections.shuffle(sequence);
+        return sequence;
+    }
+    
+    /**
+     * Convert square name to calibration index
+     */
+    public int squareToIndex(String square) {
+        char file = square.charAt(0);
+        int rank = Character.getNumericValue(square.charAt(1));
+        return (rank - 1) * 8 + (file - 'a');
+    }
+    
+    /**
+     * Convert calibration index to square name
+     */
+    public String indexToSquare(int index) {
+        if (index < 0 || index >= 128) {
+            return "invalid" + index;
+        }
+        // Handle 128 points (64 sequential + 64 random)
+        int actualIndex = index % 64;
+        int rank = 8 - (actualIndex / 8);
+        char file = (char)('a' + (actualIndex % 8));
+        return "" + file + rank;
     }
     
     /**
@@ -303,8 +351,9 @@ public class CalibrationService {
     private String serializeCalibrationData(CalibrationResult result) {
         // Simple JSON serialization (in production, use proper JSON library)
         StringBuilder json = new StringBuilder();
-        json.append("{\"sessionId\":\"").append(result.getSessionId()).append("\",");
+        json.append("{\"sessionId\":\"global\",");
         json.append("\"accuracy\":").append(result.getAccuracy()).append(",");
+        json.append("\"points\":").append(result.getPoints().size()).append(",");
         json.append("\"timestamp\":").append(System.currentTimeMillis()).append("}");
         return json.toString();
     }
@@ -351,6 +400,12 @@ public class CalibrationService {
                 if (accuracy < 0.0 || accuracy > 1.0) {
                     logger.warn("Invalid accuracy value: {}, using default", accuracy);
                     accuracy = 0.5;
+                }
+                
+                // If accuracy is 0, it means no valid calibration data
+                if (accuracy == 0.0) {
+                    logger.warn("Zero accuracy in saved calibration, treating as no calibration");
+                    return null;
                 }
                 
                 logger.debug("Parsed calibration accuracy: {}", accuracy);
@@ -503,8 +558,25 @@ public class CalibrationService {
         }
         
         private double calculateModelAccuracy(List<CalibrationPoint> points) {
-            // Calculate model accuracy based on calibration points
-            return 0.85; // Placeholder accuracy
+            if (points.isEmpty()) return 0.0;
+            
+            double totalError = 0.0;
+            int validPoints = 0;
+            
+            for (CalibrationPoint point : points) {
+                if (!point.getGazeSamples().isEmpty()) {
+                    double error = point.getTargetPoint().distance(point.getAverageGaze());
+                    totalError += error;
+                    validPoints++;
+                }
+            }
+            
+            if (validPoints == 0) return 0.0;
+            
+            double averageError = totalError / validPoints;
+            // Convert error to accuracy (assume 100px is max acceptable error)
+            double accuracy = Math.max(0.0, 1.0 - (averageError / 100.0));
+            return Math.min(1.0, accuracy);
         }
     }
     

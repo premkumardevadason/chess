@@ -87,9 +87,30 @@ public class BinaryWebSocketHandler implements WebSocketHandler {
             java.awt.geom.Point2D targetPoint = new java.awt.geom.Point2D.Double(screenX, screenY);
             java.util.List<java.awt.geom.Point2D> gazeSamples = new java.util.ArrayList<>();
             
-            // For now, use target point as gaze (placeholder for actual gaze detection)
-            // TODO: Integrate with actual gaze detection from image data
-            gazeSamples.add(targetPoint);
+            // Use actual gaze detection from image data
+            if (basicEyeTrackingService != null && imageData.length > 0) {
+                // Determine frame dimensions from image data size
+                int frameSize = imageData.length / 4; // RGBA = 4 bytes per pixel
+                int frameWidth = (int) Math.sqrt(frameSize * (4.0/3.0)); // Assume 4:3 aspect ratio
+                int frameHeight = frameSize / frameWidth;
+                
+                // Fallback to common resolutions if calculation seems wrong
+                if (frameWidth < 100 || frameHeight < 100) {
+                    frameWidth = 320;
+                    frameHeight = 240;
+                }
+                
+                java.awt.geom.Point2D actualGaze = basicEyeTrackingService.processVideoFrame(imageData, frameWidth, frameHeight);
+                if (actualGaze != null) {
+                    gazeSamples.add(actualGaze);
+                } else {
+                    // Fallback to target if gaze detection fails
+                    gazeSamples.add(targetPoint);
+                }
+            } else {
+                // Fallback to target point
+                gazeSamples.add(targetPoint);
+            }
             
             // Record calibration point
             calibrationService.recordCalibrationPoint(
@@ -113,6 +134,17 @@ public class BinaryWebSocketHandler implements WebSocketHandler {
             long timestamp = payload.getLong();
             int width = payload.getInt();
             int height = payload.getInt();
+            
+            // Extract board position (added for dynamic coordinate mapping)
+            int boardLeft = payload.getInt();
+            int boardTop = payload.getInt();
+            int boardWidth = payload.getInt();
+            int boardHeight = payload.getInt();
+            
+            // Update chess board mapper with current board position
+            if (basicEyeTrackingService != null) {
+                basicEyeTrackingService.updateBoardPosition(boardLeft, boardTop, boardWidth, boardHeight);
+            }
             
             // Remaining bytes are image data
             byte[] imageData = new byte[payload.remaining()];

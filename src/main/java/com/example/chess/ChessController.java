@@ -32,6 +32,9 @@ public class ChessController {
     private TrainingManager trainingManager;
     
     @Autowired
+    private com.example.chess.service.ChessBoardMapper chessBoardMapper;
+    
+    @Autowired
     private SimpMessagingTemplate messagingTemplate;
     
     private final BlockingQueue<WebSocketMessage> messageQueue = new LinkedBlockingQueue<>();
@@ -254,5 +257,18 @@ public class ChessController {
         } catch (Exception e) {
             return "Error evaluating training quality: " + e.getMessage();
         }
+    }
+    
+    @GetMapping("/api/chess-board-bounds")
+    @ResponseBody
+    public java.util.Map<String, Object> getChessBoardBounds() {
+        java.awt.Rectangle bounds = chessBoardMapper.getChessBoardBounds();
+        java.util.Map<String, Object> response = new java.util.HashMap<>();
+        response.put("x", bounds.x);
+        response.put("y", bounds.y);
+        response.put("width", bounds.width);
+        response.put("height", bounds.height);
+        response.put("squareSize", bounds.width / 8);
+        return response;
     }
 }

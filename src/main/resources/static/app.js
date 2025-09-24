@@ -40,7 +40,7 @@ function connect() {
         // Subscribe to square highlighting for gaze tracking
         stompClient.subscribe('/topic/squareHighlight', function (message) {
             const data = JSON.parse(message.body);
-            highlightGazeSquare(data.square, data.color, data.duration);
+            highlightGazeSquare(data.square, data.type || data.color || 'redDot', data.duration);
         });
         
         // Subscribe to piece intention analysis
@@ -398,8 +398,37 @@ function startCalibration() {
     }
     
     calibrationActive = true;
+    showCalibrationProgress();
     showCalibrationOverlay();
     startCalibrationSequence();
+}
+
+function showCalibrationProgress() {
+    const progressDiv = document.getElementById('calibration-progress');
+    if (progressDiv) {
+        progressDiv.style.display = 'block';
+    }
+}
+
+function updateCalibrationProgress(current, total, message) {
+    const progressBar = document.getElementById('calibration-progress-bar');
+    const statusDiv = document.getElementById('calibration-status');
+    
+    if (progressBar) {
+        const percentage = (current / total) * 100;
+        progressBar.style.width = percentage + '%';
+    }
+    
+    if (statusDiv) {
+        statusDiv.textContent = message || `Calibrating ${current}/${total} squares...`;
+    }
+}
+
+function hideCalibrationProgress() {
+    const progressDiv = document.getElementById('calibration-progress');
+    if (progressDiv) {
+        progressDiv.style.display = 'none';
+    }
 }
 
 function showCalibrationOverlay() {
@@ -410,42 +439,125 @@ function showCalibrationOverlay() {
 }
 
 function startCalibrationSequence() {
-    const points = [
-        { x: 0.1, y: 0.1 }, { x: 0.5, y: 0.1 }, { x: 0.9, y: 0.1 },
-        { x: 0.1, y: 0.5 }, { x: 0.5, y: 0.5 }, { x: 0.9, y: 0.5 },
-        { x: 0.1, y: 0.9 }, { x: 0.5, y: 0.9 }, { x: 0.9, y: 0.9 }
-    ];
+    // Generate 64 chess square positions
+    const chessSquares = [];
+    
+    // Sequential order first (a8 to h1) - start with black rook
+    for (let domRow = 0; domRow < 8; domRow++) {
+        for (let file = 0; file < 8; file++) {
+            const rank = 8 - domRow; // DOM row 0 = rank 8, DOM row 7 = rank 1
+            const fileChar = String.fromCharCode('a'.charCodeAt(0) + file);
+            const squareName = fileChar + rank;
+            
+            // Validate square name
+            if (rank >= 1 && rank <= 8 && file >= 0 && file <= 7) {
+                chessSquares.push({ square: squareName, domRow: domRow, file: file });
+            } else {
+                console.error('Invalid square generated:', squareName, 'rank:', rank, 'file:', file);
+            }
+        }
+    }
+    
+    // Create random order for second round
+    const randomSquares = [...chessSquares];
+    for (let i = randomSquares.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [randomSquares[i], randomSquares[j]] = [randomSquares[j], randomSquares[i]];
+    }
+    
+    // Combine sequential + random
+    const allCalibrationPoints = [...chessSquares, ...randomSquares];
     
     let currentPoint = 0;
+    let isSecondRound = false;
     
     function showNextPoint() {
-        if (currentPoint >= points.length) {
+        if (currentPoint >= allCalibrationPoints.length) {
             finishCalibration();
             return;
         }
         
-        const point = points[currentPoint];
+        // Check if starting second round
+        if (currentPoint === chessSquares.length && !isSecondRound) {
+            isSecondRound = true;
+            showRoundMessage('Round 2: Random Order', 2000);
+            setTimeout(showNextPoint, 2000);
+            return;
+        }
+        
+        const point = allCalibrationPoints[currentPoint];
+        
+        // Recalculate board position for each point to handle scrolling
+        const boardRect = document.getElementById('chess-board').getBoundingClientRect();
+        const squareSize = 80; // Use actual CSS square size
+        
+        // Calculate fresh coordinates for current board position
+        const x = (boardRect.left + (point.file * squareSize) + (squareSize / 2)) / window.innerWidth;
+        const y = (boardRect.top + (point.domRow * squareSize) + (squareSize / 2)) / window.innerHeight;
+        
         const calibrationPoint = document.createElement('div');
         calibrationPoint.className = 'calibration-point';
-        calibrationPoint.style.left = (point.x * 100) + '%';
-        calibrationPoint.style.top = (point.y * 100) + '%';
+        calibrationPoint.style.left = (x * 100) + '%';
+        calibrationPoint.style.top = (y * 100) + '%';
         calibrationPoint.id = 'calibration-point';
+        
+        // Add square label
+        calibrationPoint.textContent = point.square;
+        calibrationPoint.style.fontSize = '12px';
+        calibrationPoint.style.color = 'white';
+        calibrationPoint.style.textAlign = 'center';
+        calibrationPoint.style.lineHeight = '20px';
         
         const existingPoint = document.getElementById('calibration-point');
         if (existingPoint) existingPoint.remove();
         
         document.body.appendChild(calibrationPoint);
         
-        // Send calibration data via binary WebSocket
-        if (isBinaryConnected && videoElement) {
-            sendCalibrationDataBinary(currentPoint, point.x, point.y);
-        }
+        // Update progress
+        const roundText = isSecondRound ? 'Round 2' : 'Round 1';
+        const roundProgress = isSecondRound ? currentPoint - 64 : currentPoint;
+        const roundTotal = 64;
+        updateCalibrationProgress(currentPoint + 1, 128, `${roundText}: ${point.square} (${roundProgress + 1}/${roundTotal})`);
+        
+        // Wait 1.5 seconds for eye saccade before capturing
+        setTimeout(() => {
+            if (isBinaryConnected && videoElement) {
+                sendCalibrationDataBinary(currentPoint, x, y);
+            }
+        }, 1500);
         
         currentPoint++;
-        setTimeout(showNextPoint, 2000);
+        setTimeout(showNextPoint, 3000); // 3 seconds per square
     }
     
-    showNextPoint();
+    // Show initial message
+    showRoundMessage('Round 1: Sequential Order (a8 → h1)', 2000);
+    setTimeout(showNextPoint, 2000);
+}
+
+function showRoundMessage(message, duration) {
+    const messageDiv = document.createElement('div');
+    messageDiv.style.position = 'fixed';
+    messageDiv.style.top = '50%';
+    messageDiv.style.left = '50%';
+    messageDiv.style.transform = 'translate(-50%, -50%)';
+    messageDiv.style.background = 'rgba(0,0,0,0.8)';
+    messageDiv.style.color = 'white';
+    messageDiv.style.padding = '20px';
+    messageDiv.style.borderRadius = '10px';
+    messageDiv.style.fontSize = '24px';
+    messageDiv.style.zIndex = '2000';
+    messageDiv.textContent = message;
+    messageDiv.id = 'round-message';
+    
+    const existing = document.getElementById('round-message');
+    if (existing) existing.remove();
+    
+    document.body.appendChild(messageDiv);
+    
+    setTimeout(() => {
+        messageDiv.remove();
+    }, duration);
 }
 
 function sendCalibrationDataBinary(point, screenX, screenY) {
@@ -472,8 +584,8 @@ function sendCalibrationDataBinary(point, screenX, screenY) {
         view.setInt32(offset, point, false);
         offset += 4;
         // Convert normalized coordinates to actual screen pixels as integers
-        const actualScreenX = Math.round(screenX * window.screen.width);
-        const actualScreenY = Math.round(screenY * window.screen.height);
+        const actualScreenX = Math.round(screenX * window.innerWidth);
+        const actualScreenY = Math.round(screenY * window.innerHeight);
         
         console.log('[JS] Sending calibration: point=' + point + ', screenX=' + actualScreenX + ', screenY=' + actualScreenY + ', normalized=(' + screenX + ', ' + screenY + ')');
         view.setInt32(offset, actualScreenX, false);
@@ -500,8 +612,13 @@ function finishCalibration() {
     
     const overlay = document.getElementById('calibration-overlay');
     const point = document.getElementById('calibration-point');
+    const roundMessage = document.getElementById('round-message');
     if (overlay) overlay.remove();
     if (point) point.remove();
+    if (roundMessage) roundMessage.remove();
+    
+    updateCalibrationProgress(128, 128, 'Calibration Complete!');
+    setTimeout(hideCalibrationProgress, 3000);
     
     if (isConnected && stompClient) {
         stompClient.send("/app/eye-tracking/calibration-complete", {}, JSON.stringify({
@@ -509,7 +626,7 @@ function finishCalibration() {
         }));
     }
     
-    console.log('Calibration completed, starting video frame streaming...');
+    console.log('64-square calibration completed, starting video frame streaming...');
     startVideoFrameStreaming();
     updateEyeTrackingUI();
 }
@@ -582,8 +699,11 @@ function sendVideoFrame() {
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const pixelData = new Uint8Array(imageData.data);
         
-        // Create binary message for video frame
-        const headerSize = 1 + 8 + 4 + 4; // messageType + timestamp + width + height
+        // Get current board position for accurate eye-tracking
+        const boardRect = document.getElementById('chess-board').getBoundingClientRect();
+        
+        // Create binary message for video frame with board position
+        const headerSize = 1 + 8 + 4 + 4 + 4 + 4 + 4 + 4; // messageType + timestamp + width + height + boardLeft + boardTop + boardWidth + boardHeight
         const buffer = new ArrayBuffer(headerSize + pixelData.length);
         const view = new DataView(buffer);
         
@@ -595,8 +715,15 @@ function sendVideoFrame() {
         view.setInt32(offset, canvas.width, false);
         offset += 4;
         view.setInt32(offset, canvas.height, false);
-        
-        console.log('[JS] Sending video frame: width=' + canvas.width + ', height=' + canvas.height + ', dataSize=' + pixelData.length);
+        offset += 4;
+        // Add current board position
+        view.setInt32(offset, Math.round(boardRect.left), false);
+        offset += 4;
+        view.setInt32(offset, Math.round(boardRect.top), false);
+        offset += 4;
+        view.setInt32(offset, Math.round(boardRect.width), false);
+        offset += 4;
+        view.setInt32(offset, Math.round(boardRect.height), false);
         offset += 4;
         
         // Copy pixel data
@@ -636,7 +763,12 @@ function generateSessionId() {
 }
 
 // Gaze highlighting functions
-function highlightGazeSquare(square, color, duration) {
+function highlightGazeSquare(square, type, duration) {
+    // Handle backward compatibility
+    if (type && type !== 'redDot' && type !== 'blue') {
+        // If type is a color name, treat as old format
+        type = 'redDot';
+    }
     if (!square || square.length < 2) return;
     
     // Convert chess notation to board coordinates
@@ -652,20 +784,46 @@ function highlightGazeSquare(square, color, duration) {
     
     const squareElement = boardElement.children[row].children[col];
     
-    // Remove any existing gaze highlight
-    document.querySelectorAll('.gaze-highlight').forEach(el => {
-        el.classList.remove('gaze-highlight');
-    });
-    
-    // Add gaze highlight
-    squareElement.classList.add('gaze-highlight');
-    
-    console.log(`Highlighting square ${square} in ${color} for ${duration}ms`);
-    
-    // Remove highlight after duration
-    setTimeout(() => {
-        squareElement.classList.remove('gaze-highlight');
-    }, duration || 3000);
+    if (type === 'redDot') {
+        // Remove any existing red dots
+        document.querySelectorAll('.gaze-red-dot').forEach(el => el.remove());
+        
+        // Create red dot like calibration
+        const redDot = document.createElement('div');
+        redDot.className = 'gaze-red-dot';
+        redDot.style.position = 'absolute';
+        redDot.style.width = '20px';
+        redDot.style.height = '20px';
+        redDot.style.backgroundColor = '#ff0000';
+        redDot.style.borderRadius = '50%';
+        redDot.style.zIndex = '1000';
+        redDot.style.pointerEvents = 'none';
+        redDot.style.boxShadow = '0 0 10px rgba(255,0,0,0.8)';
+        
+        // Position at center of square
+        const updateDotPosition = () => {
+            const rect = squareElement.getBoundingClientRect();
+            redDot.style.left = (rect.left + rect.width/2 - 10) + 'px';
+            redDot.style.top = (rect.top + rect.height/2 - 10) + 'px';
+        };
+        
+        updateDotPosition();
+        document.body.appendChild(redDot);
+        
+        // Update position on scroll/resize
+        const updateHandler = () => updateDotPosition();
+        window.addEventListener('scroll', updateHandler);
+        window.addEventListener('resize', updateHandler);
+        
+        console.log(`Showing red dot on square ${square} for ${duration}ms`);
+        
+        // Remove red dot after duration
+        setTimeout(() => {
+            window.removeEventListener('scroll', updateHandler);
+            window.removeEventListener('resize', updateHandler);
+            redDot.remove();
+        }, duration || 3000);
+    }
 }
 
 function updatePredictionDisplay(data) {

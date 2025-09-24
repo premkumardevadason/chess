@@ -14,6 +14,8 @@ import org.nd4j.linalg.dataset.DataSet;
 import org.nd4j.linalg.factory.Nd4j;
 import org.nd4j.linalg.activations.Activation;
 import org.nd4j.linalg.lossfunctions.LossFunctions;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.annotation.PostConstruct;
 import java.util.*;
@@ -23,6 +25,7 @@ import java.awt.geom.Point2D;
 @Service
 public class LSTMMovePredictionAI {
     
+    private static final Logger logger = LoggerFactory.getLogger(LSTMMovePredictionAI.class);
     private MultiLayerNetwork network;
     private Queue<GazeSequence> trainingQueue = new ConcurrentLinkedQueue<>();
     private static final int SEQUENCE_LENGTH = 20;
@@ -61,7 +64,7 @@ public class LSTMMovePredictionAI {
             network.init();
             network.setListeners(new ScoreIterationListener(10));
             
-            System.out.println("LSTM Move Prediction AI initialized");
+            logger.info("LSTM Move Prediction AI initialized");
             
         } catch (Exception e) {
             System.err.println("Error initializing LSTM network: " + e.getMessage());

@@ -144,13 +144,26 @@
         
         /* Calibration UI */
         .calibration-point {
-            position: absolute;
-            width: 20px;
-            height: 20px;
+            position: fixed;
+            width: 40px;
+            height: 40px;
             background-color: #ff0000;
             border-radius: 50%;
             z-index: 1000;
-            animation: calibration-blink 1s infinite;
+            animation: calibration-pulse 1.5s ease-in-out infinite;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-left: -20px;
+            margin-top: -20px;
+            box-shadow: 0 0 15px rgba(255,0,0,0.8);
+            border: 3px solid white;
+        }
+        
+        @keyframes calibration-pulse {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.2); opacity: 0.8; }
+            100% { transform: scale(1); opacity: 1; }
         }
         
         @keyframes calibration-blink {
@@ -198,8 +211,14 @@
             </div>
             <div class="eye-tracking-buttons">
                 <button id="webcam-toggle" onclick="toggleWebcam()" disabled>Enable Eye-Tracking</button>
-                <button onclick="startCalibration()" id="calibration-btn" disabled>Calibrate Gaze</button>
+                <button onclick="startCalibration()" id="calibration-btn" disabled>Calibrate 64 Squares</button>
                 <button onclick="showPrivacySettings()" id="privacy-btn">Privacy Settings</button>
+            </div>
+            <div id="calibration-progress" style="display: none; margin-top: 10px;">
+                <div style="background: #e0e0e0; border-radius: 10px; overflow: hidden;">
+                    <div id="calibration-progress-bar" style="background: #007bff; height: 20px; width: 0%; transition: width 0.3s;"></div>
+                </div>
+                <div id="calibration-status" style="margin-top: 5px; font-size: 14px;">Calibrating...</div>
             </div>
             <div id="consent-modal" class="modal" style="display: none;">
                 <div class="modal-content">

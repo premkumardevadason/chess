@@ -6,9 +6,13 @@ import java.awt.Rectangle;
 import java.awt.geom.Point2D;
 import java.util.Map;
 import java.util.HashMap;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Component
 public class ChessBoardMapper {
+    
+    private static final Logger logger = LoggerFactory.getLogger(ChessBoardMapper.class);
     
     private Rectangle chessBoardBounds = new Rectangle(50, 50, 800, 800); // Larger bounds for better accuracy
     private Rectangle[][] squareBounds = new Rectangle[8][8];
@@ -60,14 +64,8 @@ public class ChessBoardMapper {
     }
     
     private Point2D scaleVideoToChessBoard(Point2D videoPoint) {
-        // Video: 640x480, Chess board: 800x800 (positioned at 50,50)
-        double scaleX = (double)chessBoardBounds.width / 640.0;
-        double scaleY = (double)chessBoardBounds.height / 480.0;
-        
-        double scaledX = chessBoardBounds.x + (videoPoint.getX() * scaleX);
-        double scaledY = chessBoardBounds.y + (videoPoint.getY() * scaleY);
-        
-        return new Point2D.Double(scaledX, scaledY);
+        // Direct mapping - board bounds are updated from frontend
+        return new Point2D.Double(videoPoint.getX(), videoPoint.getY());
     }
     
     private String getExactSquare(Point2D gazePoint) {
@@ -119,22 +117,65 @@ public class ChessBoardMapper {
         }
     }
     
+    /**
+     * Get chess board bounds for frontend coordinate mapping
+     */
+    public Rectangle getChessBoardBounds() {
+        return chessBoardBounds;
+    }
+    
+    /**
+     * Get square bounds for a specific chess square
+     */
+    public Rectangle getSquareBounds(String square) {
+        if (square == null || square.length() != 2) return null;
+        
+        char file = square.charAt(0);
+        int rank = Character.getNumericValue(square.charAt(1));
+        
+        if (file < 'a' || file > 'h' || rank < 1 || rank > 8) return null;
+        
+        int col = file - 'a';
+        int row = 8 - rank; // Convert to array index
+        
+        if (squareBounds[0][0] == null) {
+            initializeSquareBounds();
+        }
+        
+        return squareBounds[row][col];
+    }
+    
     private void highlightSquare(String square) {
         try {
             Map<String, Object> highlightData = new HashMap<>();
             highlightData.put("square", square);
-            highlightData.put("color", "blue");
+            highlightData.put("type", "redDot");
             highlightData.put("duration", HIGHLIGHT_DURATION);
             
             webSocketController.sendToAll("/topic/squareHighlight", highlightData);
-            // Square highlighting logging removed
+            logger.debug("Showing red dot on square {}", square);
         } catch (Exception e) {
-            // Error highlighting logging removed
+            logger.warn("Error showing red dot on square: {}", e.getMessage());
         }
     }
     
     public void updateBoardBounds(Rectangle newBounds) {
         this.chessBoardBounds = newBounds;
         initializeSquareBounds();
+        logger.debug("Updated chess board bounds to: x={}, y={}, width={}, height={}", 
+            newBounds.x, newBounds.y, newBounds.width, newBounds.height);
+    }
+    
+    /**
+     * Update board bounds from frontend coordinates (handles page scrolling)
+     */
+    public void updateBoardBoundsFromFrontend(double left, double top, double width, double height) {
+        Rectangle newBounds = new Rectangle(
+            (int)Math.round(left), 
+            (int)Math.round(top), 
+            (int)Math.round(width), 
+            (int)Math.round(height)
+        );
+        updateBoardBounds(newBounds);
     }
 }

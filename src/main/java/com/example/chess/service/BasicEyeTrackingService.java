@@ -65,41 +65,62 @@ public class BasicEyeTrackingService {
             // Validate expected data size
             int expectedSize = width * height * 4; // RGBA = 4 bytes per pixel
             if (imageData.length != expectedSize) {
-                System.err.println("Image data size mismatch: expected=" + expectedSize + ", actual=" + imageData.length);
+                logger.error("Image data size mismatch: expected={}, actual={}", expectedSize, imageData.length);
                 return null;
             }
             
-            // Convert byte array to OpenCV Mat
+            // Debug: Check first few pixels to verify format
+            if (imageData.length >= 12) {
+                logger.debug("First 3 pixels RGBA: [{},{},{},{}] [{},{},{},{}] [{},{},{},{}]", 
+                    imageData[0] & 0xFF, imageData[1] & 0xFF, imageData[2] & 0xFF, imageData[3] & 0xFF,
+                    imageData[4] & 0xFF, imageData[5] & 0xFF, imageData[6] & 0xFF, imageData[7] & 0xFF,
+                    imageData[8] & 0xFF, imageData[9] & 0xFF, imageData[10] & 0xFF, imageData[11] & 0xFF);
+            }
+            
+            // Convert RGBA byte array to OpenCV Mat
             Mat frame = new Mat(height, width, CvType.CV_8UC4);
             frame.put(0, 0, imageData);
             
+            // Convert RGBA to BGR first (OpenCV standard format)
+            Mat bgrFrame = new Mat();
+            Imgproc.cvtColor(frame, bgrFrame, Imgproc.COLOR_RGBA2BGR);
+            
             // Convert to grayscale for face detection
             Mat gray = new Mat();
-            Imgproc.cvtColor(frame, gray, Imgproc.COLOR_RGBA2GRAY);
+            Imgproc.cvtColor(bgrFrame, gray, Imgproc.COLOR_BGR2GRAY);
             
             logger.debug("Frame converted to grayscale: {}x{}", gray.rows(), gray.cols());
             
             if (faceDetector != null) {
-                // Use OpenCV face detection with 640x480 optimized parameters
+                // Use OpenCV face detection with progressive parameters
                 MatOfRect faces = new MatOfRect();
-                // Larger minimum face size for higher resolution
-                faceDetector.detectMultiScale(gray, faces, 1.1, 3, 0, new Size(80, 80), new Size());
+                Rect[] faceArray = null;
                 
-                Rect[] faceArray = faces.toArray();
-                logger.debug("Detected {} faces with 640x480 parameters", faceArray.length);
+                // Try multiple detection strategies
+                // Strategy 1: Standard parameters
+                faceDetector.detectMultiScale(gray, faces, 1.1, 3, 0, new Size(30, 30), new Size());
+                faceArray = faces.toArray();
+                logger.debug("Strategy 1 - Standard: {} faces", faceArray.length);
                 
                 if (faceArray.length == 0) {
-                    logger.debug("Trying medium face size...");
-                    faceDetector.detectMultiScale(gray, faces, 1.05, 2, 0, new Size(60, 60), new Size());
+                    // Strategy 2: More sensitive
+                    faceDetector.detectMultiScale(gray, faces, 1.05, 2, 0, new Size(20, 20), new Size());
                     faceArray = faces.toArray();
-                    logger.debug("Medium face detection found {} faces", faceArray.length);
-                    
-                    if (faceArray.length == 0) {
-                        logger.debug("Trying small face size...");
-                        faceDetector.detectMultiScale(gray, faces, 1.02, 1, 0, new Size(40, 40), new Size());
-                        faceArray = faces.toArray();
-                        logger.debug("Small face detection found {} faces", faceArray.length);
-                    }
+                    logger.debug("Strategy 2 - Sensitive: {} faces", faceArray.length);
+                }
+                
+                if (faceArray.length == 0) {
+                    // Strategy 3: Very sensitive
+                    faceDetector.detectMultiScale(gray, faces, 1.02, 1, 0, new Size(15, 15), new Size());
+                    faceArray = faces.toArray();
+                    logger.debug("Strategy 3 - Very sensitive: {} faces", faceArray.length);
+                }
+                
+                if (faceArray.length == 0) {
+                    // Strategy 4: Extremely sensitive
+                    faceDetector.detectMultiScale(gray, faces, 1.01, 1, 0, new Size(10, 10), new Size());
+                    faceArray = faces.toArray();
+                    logger.debug("Strategy 4 - Extremely sensitive: {} faces", faceArray.length);
                 }
                 
                 if (faceArray.length > 0) {
@@ -137,7 +158,11 @@ public class BasicEyeTrackingService {
                     }
                     return stabilizedGaze;
                 } else {
-                    logger.warn("*** NO FACES DETECTED in {}x{} frame ***", width, height);
+                    logger.warn("*** NO FACES DETECTED in {}x{} frame after all strategies ***", width, height);
+                    // Use center-point fallback when no face detected
+                    Point2D centerPoint = new Point2D.Double(width / 2.0, height / 2.0);
+                    logger.debug("Using center fallback: ({}, {})", centerPoint.getX(), centerPoint.getY());
+                    return centerPoint;
                 }
             } else {
                 logger.warn("*** FACE DETECTOR IS NULL - using center fallback ***");
@@ -274,5 +299,14 @@ public class BasicEyeTrackingService {
         
         // Movement detected but not stable enough yet
         return lastStableGaze;
+    }
+    
+    /**
+     * Update board position for dynamic coordinate mapping during gameplay
+     */
+    public void updateBoardPosition(int left, int top, int width, int height) {
+        if (chessBoardMapper != null) {
+            chessBoardMapper.updateBoardBoundsFromFrontend(left, top, width, height);
+        }
     }
 }
