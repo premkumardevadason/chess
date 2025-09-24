@@ -18,6 +18,27 @@
         <Logger name="com.example.chess.ChessTacticalDefense" level="INFO" additivity="false">
             <AppenderRef ref="Console"/>
         </Logger>
+        <Logger name="com.example.chess.service.CalibrationService" level="DEBUG" additivity="false">
+            <AppenderRef ref="Console"/>
+        </Logger>
+        <Logger name="com.example.chess.service.BasicEyeTrackingService" level="DEBUG" additivity="false">
+            <AppenderRef ref="Console"/>
+        </Logger>
+        <Logger name="com.example.chess.service.EyeTrackingService" level="DEBUG" additivity="false">
+            <AppenderRef ref="Console"/>
+        </Logger>
+        <Logger name="com.example.chess.service.EyeMovementLearningService" level="DEBUG" additivity="false">
+            <AppenderRef ref="Console"/>
+        </Logger>
+        <Logger name="com.example.chess.service.ChessBoardMapper" level="DEBUG" additivity="false">
+            <AppenderRef ref="Console"/>
+        </Logger>
+        <Logger name="com.example.chess.service.SimpleMovePredictor" level="DEBUG" additivity="false">
+            <AppenderRef ref="Console"/>
+        </Logger>
+        <Logger name="com.example.chess.LSTMMovePredictionAI" level="DEBUG" additivity="false">
+            <AppenderRef ref="Console"/>
+        </Logger>
         <Logger name="org.springframework" level="WARN" additivity="false">
             <AppenderRef ref="Console"/>
         </Logger>

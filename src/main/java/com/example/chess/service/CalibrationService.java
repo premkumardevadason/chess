@@ -50,13 +50,28 @@ public class CalibrationService {
     // Calibration model
     private CalibrationModel calibrationModel = null;
     
-    // Global calibration data file path (single user)
-    private static final String CALIBRATION_DATA_FILE = "global_calibration.dat";
+    // Global calibration data file path in state/visual-chess folder
+    private static final String CALIBRATION_DATA_FILE = "state/visual-chess/global_calibration.dat";
     
     @PostConstruct
     public void loadCalibrationData() {
         try {
+            // Ensure state directory exists
+            Path stateDir = Paths.get("state");
+            if (!Files.exists(stateDir)) {
+                Files.createDirectories(stateDir);
+                logger.info("Created state directory: {}", stateDir.toAbsolutePath());
+            }
+            
+            // Ensure state/visual-chess directory exists
+            Path visualChessDir = Paths.get("state/visual-chess");
+            if (!Files.exists(visualChessDir)) {
+                Files.createDirectories(visualChessDir);
+                logger.info("Created visual-chess directory: {}", visualChessDir.toAbsolutePath());
+            }
+            
             Path calibrationFile = Paths.get(CALIBRATION_DATA_FILE);
+            logger.debug("Looking for calibration file at: {}", calibrationFile.toAbsolutePath());
             if (Files.exists(calibrationFile)) {
                 byte[] encryptedData = Files.readAllBytes(calibrationFile);
                 byte[] decryptedData = privacyService.decryptGazeData(encryptedData);
@@ -329,6 +344,13 @@ public class CalibrationService {
      */
     private void storeCalibrationData(String sessionId, CalibrationResult result) {
         try {
+            // Ensure state/visual-chess directory exists
+            Path visualChessDir = Paths.get("state/visual-chess");
+            if (!Files.exists(visualChessDir)) {
+                Files.createDirectories(visualChessDir);
+                logger.info("Created visual-chess directory: {}", visualChessDir.toAbsolutePath());
+            }
+            
             // Encrypt calibration data
             byte[] encryptedData = privacyService.encryptGazeData(
                 serializeCalibrationData(result).getBytes()
@@ -338,7 +360,7 @@ public class CalibrationService {
             Path calibrationFile = Paths.get(CALIBRATION_DATA_FILE);
             Files.write(calibrationFile, encryptedData, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
             
-            logger.info("Stored encrypted calibration data for session: {} to {}", sessionId, CALIBRATION_DATA_FILE);
+            logger.info("Stored encrypted calibration data to {}", CALIBRATION_DATA_FILE);
             
         } catch (Exception e) {
             logger.error("Error storing calibration data", e);

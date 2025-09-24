@@ -133,8 +133,24 @@ public class BasicEyeTrackingService {
                     Point2D leftEye = detectPupil(gray, face, true);
                     Point2D rightEye = detectPupil(gray, face, false);
                     
-                    if (leftEye != null) logger.debug("*** LEFT EYE DETECTED: ({}, {}) ***", leftEye.getX(), leftEye.getY());
-                    if (rightEye != null) logger.debug("*** RIGHT EYE DETECTED: ({}, {}) ***", rightEye.getX(), rightEye.getY());
+                    // Comprehensive eye detection logging
+                    String eyeStatus = "NONE";
+                    if (leftEye != null && rightEye != null) {
+                        eyeStatus = "BOTH";
+                        logger.debug("*** BOTH EYES DETECTED - Left: ({}, {}), Right: ({}, {}) ***", 
+                            String.format("%.1f", leftEye.getX()), String.format("%.1f", leftEye.getY()), 
+                            String.format("%.1f", rightEye.getX()), String.format("%.1f", rightEye.getY()));
+                    } else if (leftEye != null) {
+                        eyeStatus = "LEFT_ONLY";
+                        logger.debug("*** LEFT EYE ONLY - Coordinates: ({}, {}) ***", 
+                            String.format("%.1f", leftEye.getX()), String.format("%.1f", leftEye.getY()));
+                    } else if (rightEye != null) {
+                        eyeStatus = "RIGHT_ONLY";
+                        logger.debug("*** RIGHT EYE ONLY - Coordinates: ({}, {}) ***", 
+                            String.format("%.1f", rightEye.getX()), String.format("%.1f", rightEye.getY()));
+                    } else {
+                        logger.warn("*** NO EYES DETECTED in face region ***");
+                    }
                     
                     // Calculate average gaze point from both eyes
                     Point2D rawGaze = null;
@@ -143,16 +159,23 @@ public class BasicEyeTrackingService {
                             (leftEye.getX() + rightEye.getX()) / 2.0,
                             (leftEye.getY() + rightEye.getY()) / 2.0
                         );
+                        logger.debug("*** GAZE CALCULATED FROM BOTH EYES: ({}, {}) ***", 
+                            String.format("%.1f", rawGaze.getX()), String.format("%.1f", rawGaze.getY()));
                     } else if (leftEye != null) {
                         rawGaze = leftEye;
+                        logger.debug("*** GAZE FROM LEFT EYE ONLY: ({}, {}) ***", 
+                            String.format("%.1f", rawGaze.getX()), String.format("%.1f", rawGaze.getY()));
                     } else if (rightEye != null) {
                         rawGaze = rightEye;
+                        logger.debug("*** GAZE FROM RIGHT EYE ONLY: ({}, {}) ***", 
+                            String.format("%.1f", rawGaze.getX()), String.format("%.1f", rawGaze.getY()));
                     }
                     
                     // Apply gaze stabilization to reduce jumping
                     Point2D stabilizedGaze = stabilizeGaze(rawGaze);
                     if (stabilizedGaze != null) {
-                        logger.debug("*** RETURNING STABILIZED GAZE: ({}, {}) ***", stabilizedGaze.getX(), stabilizedGaze.getY());
+                        logger.debug("*** RETURNING STABILIZED GAZE: ({}, {}) ***", 
+                            String.format("%.1f", stabilizedGaze.getX()), String.format("%.1f", stabilizedGaze.getY()));
                     } else {
                         logger.warn("*** STABILIZED GAZE IS NULL - no stable gaze detected ***");
                     }
@@ -203,11 +226,30 @@ public class BasicEyeTrackingService {
             Mat blurred = new Mat();
             Imgproc.GaussianBlur(eyeMat, blurred, new Size(5, 5), 0);
             
-            // Find darkest point (pupil) using minMaxLoc
-            Core.MinMaxLocResult minMaxLoc = Core.minMaxLoc(blurred);
-            Point pupilCenter = minMaxLoc.minLoc;
+            // Try Hough Circle Detection first (better for glasses)
+            Mat circles = new Mat();
+            Imgproc.HoughCircles(blurred, circles, Imgproc.HOUGH_GRADIENT, 1, 20, 50, 30, 5, 30);
             
-            logger.debug("Pupil center in eye region: ({}, {}), minVal={}", pupilCenter.x, pupilCenter.y, minMaxLoc.minVal);
+            Point pupilCenter = null;
+            String detectionMethod = "NONE";
+            if (circles.cols() > 0) {
+                // Use first detected circle
+                float[] circle = new float[3];
+                circles.get(0, 0, circle);
+                pupilCenter = new Point(circle[0], circle[1]);
+                detectionMethod = "HOUGH_CIRCLE";
+                logger.debug("{} eye - Hough circle detected: center=({}, {}), radius={}", 
+                    (isLeftEye ? "LEFT" : "RIGHT"), String.format("%.1f", pupilCenter.x), 
+                    String.format("%.1f", pupilCenter.y), String.format("%.1f", circle[2]));
+            } else {
+                // Fallback to darkest point method
+                Core.MinMaxLocResult minMaxLoc = Core.minMaxLoc(blurred);
+                pupilCenter = minMaxLoc.minLoc;
+                detectionMethod = "DARKEST_POINT";
+                logger.debug("{} eye - Darkest point fallback: ({}, {}), intensity={}", 
+                    (isLeftEye ? "LEFT" : "RIGHT"), String.format("%.1f", pupilCenter.x), 
+                    String.format("%.1f", pupilCenter.y), String.format("%.1f", minMaxLoc.minVal));
+            }
             
             // Convert back to full image coordinates
             Point2D result = new Point2D.Double(
@@ -215,7 +257,9 @@ public class BasicEyeTrackingService {
                 eyeRegion.y + pupilCenter.y
             );
             
-            logger.debug("Final pupil coordinates: ({}, {})", result.getX(), result.getY());
+            logger.debug("{} eye - Final coordinates: ({}, {}) using {}", 
+                (isLeftEye ? "LEFT" : "RIGHT"), String.format("%.1f", result.getX()), 
+                String.format("%.1f", result.getY()), detectionMethod);
             return result;
             
         } catch (Exception e) {
@@ -231,7 +275,11 @@ public class BasicEyeTrackingService {
         
         String square = chessBoardMapper.mapToChessSquare(gazePoint);
         if (square != null) {
-            logger.debug("*** GAZE MAPPED TO CHESS SQUARE: {} at ({}, {}) ***", square, gazePoint.getX(), gazePoint.getY());
+            logger.debug("*** GAZE MAPPED TO CHESS SQUARE: {} at ({}, {}) ***", square, 
+                String.format("%.1f", gazePoint.getX()), String.format("%.1f", gazePoint.getY()));
+        } else {
+            logger.debug("*** GAZE NOT MAPPED - coordinates ({}, {}) outside chess board ***", 
+                String.format("%.1f", gazePoint.getX()), String.format("%.1f", gazePoint.getY()));
         }
         return square;
     }
