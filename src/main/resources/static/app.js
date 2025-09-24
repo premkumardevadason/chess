@@ -519,17 +519,20 @@ function startCalibrationSequence() {
         const roundTotal = 64;
         updateCalibrationProgress(currentPoint + 1, 128, `${roundText}: ${point.square} (${roundProgress + 1}/${roundTotal})`);
         
+        console.log(`[JS] Showing red dot for point ${currentPoint}, square ${point.square}`);
+        
         // Wait 2.5 seconds for eye saccade and focusing before capturing
         setTimeout(() => {
             if (isBinaryConnected && videoElement) {
+                console.log(`[JS] Capturing data for point ${currentPoint}, square ${point.square}`);
                 // Send current point index BEFORE incrementing
                 sendCalibrationDataBinary(currentPoint, x, y);
             }
+            
+            // Increment AFTER sending data to maintain sync
+            currentPoint++;
+            setTimeout(showNextPoint, 1500); // 1.5s buffer after capture
         }, 2500);
-        
-        // Increment AFTER sending data to maintain sync
-        currentPoint++;
-        setTimeout(showNextPoint, 4000); // 4 seconds per square (2.5s focus + 1.5s buffer)
     }
     
     // Show initial message
@@ -643,7 +646,7 @@ function startVideoFrameStreaming() {
     
     console.log('Starting adaptive video frame streaming...');
     
-    let currentFrameRate = 30; // Start at 30 FPS
+    let currentFrameRate = 60; // Start at 60 FPS for better eye tracking
     let frameInterval = 1000 / currentFrameRate;
     
     function adaptiveFrameStreaming() {
@@ -659,12 +662,12 @@ function startVideoFrameStreaming() {
             const actualInterval = now - window.lastFrameTime;
             if (actualInterval > frameInterval * 1.5) {
                 // System is struggling, reduce frame rate
-                currentFrameRate = Math.max(10, currentFrameRate - 2);
+                currentFrameRate = Math.max(30, currentFrameRate - 5);
                 frameInterval = 1000 / currentFrameRate;
                 console.log('Reduced frame rate to', currentFrameRate, 'FPS');
-            } else if (actualInterval < frameInterval * 0.8 && currentFrameRate < 30) {
+            } else if (actualInterval < frameInterval * 0.8 && currentFrameRate < 60) {
                 // System can handle more, increase frame rate
-                currentFrameRate = Math.min(30, currentFrameRate + 1);
+                currentFrameRate = Math.min(60, currentFrameRate + 2);
                 frameInterval = 1000 / currentFrameRate;
                 console.log('Increased frame rate to', currentFrameRate, 'FPS');
             }
