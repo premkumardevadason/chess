@@ -522,10 +522,12 @@ function startCalibrationSequence() {
         // Wait 2.5 seconds for eye saccade and focusing before capturing
         setTimeout(() => {
             if (isBinaryConnected && videoElement) {
+                // Send current point index BEFORE incrementing
                 sendCalibrationDataBinary(currentPoint, x, y);
             }
         }, 2500);
         
+        // Increment AFTER sending data to maintain sync
         currentPoint++;
         setTimeout(showNextPoint, 4000); // 4 seconds per square (2.5s focus + 1.5s buffer)
     }
@@ -587,7 +589,9 @@ function sendCalibrationDataBinary(point, screenX, screenY) {
         const actualScreenX = Math.round(screenX * window.innerWidth);
         const actualScreenY = Math.round(screenY * window.innerHeight);
         
-        console.log('[JS] Sending calibration: point=' + point + ', screenX=' + actualScreenX + ', screenY=' + actualScreenY + ', normalized=(' + screenX + ', ' + screenY + ')');
+        // Get the current square being calibrated for logging
+        const currentSquare = document.getElementById('calibration-point')?.textContent || 'unknown';
+        console.log('[JS] Sending calibration: point=' + point + ', square=' + currentSquare + ', screenX=' + actualScreenX + ', screenY=' + actualScreenY + ', normalized=(' + screenX + ', ' + screenY + ')');
         view.setInt32(offset, actualScreenX, false);
         offset += 4;
         view.setInt32(offset, actualScreenY, false);
