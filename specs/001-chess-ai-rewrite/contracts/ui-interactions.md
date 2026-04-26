@@ -33,7 +33,7 @@ Closing the window terminates the process. There is no system tray, no minimise-
 
 **Rules**:
 - The UI MUST highlight all legal target squares of the currently selected piece (FR-018).
-- Illegal click attempts MUST be rejected silently (FR-002 — no flash, no error sound by default).
+- Illegal click / drag / SAN attempts MUST be rejected by (a) reverting the board state to before the attempt, AND (b) surfacing a clear, human-readable rejection reason from `Game::make_move` (e.g. `"would leave king in check"`, `"blocked by own piece"`, `"castling through check"`) as a transient inline message in the right-panel status area for ~3 s — per FR-002 and User Story 1 Acceptance Scenario 2. No error sound is played by default; the message is text-only and screen-reader-friendly.
 - Promotion: when a pawn reaches the back rank, a 4-button modal appears (Q/R/B/N) and the move is not committed until the user picks one. `Esc` cancels the move.
 
 ### 2.2 Engine move trigger

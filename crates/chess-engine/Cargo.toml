@@ -1,0 +1,20 @@
+[package]
+name         = "chess-engine"
+version      = { workspace = true }
+edition      = { workspace = true }
+rust-version = { workspace = true }
+authors      = { workspace = true }
+license      = { workspace = true }
+description  = "Forked Carp 3.0.1: alpha-beta + iterative deepening + NNUE + transposition table + Lazy SMP"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+chess-core        = { path = "../chess-core" }
+crossbeam-channel = { workspace = true }
+smallvec          = { workspace = true }
+thiserror         = { workspace = true }
+
+[dev-dependencies]
+anyhow = { workspace = true }

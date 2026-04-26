@@ -1,0 +1,18 @@
+[package]
+name         = "chess-core"
+version      = { workspace = true }
+edition      = { workspace = true }
+rust-version = { workspace = true }
+authors      = { workspace = true }
+license      = { workspace = true }
+description  = "Pure-logic chess core: board, FIDE rules, move generation, SAN, game state machine"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+smallvec  = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+anyhow = { workspace = true }

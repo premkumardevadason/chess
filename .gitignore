@@ -1,13 +1,31 @@
-# Large training data files (>100MB GitHub limit)
+# ============================================================================
+# chess-ai (Rust workspace) — repo-root .gitignore
+# ============================================================================
+# This .gitignore covers the new Rust workspace. The legacy/ tree has its own
+# build outputs (Maven target/, node_modules/) which are also covered below.
+# Cargo.lock is intentionally NOT ignored: chess-ai is a binary application,
+# so we lock dependency versions for reproducibility.
+
+# --- Rust workspace build artefacts ----------------------------------------
+target/
+**/target/
+*.rs.bk
+*.profraw
+
+# --- Legacy (Java / Maven / Node) build artefacts --------------------------
+legacy/target/
+legacy/node_modules/
+legacy/**/node_modules/
+legacy/**/.gradle/
+legacy/**/build/
+legacy/frontend/dist/
+legacy/frontend/build/
+legacy/frontend/.next/
+
+# --- Legacy training data / large blobs ------------------------------------
 alphazero_cache.dat
 chess_cnn_model.zip
 *corrupt*
-
-# Build artifacts
-target/
-target/**
-
-# Other training data files
 *.dat
 *.zip
 *.model
@@ -15,33 +33,30 @@ target/**
 *.tmp
 *.gz
 *.class
+ga_models/
+leela_models/
 
-# Backup files - never commit
+# --- Legacy backups --------------------------------------------------------
 *.backup
 *.legacy.backup
 *.gz.backup
 *.dat.backup
 
-# AI training directories
-ga_models/
-leela_models/
-
-# IDE files
+# --- IDE / editor metadata -------------------------------------------------
 .vscode/
 .idea/
 *.iml
+.eclipse-pde.*
 
-# OS files
+# --- OS noise --------------------------------------------------------------
 .DS_Store
 Thumbs.db
 
-# Logs
+# --- Logs ------------------------------------------------------------------
 *.log
 *.log.*
 logs/
 gc.log*
 
-# Node.js dependencies
-node_modules/
-
+# --- Patches ---------------------------------------------------------------
 *.patch

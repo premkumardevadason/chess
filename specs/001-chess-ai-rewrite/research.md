@@ -65,12 +65,12 @@ This document resolves every open technology question implied by `spec.md` so th
 
 ## R-4. Move generation crate
 
-**Decision**: **Use Carp's built-in `movegen.rs`** (magic bitboards, ~150–200M nps perft 7). Do **not** introduce `cozy-chess`, `chess`, or `shakmaty` as separate dependencies for the engine, to avoid maintaining two move-gen implementations.
+**Decision**: **Port Carp's `movegen.rs` (magic bitboards, ~150–200M nps perft 7) into `chess-core/src/movegen.rs`** as the canonical home for move generation. The engine (`chess-engine`) depends on `chess-core` and consumes the same `legal_moves(&Position)` API the UI uses. Do **not** introduce `cozy-chess`, `chess`, or `shakmaty` as separate dependencies, to avoid maintaining two move-gen implementations.
 
 **Rationale**:
 - Carp's move generator is benchmark-proven (passes perft 7 on the standard 6-position FIDE perft suite at ~180M nps on a Ryzen 5950X).
 - Introducing a second move-gen library would create the risk of disagreement between "the engine's view of legal moves" and "the UI's view of legal moves" — a recipe for FR-002 violations.
-- The chess-core crate (UI-facing rules) re-exports a thin façade around the engine's move generator so that "what the engine thinks is legal" and "what the UI shows as a legal target square" are guaranteed identical.
+- Placing movegen in `chess-core` (rather than in `chess-engine` and re-exporting it) keeps the dependency direction strictly `chess-app → chess-core` and `chess-engine → chess-core`, with no circular dependency. There is exactly one move-generator implementation; both UI legality checks and engine search consume it directly.
 
 **Alternatives considered**:
 - **cozy-chess** — fastest move-gen crate in the Rust ecosystem (~250M nps), MIT licensed, very ergonomic API. But duplicating move-gen would couple us to two crates' release schedules. Reasonable v2 swap if a profile shows movegen as a bottleneck. Rejected for v1.
@@ -306,8 +306,8 @@ Legacy code (Spring Boot Java, TypeScript frontend, infra/, mcp/, target/, etc.)
 |---|---|---|
 | R-1 | Language / toolchain | Rust 1.83+ stable, MSVC, static CRT |
 | R-2 | UI framework | egui 0.30+ via eframe + wgpu |
-| R-3 | Engine codebase | Fork Carp 3.x (MIT, ~3450 Elo) |
-| R-4 | Move generation | Reuse Carp's magic bitboards; no second movegen |
+| R-3 | Engine codebase | Fork Carp 3.0.1 (MIT, ~3450 Elo) |
+| R-4 | Move generation | Port Carp's magic bitboards into `chess-core/src/movegen.rs`; engine depends on core; no second movegen |
 | R-5 | Threading | UI thread + dedicated search thread + rayon Lazy SMP |
 | R-6 | NNUE embedding | `include_bytes!` of Carp's MIT network |
 | R-7 | Reproducible Mode | `Mode` enum: Default (SMP) vs Reproducible (1-thread + fixed seed) |

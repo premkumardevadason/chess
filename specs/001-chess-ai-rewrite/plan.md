@@ -5,7 +5,7 @@
 
 ## Summary
 
-Replace the existing Spring Boot / TypeScript / multi-AI chess application with a **clean-room single-binary native Windows desktop application written in Rust** that ships **one** top-tier NNUE-based chess engine statically linked into the same `.exe`. The engine is a fork of [Carp](https://github.com/dede1751/carp) (MIT, ~3450 Elo CCRL) refactored from a UCI binary into an internal library crate; the GUI is built with [egui](https://github.com/emilk/egui) via `eframe` + `wgpu`. The whole product is one statically linked `chess-ai.exe` (~50–60 MB) with **zero** runtime network traffic, **zero** game-file persistence (in-session undo/redo only), and **zero** runtime dependencies beyond core Windows DLLs. The application targets Windows x86-64 only for v1 (clarification Q5).
+Replace the existing Spring Boot / TypeScript / multi-AI chess application with a **clean-room single-binary native Windows desktop application written in Rust** that ships **one** top-tier NNUE-based chess engine statically linked into the same `.exe`. The engine is a fork of [Carp 3.0.1](https://github.com/dede1751/carp) (MIT, ~3450 Elo CCRL) refactored from a UCI binary into an internal library crate; the GUI is built with [egui](https://github.com/emilk/egui) via `eframe` + `wgpu`. The whole product is one statically linked `chess-ai.exe` (~50–60 MB) with **zero** runtime network traffic, **zero** game-file persistence (in-session undo/redo only), and **zero** runtime dependencies beyond core Windows DLLs. The application targets Windows x86-64 only for v1 (clarification Q5).
 
 ## Technical Context
 
@@ -65,17 +65,18 @@ chess/
 ├── .cargo/
 │   └── config.toml                     # default RUSTFLAGS, cargo aliases
 ├── crates/
-│   ├── chess-core/                     # Pure-logic: board, FIDE rules, move types
+│   ├── chess-core/                     # Pure-logic: board, FIDE rules, move types, movegen
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs
 │   │       ├── position.rs             # Position entity (data-model §1)
 │   │       ├── moves.rs                # Move + MoveRecord (data-model §2, §3)
+│   │       ├── movegen.rs              # magic bitboards (canonical home; engine consumes it)
 │   │       ├── game.rs                 # Game + GameResult (data-model §4, §5)
 │   │       ├── rules.rs                # Threefold, 50-move, insufficient material
 │   │       └── san.rs                  # SAN rendering and parsing
-│   ├── chess-engine/                   # Forked Carp: search + NNUE + TT + SMP
-│   │   ├── Cargo.toml
+│   ├── chess-engine/                   # Forked Carp 3.0.1: search + NNUE + TT + SMP
+│   │   ├── Cargo.toml                  # depends on chess-core for Position / Move / movegen
 │   │   ├── nets/
 │   │   │   ├── default.bin             # MIT-licensed NNUE network (~30 MB; embedded)
 │   │   │   └── LICENSE                 # network's MIT license text
@@ -86,7 +87,6 @@ chess/
 │   │       ├── smp.rs                  # Lazy SMP via rayon
 │   │       ├── nnue.rs                 # NNUE inference (AVX2 / SSE2 / scalar)
 │   │       ├── tt.rs                   # transposition table
-│   │       ├── movegen.rs              # magic bitboards (re-exposed via chess-core)
 │   │       ├── ordering.rs             # move ordering, killers, history heuristic
 │   │       ├── time.rs                 # time management
 │   │       ├── repro.rs                # Mode::Reproducible support
@@ -146,7 +146,7 @@ chess/
     └── …
 ```
 
-**Structure Decision**: The chosen layout is **a single Cargo workspace with three local crates** (`chess-core`, `chess-engine`, `chess-app`) producing exactly one binary (`chess-ai.exe`). This is the minimum decomposition that keeps testable concerns separable: the rules layer (`chess-core`) can be unit-tested without the engine; the engine (`chess-engine`) can be benchmarked without the UI; the UI (`chess-app`) can be smoke-tested against a mock engine. The legacy Spring Boot / TypeScript / Helm / Terraform / AWS / Azure code is moved wholesale into `legacy/` at the repo root and is **not** part of the workspace — it is preserved for historical reference only and `cargo build` does not see it. Rationale and alternatives are documented in [research.md §R-13](./research.md#r-13-project-layout).
+**Structure Decision**: The chosen layout is **a single Cargo workspace with three local crates** (`chess-core`, `chess-engine`, `chess-app`) producing exactly one binary (`chess-ai.exe`). This is the minimum decomposition that keeps testable concerns separable: the rules layer (`chess-core`) can be unit-tested without the engine; the engine (`chess-engine`) can be benchmarked without the UI; the UI (`chess-app`) can be smoke-tested against a mock engine. Move generation (`movegen.rs`) lives in `chess-core` so the dependency direction is strictly `chess-app → chess-core` and `chess-engine → chess-core` — there is no circular dependency, and there is exactly one move-generator implementation that both UI legality checks and engine search consume. The legacy Spring Boot / TypeScript / Helm / Terraform / AWS / Azure code is moved wholesale into `legacy/` at the repo root and is **not** part of the workspace — it is preserved for historical reference only and `cargo build` does not see it. Rationale and alternatives are documented in [research.md §R-13](./research.md#r-13-project-layout).
 
 ## Complexity Tracking
 

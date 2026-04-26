@@ -1,0 +1,3 @@
+# clippy configuration. Most lint enforcement is via `-D warnings` in CI;
+# this file only stores values that clippy reads at lint time.
+msrv = "1.83"

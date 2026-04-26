@@ -1,0 +1,54 @@
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+exclude = ["legacy"]
+
+[workspace.package]
+version      = "1.0.0-dev"
+edition      = "2021"
+rust-version = "1.83"
+authors      = ["chess-ai contributors"]
+license      = "MIT"
+repository   = "https://github.com/local/chess-ai"
+description  = "Single-executable native Windows chess application with an integrated NNUE engine"
+
+[workspace.dependencies]
+crossbeam-channel = "0.5"
+serde             = { version = "1", features = ["derive"] }
+toml              = "0.8"
+directories       = "5"
+clap              = { version = "4", features = ["derive"] }
+tracing           = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+smallvec          = { version = "1", features = ["const_generics", "union"] }
+thiserror         = "1"
+anyhow            = "1"
+humantime         = "2"
+
+[workspace.dependencies.eframe]
+version          = "0.30"
+default-features = false
+features         = ["default_fonts", "wgpu", "x11"]
+
+[workspace.dependencies.egui]
+version = "0.30"
+
+[profile.release]
+opt-level     = 3
+lto           = "fat"
+codegen-units = 1
+panic         = "abort"
+strip         = "symbols"
+
+[profile.release-static]
+inherits = "release"
+
+[profile.bench]
+opt-level     = 3
+lto           = "thin"
+codegen-units = 1
+debug         = true
+
+[profile.dev]
+opt-level = 1
+debug     = true
