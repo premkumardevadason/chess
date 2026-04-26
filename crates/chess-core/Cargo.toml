@@ -15,4 +15,7 @@ smallvec  = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
-anyhow = { workspace = true }
+anyhow     = { workspace = true }
+# `cozy-chess` is used only as a cross-check oracle in `examples/compare_divide.rs`
+# during movegen development. Removing this would break that example only.
+cozy-chess = "0.3"
