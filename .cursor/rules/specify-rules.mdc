@@ -1,0 +1,18 @@
+---
+alwaysApply: true
+---
+
+<!-- SPECKIT START -->
+For additional context about technologies to be used, project structure,
+shell commands, and other important information, read the current plan:
+specs/001-chess-ai-rewrite/plan.md
+
+Supporting design artifacts (Phase 0 / Phase 1):
+- specs/001-chess-ai-rewrite/research.md
+- specs/001-chess-ai-rewrite/data-model.md
+- specs/001-chess-ai-rewrite/contracts/engine-api.md
+- specs/001-chess-ai-rewrite/contracts/settings-file.md
+- specs/001-chess-ai-rewrite/contracts/cli-flags.md
+- specs/001-chess-ai-rewrite/contracts/ui-interactions.md
+- specs/001-chess-ai-rewrite/quickstart.md
+<!-- SPECKIT END -->
