@@ -12,9 +12,15 @@ path = "src/lib.rs"
 
 [dependencies]
 chess-core        = { path = "../chess-core" }
+chess             = { package = "chess-engine-chess", path = "../chess-engine-chess" }
+carp              = { package = "chess-engine-carp",  path = "../chess-engine-carp"  }
 crossbeam-channel = { workspace = true }
 smallvec          = { workspace = true }
 thiserror         = { workspace = true }
+# Used to derive Serialize/Deserialize on the public configuration enums
+# (StrengthPreset) so chess-app can persist them in settings.toml. The
+# core search code itself does no I/O — see contracts/engine-api.md §3.5.
+serde             = { workspace = true }
 
 [dev-dependencies]
 anyhow = { workspace = true }

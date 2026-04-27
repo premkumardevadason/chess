@@ -8,7 +8,11 @@ version      = "1.0.0-dev"
 edition      = "2021"
 rust-version = "1.83"
 authors      = ["chess-ai contributors"]
-license      = "MIT"
+# Workspace-wide license is GPL-3.0-only because the chess-engine crate
+# vendors Carp 3.0.1 (GPL-3.0). The combined work (chess-app .exe) is
+# therefore distributed under GPL-3.0. See LICENSE at workspace root and
+# crates/chess-engine/UPSTREAM-LICENSE for upstream copyright notices.
+license      = "GPL-3.0-only"
 repository   = "https://github.com/local/chess-ai"
 description  = "Single-executable native Windows chess application with an integrated NNUE engine"
 

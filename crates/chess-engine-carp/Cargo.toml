@@ -1,0 +1,23 @@
+[package]
+name = "chess-engine-carp"
+version = "3.0.1"
+edition = "2021"
+authors = ["Andrea Sgobbi"]
+description = "Vendored Carp 3.0.1 search core (search, tt, move_picker, thread, clock). Sources kept byte-identical to upstream apart from package rename and removal of UCI/main entry-points."
+license = "GPL-3.0-only"
+readme = "readme.md"
+keywords = ["chess"]
+categories = ["games"]
+repository = "https://github.com/dede1751/carp"
+publish = false
+
+[lib]
+name = "carp"
+doctest = false
+
+[dependencies]
+chess = { package = "chess-engine-chess", path = "../chess-engine-chess" }
+
+[features]
+datagen = []
+syzygy = []

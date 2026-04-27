@@ -1,0 +1,16 @@
+[package]
+name = "chess-engine-chess"
+version = "1.0.0"
+edition = "2021"
+authors = ["Andrea Sgobbi"]
+description = "Vendored Carp 3.0.1 chess backend (board, magic-bitboard movegen, NNUE backend, zobrist). Sources kept byte-identical to upstream; only the package name has been renamed for workspace integration."
+license = "GPL-3.0-only"
+readme = "readme.md"
+keywords = ["chess"]
+categories = ["games"]
+repository = "https://github.com/dede1751/carp"
+publish = false
+
+[lib]
+name = "chess"
+doctest = false

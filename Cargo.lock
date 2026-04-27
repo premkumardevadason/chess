@@ -379,10 +379,24 @@ version = "1.0.0-dev"
 dependencies = [
  "anyhow",
  "chess-core",
+ "chess-engine-carp",
+ "chess-engine-chess",
  "crossbeam-channel",
+ "serde",
  "smallvec",
  "thiserror 1.0.69",
 ]
+
+[[package]]
+name = "chess-engine-carp"
+version = "3.0.1"
+dependencies = [
+ "chess-engine-chess",
+]
+
+[[package]]
+name = "chess-engine-chess"
+version = "1.0.0"
 
 [[package]]
 name = "clap"

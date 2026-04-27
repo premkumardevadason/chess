@@ -43,11 +43,11 @@ This document resolves every open technology question implied by `spec.md` so th
 
 ## R-3. Chess engine — codebase
 
-**Decision**: **Fork [Carp](https://github.com/dede1751/carp) (Andrea Sgobbi, MIT license)** as the starting engine. Refactor it from a standalone UCI binary into an internal library crate (`chess-engine`) inside our Cargo workspace, exposing a synchronous `Engine` API that the UI thread calls into via channels (see `contracts/engine-contract.md`).
+**Decision**: **Fork [Carp](https://github.com/dede1751/carp) (Andrea Sgobbi, GPL-3.0)** as the starting engine. Refactor it from a standalone UCI binary into an internal library crate (`chess-engine`) inside our Cargo workspace, exposing a synchronous `Engine` API that the UI thread calls into via channels (see `contracts/engine-contract.md`). The entire `chess-app` executable is therefore distributed under **GPL-3.0**.
 
 **Rationale**:
 - **Strength**: Carp 3.0.1 is rated **~3450 Elo** on CCRL Blitz (verified: top-15 Rust engine, ~150 Elo above the 3300 minimum needed to clear FR-006 / SC-001 with margin).
-- **License**: MIT — cleanly permissively licensed, including the bundled NNUE network (no GPL infection).
+- **License**: GPL-3.0. **Correction 2026-04-26**: an earlier draft of this section incorrectly asserted Carp was MIT-licensed. Verified against `dede1751/carp@v3.0.1` (`carp/Cargo.toml` and root `LICENSE` both declare GPL-3.0). FR-006a was amended on the same date to permit GPL-3.0 for the engine codebase and bundled network; the project explicitly accepts that the entire `chess-app` `.exe` is distributed under GPL-3.0. Stockfish's GPL-2-derived networks are now also compatible (GPL-3.0 inbound).
 - **Codebase size**: ~7,000 lines of Rust across well-organised modules (`board.rs`, `movegen.rs`, `search.rs`, `nnue.rs`, `tt.rs`, `tunables.rs`). Small enough for the team to fully understand; large enough that strength is real.
 - **Architecture**: alpha-beta + iterative deepening + transposition table + null-move pruning + late-move reductions + Lazy SMP + NNUE eval. Standard, well-documented techniques.
 - **NNUE network**: ships with a 30 MB HalfKAv2-style network in MIT-licensed binary form. Embedded via `include_bytes!`.
@@ -101,10 +101,10 @@ Communication is channel-based (mpsc): UI → Search for commands (`StartSearch`
 
 ## R-6. NNUE network embedding and licensing
 
-**Decision**: **Embed Carp's bundled NNUE network as a `&'static [u8]`** via `include_bytes!("../nets/default.bin")`. License: copy upstream MIT LICENSE text into our `nets/LICENSE` and reference it from `Cargo.toml` and the in-app About dialog. Verify network license at every dependency-bump.
+**Decision**: **Embed Carp's bundled NNUE network as a `&'static [u8]`** via `include_bytes!("../nets/default.bin")`. License: copy upstream **GPL-3.0** LICENSE text into our `nets/LICENSE` (the network ships from the same Carp repo and is covered by the same root LICENSE). Reference it from `Cargo.toml` and the in-app About dialog. Verify network license at every dependency-bump.
 
 **Rationale**:
-- Spec FR-006a requires permissive license + binary embedding.
+- Spec FR-006a (amended 2026-04-26) requires GPL-3.0-compatible license + binary embedding.
 - `include_bytes!` makes the network part of the `.exe`'s read-only data segment — no separate file, no runtime load failure, no missing-network UX.
 - ~30 MB networks are well within egui+wgpu+chess-engine total binary size (~50–60 MB), meeting SC-006 (RAM ≤ 500 MB).
 - Re-verify license at upgrade: each new network release from upstream needs a fresh license check before being merged.
@@ -112,7 +112,7 @@ Communication is channel-based (mpsc): UI → Search for commands (`StartSearch`
 **Alternatives considered**:
 - **Loose `default.bin` shipped alongside `.exe`** — violates "single executable" interpretation; user could delete the file. Rejected.
 - **Train our own network** — explicitly out of scope (Q4). Rejected.
-- **Use Stockfish's network** — GPL-licensed, would force the entire `.exe` to be GPL. Rejected by FR-006a.
+- **Use Stockfish's network** — GPL-2-derived; now compatible with our GPL-3.0 application but switching networks mid-rewrite is unnecessary churn. Rejected for v1.
 
 ---
 
