@@ -1,0 +1,20 @@
+---
+source: crates/chess-core/tests/move_list_snapshot.rs
+assertion_line: 83
+expression: rendered
+---
+1. e4 a6
+2. e5 d5
+3. exd6 e.p. cxd6
+4. Nf3 Nf6
+5. Nc3 g6
+6. d4 Bg7
+7. Bc4 O-O
+8. O-O Nc6
+9. Re1 Bg4
+10. h3 Bxf3
+11. Qxf3 e5
+12. d5 Nd4
+13. Qd1 b5
+14. Bb3 a5
+15. a4 b4

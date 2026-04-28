@@ -67,6 +67,20 @@ pub struct GameScreen {
     /// this via [`GameScreen::take_open_settings_request`] and swaps
     /// to the [`crate::ui::SettingsScreen`].
     pub open_settings_requested: bool,
+    /// History-navigation cursor (T065). `None` ⇒ live game; `Some(n)`
+    /// ⇒ viewing the position **after** `n` plies have been played
+    /// (`0` = start position, `history.len()` = live).
+    ///
+    /// While `Some(_)`, the board is read-only per
+    /// [contracts/ui-interactions.md §2.4](../../specs/001-chess-ai-rewrite/contracts/ui-interactions.md);
+    /// the user must click the latest ply or "Return to live" to play
+    /// further moves.
+    pub nav_index: Option<usize>,
+    /// Pending undo requested while the engine is mid-search. Drained
+    /// when `SearchAborted` arrives (T066).
+    pending_undo_after_abort: bool,
+    /// Pending redo similarly held off while the engine is searching.
+    pending_redo_after_abort: bool,
 }
 
 impl GameScreen {
@@ -90,6 +104,9 @@ impl GameScreen {
             engine_searching: false,
             settings,
             open_settings_requested: false,
+            nav_index: None,
+            pending_undo_after_abort: false,
+            pending_redo_after_abort: false,
         }
     }
 
@@ -108,6 +125,20 @@ impl GameScreen {
         });
         if settings_hotkey {
             self.open_settings_requested = true;
+        }
+
+        // Undo / Redo hotkeys (T066). Ctrl+Z = undo, Ctrl+Shift+Z = redo.
+        let (undo_hotkey, redo_hotkey) = ctx.input(|i| {
+            let ctrl = i.modifiers.command;
+            let shift = i.modifiers.shift;
+            let z = i.key_pressed(egui::Key::Z);
+            (ctrl && !shift && z, ctrl && shift && z)
+        });
+        if undo_hotkey {
+            self.request_undo(engine);
+        }
+        if redo_hotkey {
+            self.request_redo(engine);
         }
 
         // Top menu bar with File ▸ Settings… (T059).
@@ -147,15 +178,27 @@ impl GameScreen {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.horizontal_wrapped(|ui| {
+                // When navigated, render against a synthetic past
+                // game (T065). Read-only — `interactive(false)`.
+                let nav_view = self.navigation_view();
+                let view_game = nav_view.as_ref().unwrap_or(&self.game);
+                let interactive = nav_view.is_none()
+                    && self.is_human_turn()
+                    && self.promotion.is_none();
                 let board = BoardWidget::new(
-                    &self.game,
+                    view_game,
                     &self.board_state,
                     &self.palette,
                     self.orientation,
                 )
-                .interactive(self.is_human_turn() && self.promotion.is_none());
+                .interactive(interactive);
                 let resp = board.show(ui);
-                self.handle_board_response(resp);
+                // Only honour click/drag when not navigating — past
+                // views are read-only per
+                // [contracts/ui-interactions.md §2.4].
+                if nav_view.is_none() {
+                    self.handle_board_response(resp);
+                }
             });
         });
 
@@ -229,12 +272,30 @@ impl GameScreen {
 
         // Move list (compact for v1; CP-G adds proper navigation).
         ui.label(RichText::new("Moves").strong());
+        let mut clicked_index: Option<usize> = None;
         egui::ScrollArea::vertical()
             .max_height(220.0)
             .auto_shrink([false; 2])
             .show(ui, |ui| {
-                self.render_move_list(ui);
+                clicked_index = self.render_move_list(ui);
             });
+        if let Some(idx) = clicked_index {
+            self.navigate_to(idx);
+        }
+
+        // History-navigation indicator + return-to-live button (T065).
+        if let Some(n) = self.nav_index {
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                ui.colored_label(
+                    egui::Color32::from_rgb(0xC8, 0x9E, 0x3B),
+                    format!("Viewing ply {} of {}", n, self.game.history.len()),
+                );
+                if ui.button("Return to live").clicked() {
+                    self.nav_index = None;
+                }
+            });
+        }
 
         ui.add_space(10.0);
         ui.separator();
@@ -242,6 +303,24 @@ impl GameScreen {
 
         // Buttons.
         ui.with_layout(Layout::top_down(Align::Min), |ui| {
+            // Undo / Redo (T066).
+            ui.horizontal(|ui| {
+                let can_undo = !self.game.history.is_empty();
+                let can_redo = !self.game.redo_stack.is_empty();
+                if ui
+                    .add_enabled(can_undo, egui::Button::new("Undo (Ctrl+Z)"))
+                    .clicked()
+                {
+                    self.request_undo(engine);
+                }
+                if ui
+                    .add_enabled(can_redo, egui::Button::new("Redo (Ctrl+Shift+Z)"))
+                    .clicked()
+                {
+                    self.request_redo(engine);
+                }
+            });
+            ui.add_space(4.0);
             if ui.button("New Game").clicked() {
                 if self.game.history.is_empty() || self.game.result().is_some() {
                     self.start_new_game();
@@ -329,41 +408,63 @@ impl GameScreen {
         }
     }
 
-    fn render_move_list(&self, ui: &mut egui::Ui) {
+    /// Render the move list and return the ply-index (1-based) the
+    /// user clicked, if any. Each entry is a clickable label; the
+    /// currently displayed half-move is highlighted (T064).
+    ///
+    /// Returns:
+    /// - `Some(0)` when the "Start position" item is clicked (navigate
+    ///   to before-any-moves).
+    /// - `Some(n)` when ply `n` (1-indexed in play order) is clicked.
+    /// - `None` if nothing was clicked this frame.
+    fn render_move_list(&self, ui: &mut egui::Ui) -> Option<usize> {
         let plies = &self.game.history;
+        // Currently-displayed ply (1-indexed); 0 = before any moves.
+        let current_ply = self.nav_index.unwrap_or(plies.len());
+        let mut clicked: Option<usize> = None;
+
+        // Start-position row.
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("0.").weak());
+            let label = RichText::new("(start)");
+            let label = if current_ply == 0 {
+                label.strong().underline()
+            } else {
+                label.weak()
+            };
+            if ui.selectable_label(current_ply == 0, label).clicked() {
+                clicked = Some(0);
+            }
+        });
+
         if plies.is_empty() {
             ui.weak("(no moves yet)");
-            return;
+            return clicked;
         }
-        let mut iter = plies.iter().enumerate();
-        loop {
-            let Some((i, white)) = iter.next() else {
-                break;
-            };
+
+        let mut i = 0;
+        while i < plies.len() {
             let move_no = (i / 2) + 1;
-            let white_san = if white.san.is_empty() {
-                white.move_played.to_long_algebraic()
-            } else {
-                white.san.clone()
-            };
-            let black_san = match iter.next() {
-                Some((_, black)) => {
-                    if black.san.is_empty() {
-                        black.move_played.to_long_algebraic()
-                    } else {
-                        black.san.clone()
-                    }
-                }
-                None => String::new(),
-            };
+            let white_idx = i + 1; // 1-indexed ply count after this move
+            let white_ply = &plies[i];
+            let white_san = ply_san(white_ply);
+            let black_pair = plies.get(i + 1).map(|p| (i + 2, ply_san(p)));
+
             ui.horizontal(|ui| {
                 ui.label(RichText::new(format!("{move_no}.")).weak());
-                ui.label(white_san);
-                if !black_san.is_empty() {
-                    ui.label(black_san);
+                if move_list_item(ui, &white_san, current_ply == white_idx).clicked() {
+                    clicked = Some(white_idx);
+                }
+                if let Some((black_idx, black_san)) = black_pair {
+                    if move_list_item(ui, &black_san, current_ply == black_idx).clicked() {
+                        clicked = Some(black_idx);
+                    }
                 }
             });
+            i += 2;
         }
+
+        clicked
     }
 
     fn render_confirm_new_game(&mut self, ctx: &egui::Context) {
@@ -575,6 +676,10 @@ impl GameScreen {
         if self.is_human_turn() {
             return;
         }
+        // Pause autoplay while the user is browsing history (T065).
+        if self.nav_index.is_some() {
+            return;
+        }
         // It's the engine's turn — fire SetPosition + StartSearch.
         let history: Vec<Move> = self.game.history.iter().map(|r| r.move_played).collect();
         engine.set_position(self.game.current, history);
@@ -607,6 +712,13 @@ impl GameScreen {
             }
             Event::SearchAborted => {
                 self.engine_searching = false;
+                if self.pending_undo_after_abort {
+                    self.pending_undo_after_abort = false;
+                    self.do_undo();
+                } else if self.pending_redo_after_abort {
+                    self.pending_redo_after_abort = false;
+                    self.do_redo();
+                }
             }
             _ => {}
         }
@@ -658,6 +770,112 @@ impl GameScreen {
         self.settings = settings;
     }
 
+    // ---- US3: history navigation + undo/redo (T064–T067) ------------
+
+    /// Build a synthetic [`Game`] showing the position after the
+    /// `nav_index`-th ply, or `None` while in the live view. The
+    /// returned game is a throw-away clone — callers must not mutate
+    /// it (the board widget treats it as read-only).
+    fn navigation_view(&self) -> Option<Game> {
+        let n = self.nav_index?;
+        let mut view = self.game.clone();
+        // Roll back from live to ply n by undoing repeatedly.
+        while view.history.len() > n {
+            if view.undo().is_err() {
+                break;
+            }
+        }
+        Some(view)
+    }
+
+    /// User clicked ply `n` in the move list (T065).
+    /// `0` = start position, `history.len()` = live game.
+    fn navigate_to(&mut self, n: usize) {
+        let live_len = self.game.history.len();
+        if n >= live_len {
+            self.nav_index = None;
+        } else {
+            self.nav_index = Some(n);
+        }
+    }
+
+    /// Public test/UI helper: drain the undo path (T066).
+    pub fn request_undo(&mut self, engine: &mut EngineLink) {
+        if self.game.history.is_empty() {
+            return;
+        }
+        // Always return to live view — undo branches off the live
+        // history, not the navigated one.
+        self.nav_index = None;
+
+        if engine.status().is_thinking() {
+            // Defer the actual undo until SearchAborted fires.
+            engine.stop();
+            self.pending_undo_after_abort = true;
+            self.pending_redo_after_abort = false;
+            return;
+        }
+        self.do_undo();
+    }
+
+    /// Public test/UI helper: drain the redo path (T066).
+    pub fn request_redo(&mut self, engine: &mut EngineLink) {
+        if self.game.redo_stack.is_empty() {
+            return;
+        }
+        self.nav_index = None;
+
+        if engine.status().is_thinking() {
+            engine.stop();
+            self.pending_redo_after_abort = true;
+            self.pending_undo_after_abort = false;
+            return;
+        }
+        self.do_redo();
+    }
+
+    fn do_undo(&mut self) {
+        // In Human-vs-AI mode, undo pops both the engine's last move
+        // AND the human's prior move so the human gets their turn
+        // back. (Per contracts/ui-interactions.md §2.3.)
+        let pop_pairs = matches!(self.game.mode, GameMode::HumanVsAi(_));
+        let _ = self.game.undo();
+        if pop_pairs && !self.game.history.is_empty() {
+            // Only pop a second time if the new side-to-move is the
+            // opponent of the human (i.e., the engine just moved).
+            if let GameMode::HumanVsAi(human) = self.game.mode {
+                if self.game.side_to_move() != human {
+                    let _ = self.game.undo();
+                }
+            }
+        }
+        self.engine_searching = false;
+        self.board_state = BoardState::default();
+        if let Some(last) = self.game.history.last() {
+            self.board_state.last_move = Some(last.move_played);
+        }
+        self.show_game_over = false;
+    }
+
+    fn do_redo(&mut self) {
+        let push_pairs = matches!(self.game.mode, GameMode::HumanVsAi(_));
+        let _ = self.game.redo();
+        if push_pairs && !self.game.redo_stack.is_empty() {
+            if let GameMode::HumanVsAi(human) = self.game.mode {
+                // Replay until it's the human's turn again (mirror of
+                // do_undo's pair-popping).
+                if self.game.side_to_move() != human {
+                    let _ = self.game.redo();
+                }
+            }
+        }
+        self.engine_searching = false;
+        self.board_state = BoardState::default();
+        if let Some(last) = self.game.history.last() {
+            self.board_state.last_move = Some(last.move_played);
+        }
+    }
+
     // ---- test-only thin wrappers ------------------------------------
     //
     // These mirror the private methods used by `update`. They exist so
@@ -700,6 +918,28 @@ fn orientation_for(color: Color, settings: &UserSettings) -> Orientation {
             Color::White => Orientation::WhiteAtBottom,
             Color::Black => Orientation::BlackAtBottom,
         },
+    }
+}
+
+/// Render a single clickable SAN cell in the move list with a
+/// highlight when it represents the currently displayed ply (T064).
+fn move_list_item(ui: &mut egui::Ui, san: &str, current: bool) -> egui::Response {
+    let text = if current {
+        RichText::new(san).strong().underline()
+    } else {
+        RichText::new(san)
+    };
+    ui.selectable_label(current, text)
+}
+
+/// Resolve the cached SAN for a played ply, falling back to long
+/// algebraic if SAN was not stored (should not happen post-T015 but
+/// defends against regressions).
+fn ply_san(record: &chess_core::MoveRecord) -> String {
+    if record.san.is_empty() {
+        record.move_played.to_long_algebraic()
+    } else {
+        record.san.clone()
     }
 }
 

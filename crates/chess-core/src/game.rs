@@ -282,4 +282,152 @@ mod tests {
         let pseudo = Move::NULL;
         assert_eq!(g.make_move(pseudo), Err(MoveError::GameOver));
     }
+
+    // -----------------------------------------------------------------
+    // T068: undo/redo round-trip across every special move kind.
+    //
+    // Spec (specs/001-chess-ai-rewrite/tasks.md, T068):
+    //   "Undo/Redo round-trip across every special-move kind:
+    //    castling (KS + QS), en-passant (white & black), promotion
+    //    (Q/R/B/N), promotion-with-capture-with-check. For each,
+    //    assert position == undo(make_move(position, m)) bit-for-bit
+    //    (including Zobrist)."
+    //
+    // The helper plays a sequence of SAN moves to reach a setup
+    // position, then asserts that performing one more move and
+    // immediately undoing it returns the position byte-for-byte
+    // (including Zobrist + repetition counters), and that redo
+    // restores the post-move position byte-for-byte.
+    // -----------------------------------------------------------------
+
+    fn assert_undo_redo_round_trip(setup: &[&str], target: &str) {
+        let mut g = Game::new_game(GameMode::HumanVsAi(Color::White));
+        for san in setup {
+            let mv = parse_san(&g.current, san)
+                .unwrap_or_else(|e| panic!("setup move '{san}' failed: {e:?}"));
+            g.make_move(mv)
+                .unwrap_or_else(|e| panic!("setup play '{san}' failed: {e:?}"));
+        }
+
+        let before = g.current.clone();
+        let before_zobrist = before.zobrist;
+        let history_len_before = g.history.len();
+
+        let mv = parse_san(&g.current, target)
+            .unwrap_or_else(|e| panic!("target '{target}' parse failed: {e:?}"));
+        g.make_move(mv)
+            .unwrap_or_else(|e| panic!("target '{target}' play failed: {e:?}"));
+        let after = g.current.clone();
+        let after_zobrist = after.zobrist;
+
+        // Undo brings us back exactly.
+        g.undo().expect("undo");
+        assert_eq!(
+            g.current, before,
+            "[{target}] undo did not restore position bit-for-bit"
+        );
+        assert_eq!(
+            g.current.zobrist, before_zobrist,
+            "[{target}] undo did not restore Zobrist hash"
+        );
+        assert_eq!(g.history.len(), history_len_before);
+
+        // Redo restores the post-move position exactly.
+        g.redo().expect("redo");
+        assert_eq!(
+            g.current, after,
+            "[{target}] redo did not restore position bit-for-bit"
+        );
+        assert_eq!(
+            g.current.zobrist, after_zobrist,
+            "[{target}] redo did not restore Zobrist hash"
+        );
+        assert_eq!(g.history.len(), history_len_before + 1);
+    }
+
+    #[test]
+    fn undo_redo_round_trip_kingside_castle_white() {
+        // Standard Italian opening clearing the kingside.
+        assert_undo_redo_round_trip(
+            &["e4", "e5", "Nf3", "Nc6", "Bc4", "Bc5"],
+            "O-O",
+        );
+    }
+
+    #[test]
+    fn undo_redo_round_trip_queenside_castle_white() {
+        // Reach a position where White can O-O-O. Queen's-Pawn opening
+        // with quick development of queenside minor pieces and queen.
+        assert_undo_redo_round_trip(
+            &["d4", "d5", "Nc3", "Nf6", "Bf4", "Bf5", "Qd2", "Qd7"],
+            "O-O-O",
+        );
+    }
+
+    #[test]
+    fn undo_redo_round_trip_en_passant_white_captures() {
+        // 1.e4 a6 2.e5 d5 — now White can play exd6 e.p.
+        assert_undo_redo_round_trip(
+            &["e4", "a6", "e5", "d5"],
+            "exd6",
+        );
+    }
+
+    #[test]
+    fn undo_redo_round_trip_en_passant_black_captures() {
+        // Reach a position where Black can capture en passant.
+        // 1.Nf3 e5 2.Nc3 e4 3.d4 — Black plays exd3 e.p.
+        assert_undo_redo_round_trip(
+            &["Nf3", "e5", "Nc3", "e4", "d4"],
+            "exd3",
+        );
+    }
+
+    /// Promotion-test setup: lands a White pawn on e7 with the d-file
+    /// 8th-rank target (Black queen on d8) reachable by a capturing
+    /// promotion `exd8=X`. Reached via:
+    ///
+    /// 1. e4   d5
+    /// 2. exd5 f6      (clears the d-pawn out of White's way; Black
+    ///                  passes time)
+    /// 3. d6   c6      (push toward 7th)
+    /// 4. dxe7 c5      (White pawn now on e7, Black has spent moves
+    ///                  on the queenside; Black queen still on d8)
+    ///
+    /// Black king is on e8, queen on d8; promoting `exd8=Q` or `=R`
+    /// delivers check (adjacent on the 8th rank), `=B` and `=N` do
+    /// not (those pieces don't attack e8 from d8). All four are
+    /// legal promotion-with-capture round-trip targets.
+    fn promotion_setup_capture_d8() -> Vec<&'static str> {
+        vec!["e4", "d5", "exd5", "f6", "d6", "c6", "dxe7", "c5"]
+    }
+
+    #[test]
+    fn undo_redo_round_trip_promotion_to_queen() {
+        assert_undo_redo_round_trip(&promotion_setup_capture_d8(), "exd8=Q");
+    }
+
+    #[test]
+    fn undo_redo_round_trip_promotion_to_rook() {
+        assert_undo_redo_round_trip(&promotion_setup_capture_d8(), "exd8=R");
+    }
+
+    #[test]
+    fn undo_redo_round_trip_promotion_to_bishop() {
+        assert_undo_redo_round_trip(&promotion_setup_capture_d8(), "exd8=B");
+    }
+
+    #[test]
+    fn undo_redo_round_trip_promotion_to_knight() {
+        assert_undo_redo_round_trip(&promotion_setup_capture_d8(), "exd8=N");
+    }
+
+    #[test]
+    fn undo_redo_round_trip_promotion_with_capture_with_check() {
+        // exd8=Q+ : pawn on e7 captures Black queen on d8 promoting
+        // to a queen, which gives check on the Black king on e8
+        // (adjacent on the 8th rank). This is the promotion + capture
+        // + check combination called out in T068.
+        assert_undo_redo_round_trip(&promotion_setup_capture_d8(), "exd8=Q+");
+    }
 }
