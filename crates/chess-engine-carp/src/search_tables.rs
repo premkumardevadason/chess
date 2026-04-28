@@ -51,9 +51,15 @@ type History = [[[i16; Square::COUNT]; Square::COUNT]; 2];
 type ContinuationHistory = [[[[i16; Square::COUNT]; Square::COUNT]; Square::COUNT]; Piece::TOTAL];
 type CaptureHistory = [[[i16; Piece::COUNT - 1]; Square::COUNT]; Piece::TOTAL];
 
-/// History bonus is Stockfish's "gravity"
+/// History bonus is Stockfish's "gravity".
+///
+/// Computed in i32 to tolerate the overflow case that arises when the
+/// search runs to extreme depths (e.g. when iterative deepening keeps
+/// going after finding a forced mate). The result is clamped to
+/// `HISTORY_MAX_BONUS` so the semantics for normal depths are unchanged.
 pub fn history_bonus(depth: usize) -> i16 {
-    HISTORY_MAX_BONUS.min(HISTORY_FACTOR * depth as i16 - HISTORY_OFFSET)
+    let raw = (HISTORY_FACTOR as i32) * (depth as i32) - HISTORY_OFFSET as i32;
+    raw.clamp(i16::MIN as i32, HISTORY_MAX_BONUS as i32) as i16
 }
 
 /// Taper history so that it's bounded to +-MAX
