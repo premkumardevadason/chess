@@ -29,6 +29,25 @@ use crate::ui::board::{
 use crate::ui::promotion::{show_promotion_modal, PromotionOutcome, PromotionRequest};
 use crate::ui::theme::{draw_mini_piece, Palette};
 
+/// Selected mode in the New Game modal (T072). Maps to either a
+/// `GameMode::HumanVsAi(_)` or `GameMode::AiVsAi` on commit.
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+enum NewGameModeChoice {
+    HumanPlaysWhite,
+    HumanPlaysBlack,
+    AiVsAi,
+}
+
+/// In-progress New Game modal state (T072).
+#[derive(Clone, Debug)]
+struct NewGameDialogState {
+    mode: NewGameModeChoice,
+    /// White-side strength when `mode == AiVsAi`.
+    white_strength: StrengthPreset,
+    /// Black-side strength when `mode == AiVsAi`.
+    black_strength: StrengthPreset,
+}
+
 /// Top-level game screen. Held by `crate::ui::App`.
 pub struct GameScreen {
     /// Pure-data game state (history, repetition table, terminal
@@ -81,6 +100,19 @@ pub struct GameScreen {
     pending_undo_after_abort: bool,
     /// Pending redo similarly held off while the engine is searching.
     pending_redo_after_abort: bool,
+    /// Per-side strengths for the active AI-vs-AI game (T071/T073).
+    /// `Some((white, black))` ⇒ engine plays at the corresponding
+    /// preset depending on `side_to_move`. Always `None` in
+    /// HumanVsAi mode.
+    ai_strengths: Option<(StrengthPreset, StrengthPreset)>,
+    /// Pause flag for AI-vs-AI mode (T074). When `true`, `tick_engine`
+    /// is a no-op and any in-flight search is aborted on the next
+    /// frame.
+    pub paused: bool,
+    /// Working state for the New Game modal (T072). `Some(_)` while
+    /// the modal is open; the contents are committed by
+    /// `start_new_game(...)` when the user clicks "Start".
+    new_game_dialog: Option<NewGameDialogState>,
 }
 
 impl GameScreen {
@@ -107,6 +139,9 @@ impl GameScreen {
             nav_index: None,
             pending_undo_after_abort: false,
             pending_redo_after_abort: false,
+            ai_strengths: None,
+            paused: false,
+            new_game_dialog: None,
         }
     }
 
@@ -221,6 +256,9 @@ impl GameScreen {
         if self.confirm_new_game {
             self.render_confirm_new_game(ctx);
         }
+        if self.new_game_dialog.is_some() {
+            self.render_new_game_dialog(ctx, engine);
+        }
         if self.confirm_resign {
             self.render_confirm_resign(ctx);
         }
@@ -323,7 +361,9 @@ impl GameScreen {
             ui.add_space(4.0);
             if ui.button("New Game").clicked() {
                 if self.game.history.is_empty() || self.game.result().is_some() {
-                    self.start_new_game();
+                    // Skip the "discard?" confirmation but still
+                    // surface the mode-selection dialog (T072).
+                    self.open_new_game_dialog();
                 } else {
                     self.confirm_new_game = true;
                 }
@@ -335,6 +375,16 @@ impl GameScreen {
                 .clicked()
             {
                 self.confirm_resign = true;
+            }
+            ui.add_space(4.0);
+            // Pause / Resume — visible only in AI-vs-AI mode (T074).
+            if matches!(self.game.mode, GameMode::AiVsAi)
+                && self.game.result().is_none()
+            {
+                let label = if self.paused { "Resume" } else { "Pause" };
+                if ui.button(label).clicked() {
+                    self.toggle_paused(engine);
+                }
             }
             ui.add_space(4.0);
             if engine.status().is_thinking() {
@@ -487,10 +537,110 @@ impl GameScreen {
                 });
             });
         if confirmed {
-            self.start_new_game();
+            // Open the richer mode-selection dialog rather than
+            // immediately starting a default game (T072).
+            self.open_new_game_dialog();
             self.confirm_new_game = false;
         } else if close {
             self.confirm_new_game = false;
+        }
+    }
+
+    /// Initialise the New Game modal with sensible defaults sourced
+    /// from the user's settings (T072).
+    fn open_new_game_dialog(&mut self) {
+        let last_color = self.settings.ui.last_human_color;
+        let mode = match last_color {
+            crate::settings::HumanColor::White => NewGameModeChoice::HumanPlaysWhite,
+            crate::settings::HumanColor::Black => NewGameModeChoice::HumanPlaysBlack,
+        };
+        let default_strength = self.settings.engine.default_strength;
+        self.new_game_dialog = Some(NewGameDialogState {
+            mode,
+            white_strength: default_strength,
+            black_strength: default_strength,
+        });
+    }
+
+    /// Render the New Game mode + strength dialog (T072). Emits a
+    /// fresh game on "Start"; cancel just closes the modal.
+    fn render_new_game_dialog(
+        &mut self,
+        ctx: &egui::Context,
+        engine: &mut EngineLink,
+    ) {
+        let Some(mut dlg) = self.new_game_dialog.clone() else {
+            return;
+        };
+        let mut start = false;
+        let mut cancel = false;
+        egui::Window::new("New Game")
+            .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+            .collapsible(false)
+            .resizable(false)
+            .show(ctx, |ui| {
+                ui.label(RichText::new("Mode").strong());
+                ui.radio_value(
+                    &mut dlg.mode,
+                    NewGameModeChoice::HumanPlaysWhite,
+                    "Human vs AI (play White)",
+                );
+                ui.radio_value(
+                    &mut dlg.mode,
+                    NewGameModeChoice::HumanPlaysBlack,
+                    "Human vs AI (play Black)",
+                );
+                ui.radio_value(
+                    &mut dlg.mode,
+                    NewGameModeChoice::AiVsAi,
+                    "AI vs AI",
+                );
+
+                if dlg.mode == NewGameModeChoice::AiVsAi {
+                    ui.add_space(6.0);
+                    ui.label(RichText::new("Per-side strength").strong());
+                    strength_dropdown(ui, "White:", &mut dlg.white_strength);
+                    strength_dropdown(ui, "Black:", &mut dlg.black_strength);
+                }
+
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    if ui.button("Start").clicked() {
+                        start = true;
+                    }
+                    if ui.button("Cancel").clicked() {
+                        cancel = true;
+                    }
+                });
+            });
+
+        // Persist the in-progress edits back to the option.
+        self.new_game_dialog = Some(dlg.clone());
+
+        if start {
+            // Stop any in-flight search before swapping the game.
+            if engine.status().is_thinking() {
+                engine.stop();
+            }
+            self.commit_new_game(dlg);
+            self.new_game_dialog = None;
+        } else if cancel {
+            self.new_game_dialog = None;
+        }
+    }
+
+    /// Apply the user's selection from the New Game modal (T072).
+    fn commit_new_game(&mut self, dlg: NewGameDialogState) {
+        match dlg.mode {
+            NewGameModeChoice::HumanPlaysWhite => {
+                self.start_new_game_human(Color::White);
+            }
+            NewGameModeChoice::HumanPlaysBlack => {
+                self.start_new_game_human(Color::Black);
+            }
+            NewGameModeChoice::AiVsAi => {
+                self.start_new_game_ai_vs_ai(dlg.white_strength, dlg.black_strength);
+            }
         }
     }
 
@@ -680,21 +830,46 @@ impl GameScreen {
         if self.nav_index.is_some() {
             return;
         }
+        // AI-vs-AI pause gate (T074).
+        if self.paused {
+            return;
+        }
         // It's the engine's turn — fire SetPosition + StartSearch.
+        // Send `start_position` as the root and the full history so
+        // Carp's repetition detector sees every prior position. Using
+        // `game.current` here would cause the worker to double-apply
+        // every move (see `tests/ai_vs_ai.rs`).
         let history: Vec<Move> = self.game.history.iter().map(|r| r.move_played).collect();
-        engine.set_position(self.game.current, history);
+        engine.set_position(self.game.start_position, history);
         let cfg = self.engine_config_for_play();
         engine.start_search(cfg);
         self.engine_searching = true;
     }
 
     fn engine_config_for_play(&self) -> EngineConfig {
+        // In AI-vs-AI mode, pick the strength of the side currently
+        // on move (T071/T073). Otherwise use the user's default.
+        let strength = match (self.ai_strengths, self.game.current.side_to_move) {
+            (Some((white, _)), Color::White) => white,
+            (Some((_, black)), Color::Black) => black,
+            _ => self.settings.engine.default_strength,
+        };
         EngineConfig {
             mode: chess_engine::Mode::Normal,
             time_control: self.settings.engine_time_control(),
-            strength: self.settings.engine.default_strength,
+            strength,
             max_threads: self.settings.engine.max_threads,
             tt_size_mib: 16,
+        }
+    }
+
+    /// Toggle the AI-vs-AI pause flag (T074). Aborts any in-flight
+    /// search on transition into the paused state; resumption is
+    /// handled implicitly by the next `tick_engine` call.
+    fn toggle_paused(&mut self, engine: &mut EngineLink) {
+        self.paused = !self.paused;
+        if self.paused && engine.status().is_thinking() {
+            engine.stop();
         }
     }
 
@@ -725,16 +900,51 @@ impl GameScreen {
     }
 
     fn start_new_game(&mut self) {
+        // Used by the empty-board "New Game" button and from tests.
+        // Default to a Human-vs-AI game with the player's last colour.
         let me = match self.game.mode {
             GameMode::HumanVsAi(c) => c,
             GameMode::AiVsAi => Color::White,
         };
+        self.start_new_game_human(me);
+    }
+
+    /// Start a fresh Human-vs-AI game with `me` to play (T072).
+    fn start_new_game_human(&mut self, me: Color) {
         self.game = Game::new_game(GameMode::HumanVsAi(me));
+        self.reset_game_view_state();
+        self.ai_strengths = None;
+        self.paused = false;
+        self.orientation = orientation_for(me, &self.settings);
+    }
+
+    /// Start a fresh AI-vs-AI game with the chosen per-side strengths
+    /// (T071/T072/T073).
+    fn start_new_game_ai_vs_ai(
+        &mut self,
+        white: StrengthPreset,
+        black: StrengthPreset,
+    ) {
+        self.game = Game::new_game(GameMode::AiVsAi);
+        self.reset_game_view_state();
+        self.ai_strengths = Some((white, black));
+        self.paused = false;
+        // For AI-vs-AI, default to White-at-bottom regardless of
+        // settings auto-flipping rules.
+        self.orientation = Orientation::WhiteAtBottom;
+    }
+
+    /// Common state-reset shared by `start_new_game_*`.
+    fn reset_game_view_state(&mut self) {
         self.board_state = BoardState::default();
         self.engine_searching = false;
         self.show_game_over = false;
         self.toast = None;
+        self.toast_until = None;
         self.promotion = None;
+        self.nav_index = None;
+        self.pending_undo_after_abort = false;
+        self.pending_redo_after_abort = false;
     }
 
     fn is_human_turn(&self) -> bool {
@@ -1052,6 +1262,26 @@ fn engine_strength_label(s: StrengthPreset) -> &'static str {
         StrengthPreset::Advanced => "Advanced",
         StrengthPreset::Maximum => "Maximum",
     }
+}
+
+/// Render a labelled strength `ComboBox` used by the New Game modal
+/// (T072).
+fn strength_dropdown(ui: &mut egui::Ui, label: &str, value: &mut StrengthPreset) {
+    ui.horizontal(|ui| {
+        ui.label(label);
+        egui::ComboBox::from_id_salt(label)
+            .selected_text(engine_strength_label(*value))
+            .show_ui(ui, |ui| {
+                for s in [
+                    StrengthPreset::Beginner,
+                    StrengthPreset::Intermediate,
+                    StrengthPreset::Advanced,
+                    StrengthPreset::Maximum,
+                ] {
+                    ui.selectable_value(value, s, engine_strength_label(s));
+                }
+            });
+    });
 }
 
 #[allow(dead_code)]

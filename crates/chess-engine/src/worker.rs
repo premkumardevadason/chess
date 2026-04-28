@@ -113,6 +113,16 @@ fn run(cmd_rx: Receiver<Command>, event_tx: Sender<Event>, shared: WorkerShared)
                     }
                 };
                 let core_pos = current_core.expect("core position must be set when board is set");
+                // Replay history onto the root core position so that
+                // `move_from_carp` validates Carp's chosen move against
+                // the *current* position (after history), not the root.
+                // Without this, Carp returns a legal move for e.g. Black
+                // after 1.e4, but we ask move_from_carp to validate it
+                // in the white-to-move startpos and it (correctly) fails.
+                let mut core_pos_now = core_pos;
+                for hmv in &current_history {
+                    core_pos_now = core_pos_now.make_move(*hmv).0;
+                }
 
                 // Reset transposition table per search to enforce
                 // reproducibility when Mode::Reproducible.
@@ -166,6 +176,7 @@ fn run(cmd_rx: Receiver<Command>, event_tx: Sender<Event>, shared: WorkerShared)
                     });
 
                     let mut completed = true;
+                    let mut shutdown_pending = false;
                     let mv = loop {
                         select! {
                             recv(done_rx) -> _carp_pos_after => {
@@ -183,7 +194,7 @@ fn run(cmd_rx: Receiver<Command>, event_tx: Sender<Event>, shared: WorkerShared)
                                     Ok(Command::Shutdown) => {
                                         shared.global_stop.store(true, Ordering::SeqCst);
                                         completed = false;
-                                        // Drain after the helper joins below.
+                                        shutdown_pending = true;
                                     }
                                     Ok(other) => {
                                         let _ = event_tx.send(Event::Warning(format!(
@@ -195,20 +206,25 @@ fn run(cmd_rx: Receiver<Command>, event_tx: Sender<Event>, shared: WorkerShared)
                                         // Sender dropped — abort and exit.
                                         shared.global_stop.store(true, Ordering::SeqCst);
                                         completed = false;
+                                        shutdown_pending = true;
                                     }
                                 }
                             }
                         }
                     };
-                    (mv, completed)
+                    (mv, completed, shutdown_pending)
                 });
 
-                let (carp_mv, completed) = result;
+                let (carp_mv, completed, shutdown_pending) = result;
 
-                let core_mv = match move_from_carp(carp_mv, &core_pos) {
+                let core_mv = match move_from_carp(carp_mv, &core_pos_now) {
                     Ok(m) => m,
                     Err(e) => {
                         let _ = event_tx.send(Event::Warning(format!("invalid engine move: {e}")));
+                        if shutdown_pending {
+                            let _ = event_tx.send(Event::Stopped);
+                            break;
+                        }
                         continue;
                     }
                 };
@@ -230,6 +246,13 @@ fn run(cmd_rx: Receiver<Command>, event_tx: Sender<Event>, shared: WorkerShared)
                     }));
                 } else {
                     let _ = event_tx.send(Event::SearchAborted);
+                }
+                if shutdown_pending {
+                    // A `Shutdown` arrived during the in-flight search and
+                    // was consumed by the inner `select!`. Exit the outer
+                    // loop now so `EngineHandle::shutdown_inner` can join.
+                    let _ = event_tx.send(Event::Stopped);
+                    break;
                 }
             }
             Command::Stop => {

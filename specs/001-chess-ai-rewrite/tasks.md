@@ -189,14 +189,14 @@ description: "Tasks for feature 001-chess-ai-rewrite — Chess AI Rewrite (singl
 
 ### Implementation for User Story 4
 
-- [ ] T071 [US4] Add `GameMode` field to `Game` (`HumanVsAi(Color)` / `AiVsAi { white_strength, black_strength }`) in `crates/chess-core/src/game.rs` per [data-model.md §4](./data-model.md). Update existing call sites. Depends on T014.
-- [ ] T072 [US4] Add "Mode" radio group to "New Game" modal in `crates/chess-app/src/ui/game_screen.rs`: `Human vs AI (play White)` / `Human vs AI (play Black)` / `AI vs AI`. When `AI vs AI` is selected, show two strength dropdowns (one per side). Depends on T042, T053, T071.
-- [ ] T073 [US4] Implement self-play loop in `crates/chess-app/src/ui/game_screen.rs`: on `GameMode::AiVsAi`, after each `Event::SearchComplete`, automatically issue the next `Command::SetPosition` + `Command::StartSearch` for the other side, until `Game::result().is_some()` per [User Story 4 Acceptance Scenario 1](./spec.md). [FR-007](./spec.md). Depends on T044, T071.
-- [ ] T074 [US4] Implement Pause/Resume button in `crates/chess-app/src/ui/game_screen.rs` (visible only in `AiVsAi` mode): Pause sends `Command::Stop` and sets a `paused: bool` flag in `UiState`; Resume re-issues `StartSearch` from current position per [User Story 4 Acceptance Scenario 2](./spec.md).
+- [X] T071 [US4] Add `GameMode` field to `Game` (`HumanVsAi(Color)` / `AiVsAi { white_strength, black_strength }`) in `crates/chess-core/src/game.rs` per [data-model.md §4](./data-model.md). Update existing call sites. Depends on T014.
+- [X] T072 [US4] Add "Mode" radio group to "New Game" modal in `crates/chess-app/src/ui/game_screen.rs`: `Human vs AI (play White)` / `Human vs AI (play Black)` / `AI vs AI`. When `AI vs AI` is selected, show two strength dropdowns (one per side). Depends on T042, T053, T071.
+- [X] T073 [US4] Implement self-play loop in `crates/chess-app/src/ui/game_screen.rs`: on `GameMode::AiVsAi`, after each `Event::SearchComplete`, automatically issue the next `Command::SetPosition` + `Command::StartSearch` for the other side, until `Game::result().is_some()` per [User Story 4 Acceptance Scenario 1](./spec.md). [FR-007](./spec.md). Depends on T044, T071.
+- [X] T074 [US4] Implement Pause/Resume button in `crates/chess-app/src/ui/game_screen.rs` (visible only in `AiVsAi` mode): Pause sends `Command::Stop` and sets a `paused: bool` flag in `UiState`; Resume re-issues `StartSearch` from current position per [User Story 4 Acceptance Scenario 2](./spec.md).
 
 ### Validation tests for User Story 4
 
-- [ ] T075 [P] [US4] Add `tests/ai_vs_ai.rs`: spawn engine, drive a full self-play loop at `PerMove:200ms` Beginner vs Beginner from the standard starting position; assert (a) every move emitted is in `legal_moves(p)`, (b) the loop terminates with `Game::result().is_some()` within 200 plies, (c) the result is one of `Checkmate(_)` or `Draw(_)` per [User Story 4 Acceptance Scenario 1](./spec.md).
+- [X] T075 [P] [US4] Add `tests/ai_vs_ai.rs`: spawn engine, drive a full self-play loop at `PerMove:200ms` Beginner vs Beginner from the standard starting position; assert (a) every move emitted is in `legal_moves(p)`, (b) the loop terminates with `Game::result().is_some()` within 200 plies, (c) the result is one of `Checkmate(_)` or `Draw(_)` per [User Story 4 Acceptance Scenario 1](./spec.md).
 
 **Checkpoint US4**: AI-vs-AI mode runs cleanly, pauses, and resumes.
 

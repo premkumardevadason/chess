@@ -25,11 +25,16 @@ use crate::san::san_for;
 // ---------------------------------------------------------------------------
 
 /// Who is playing each side.
+///
+/// Per-side **strength presets** for AI-vs-AI mode are intentionally
+/// _not_ stored here (they belong to engine config, which lives in
+/// `chess-engine`). The chess-app UI carries them on `GameScreen`
+/// per [data-model.md §4](../../specs/001-chess-ai-rewrite/data-model.md#4-game-and-history).
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum GameMode {
     /// Human vs. AI; the contained `Color` is the human.
     HumanVsAi(Color),
-    /// AI vs. AI demo / tournament mode.
+    /// AI vs. AI demo / tournament mode (T071/US4).
     AiVsAi,
 }
 
