@@ -10,10 +10,13 @@
 //! - [`game_screen`] — top-level Game screen layout: board on the left,
 //!   side panel with move list, captured-piece tray, status, and
 //!   buttons on the right (T041, T041a, T042–T046).
+//! - [`settings_screen`] — section-organised settings form (T053–T060).
 
 pub mod board;
 pub mod game_screen;
 pub mod promotion;
+pub mod settings_screen;
 pub mod theme;
 
 pub use game_screen::GameScreen;
+pub use settings_screen::{SettingsOutcome, SettingsScreen};

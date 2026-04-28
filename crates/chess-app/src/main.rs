@@ -40,7 +40,7 @@ mod ui;
 use cli::{Cli, CliAction};
 use engine_link::EngineLink;
 use settings::UserSettings;
-use ui::GameScreen;
+use ui::{GameScreen, SettingsOutcome, SettingsScreen};
 
 /// Exit codes per [contracts/cli-flags.md §Exit codes](../../specs/001-chess-ai-rewrite/contracts/cli-flags.md).
 const EXIT_OK: u8 = 0;
@@ -146,7 +146,7 @@ fn run_gui(reset_settings: bool, portable: bool) -> Result<(), BootError> {
     info!("engine spawned");
 
     let native_options = eframe::NativeOptions::default();
-    let app = ChessApp::new(settings, engine);
+    let app = ChessApp::new(settings, engine, settings_path);
 
     eframe::run_native(
         "chess-ai",
@@ -228,23 +228,47 @@ fn run_self_test() -> anyhow::Result<()> {
 /// and the active [`GameScreen`]; on window close it issues
 /// `Stop` + `Shutdown` so the engine worker exits cleanly even mid-search
 /// (T047, per [contracts/ui-interactions.md §6.4]).
+///
+/// Also hosts the [`SettingsScreen`] (T053–T060). When the game screen
+/// raises a "open settings" intent, we swap to the settings screen for
+/// subsequent frames and swap back on close.
 struct ChessApp {
     game: GameScreen,
+    settings_screen: Option<SettingsScreen>,
     engine: EngineLink,
+    settings_path: PathBuf,
 }
 
 impl ChessApp {
-    fn new(settings: UserSettings, engine: EngineLink) -> Self {
+    fn new(settings: UserSettings, engine: EngineLink, settings_path: PathBuf) -> Self {
         Self {
             game: GameScreen::new(settings),
+            settings_screen: None,
             engine,
+            settings_path,
         }
     }
 }
 
 impl eframe::App for ChessApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        self.game.update(ctx, &mut self.engine);
+        if let Some(screen) = self.settings_screen.as_mut() {
+            match screen.update(ctx, &mut self.engine) {
+                SettingsOutcome::Pending => {}
+                SettingsOutcome::Closed(updated) => {
+                    self.game.apply_settings(updated);
+                    self.settings_screen = None;
+                }
+            }
+        } else {
+            self.game.update(ctx, &mut self.engine);
+            if self.game.take_open_settings_request() {
+                self.settings_screen = Some(SettingsScreen::new(
+                    self.game.settings.clone(),
+                    self.settings_path.clone(),
+                ));
+            }
+        }
     }
 
     fn on_exit(&mut self) {

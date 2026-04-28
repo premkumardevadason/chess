@@ -207,7 +207,7 @@ r3k3/8/8/8/8/8/8/4K3 b q - 9 14                                                 
 # Bishop pins white knight on e2 against king on e1.
 4k3/8/8/8/8/8/4N3/4Kb2 w - - 0 1                                                ; chk no ; term none ; cat "pinned-piece" ; id "PIN.001 knight-pinned-by-bishop"
 # Rook pins white knight on e2 against king on e1.
-4r3/8/8/8/8/8/4N3/4K3 w - - 0 1                                                 ; chk no ; term none ; cat "pinned-piece" ; id "PIN.002 knight-pinned-by-rook"
+4r2k/8/8/8/8/8/4N3/4K3 w - - 0 1                                                 ; chk no ; term none ; cat "pinned-piece" ; id "PIN.002 knight-pinned-by-rook"
 
 # ============================================================
 # L. Specific mate / no-mate distinctions stress-testing the

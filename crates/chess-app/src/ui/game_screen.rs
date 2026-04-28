@@ -62,6 +62,11 @@ pub struct GameScreen {
     /// settings screen (CP-F / US2) is responsible for re-flowing
     /// this value if the user changes it mid-session.
     pub settings: UserSettings,
+    /// Latched once per frame when the user clicks Settings… in the
+    /// menu or presses Ctrl+, (T059). The host (`ChessApp`) drains
+    /// this via [`GameScreen::take_open_settings_request`] and swaps
+    /// to the [`crate::ui::SettingsScreen`].
+    pub open_settings_requested: bool,
 }
 
 impl GameScreen {
@@ -84,6 +89,7 @@ impl GameScreen {
             toast_until: None,
             engine_searching: false,
             settings,
+            open_settings_requested: false,
         }
     }
 
@@ -95,6 +101,29 @@ impl GameScreen {
         for event in engine.tick() {
             self.absorb_engine_event(event);
         }
+
+        // Ctrl+, opens the settings screen (T059).
+        let settings_hotkey = ctx.input(|i| {
+            i.modifiers.command_only() && i.key_pressed(egui::Key::Comma)
+        });
+        if settings_hotkey {
+            self.open_settings_requested = true;
+        }
+
+        // Top menu bar with File ▸ Settings… (T059).
+        egui::TopBottomPanel::top("game_menu").show(ctx, |ui| {
+            egui::menu::bar(ui, |ui| {
+                ui.menu_button("File", |ui| {
+                    if ui
+                        .button("Settings…\tCtrl+,")
+                        .clicked()
+                    {
+                        self.open_settings_requested = true;
+                        ui.close_menu();
+                    }
+                });
+            });
+        });
 
         // Expire toasts.
         if let Some(deadline) = self.toast_until {
@@ -606,6 +635,27 @@ impl GameScreen {
     fn set_toast(&mut self, msg: String) {
         self.toast = Some(msg);
         self.toast_until = Some(Instant::now() + Duration::from_secs(3));
+    }
+
+    /// True if the user requested the settings screen this frame.
+    /// Consumes the flag so the host only switches once per click.
+    /// (T059)
+    pub fn take_open_settings_request(&mut self) -> bool {
+        std::mem::replace(&mut self.open_settings_requested, false)
+    }
+
+    /// Adopt updated settings handed back by the settings screen.
+    /// Re-applies any view-side state derived from settings (e.g.,
+    /// board orientation in `Auto` mode). The settings file itself is
+    /// already on disk by the time the settings screen closes.
+    pub fn apply_settings(&mut self, settings: UserSettings) {
+        // Refresh derived view state.
+        let me = match self.game.mode {
+            GameMode::HumanVsAi(c) => c,
+            GameMode::AiVsAi => Color::White,
+        };
+        self.orientation = orientation_for(me, &settings);
+        self.settings = settings;
     }
 
     // ---- test-only thin wrappers ------------------------------------

@@ -56,3 +56,25 @@ debug         = true
 [profile.dev]
 opt-level = 1
 debug     = true
+
+# Workspace-root package so `tests/*.rs` (T049) lives at repo root per tasks.md.
+[package]
+name                 = "chess-workspace-tests"
+description          = "Workspace-level integration tests (SC-008 rules corpus)"
+version.workspace    = true
+edition.workspace    = true
+rust-version.workspace = true
+authors.workspace    = true
+license.workspace    = true
+publish              = false
+build                = "build.rs"
+
+[lib]
+path = "src/workspace_tests_lib.rs"
+
+[dev-dependencies]
+chess-core = { path = "crates/chess-core" }
+
+[build-dependencies]
+chess-core = { path = "crates/chess-core" }
+cozy-chess = "0.3"
