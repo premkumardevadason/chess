@@ -13,10 +13,12 @@
 //! - [`settings_screen`] — section-organised settings form (T053–T060).
 
 pub mod board;
+pub mod about_screen;
 pub mod game_screen;
 pub mod promotion;
 pub mod settings_screen;
 pub mod theme;
 
+pub use about_screen::AboutScreen;
 pub use game_screen::GameScreen;
 pub use settings_screen::{SettingsOutcome, SettingsScreen};

@@ -1,0 +1,21 @@
+# Docker build context exclusions
+.git/
+.gitignore
+Dockerfile*
+.dockerignore
+target/
+**/target/
+legacy/
+node_modules/
+**/node_modules/
+dist/
+build/
+coverage/
+*.log
+*.log*
+.env
+.env*
+.vscode/
+.idea/
+*.tmp
+*.swp

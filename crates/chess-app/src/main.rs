@@ -28,19 +28,20 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use clap::Parser;
+use clap::{CommandFactory, Parser};
 use tracing::{info, warn};
-use tracing_subscriber::{fmt, prelude::*, EnvFilter};
+use tracing_subscriber::{filter::LevelFilter, fmt, prelude::*, EnvFilter};
 
 mod cli;
 mod engine_link;
+mod self_test;
 mod settings;
 mod ui;
 
 use cli::{Cli, CliAction};
 use engine_link::EngineLink;
 use settings::UserSettings;
-use ui::{GameScreen, SettingsOutcome, SettingsScreen};
+use ui::{AboutScreen, GameScreen, SettingsOutcome, SettingsScreen};
 
 /// Exit codes per [contracts/cli-flags.md §Exit codes](../../specs/001-chess-ai-rewrite/contracts/cli-flags.md).
 const EXIT_OK: u8 = 0;
@@ -50,36 +51,74 @@ const EXIT_ENGINE_INIT_FAILED: u8 = 3;
 fn main() -> ExitCode {
     let cli = Cli::parse();
 
-    // Set up tracing first so subsequent steps emit structured logs.
-    init_tracing(cli.log_debug);
-
     match cli.action() {
         CliAction::PrintVersion => {
+            init_tracing(false, false);
             println!("{}", cli::version_line());
             ExitCode::from(EXIT_OK)
         }
-        CliAction::RunSelfTest => match run_self_test() {
-            Ok(()) => ExitCode::from(EXIT_OK),
-            Err(e) => {
-                eprintln!("self-test failed: {e}");
-                ExitCode::from(EXIT_SELF_TEST_FAILED)
-            }
-        },
-        CliAction::Run {
-            log_debug: _,
+        CliAction::PrintHelp => {
+            init_tracing(false, false);
+            let mut cmd = Cli::command();
+            cmd.print_help().expect("print help");
+            println!();
+            ExitCode::from(EXIT_OK)
+        }
+        CliAction::RunSelfTest {
             reset_settings,
             portable,
-        } => match run_gui(reset_settings, portable) {
-            Ok(()) => ExitCode::from(EXIT_OK),
-            Err(BootError::EngineInit(msg)) => {
-                eprintln!("engine init failed: {msg}");
-                ExitCode::from(EXIT_ENGINE_INIT_FAILED)
+        } => {
+            init_tracing(cli.log_debug, cli.log_debug);
+            if reset_settings {
+                if let Ok(path) = settings::resolve_settings_path(portable) {
+                    reset_settings_file(&path);
+                }
             }
-            Err(BootError::Other(e)) => {
-                eprintln!("startup error: {e}");
-                ExitCode::from(EXIT_ENGINE_INIT_FAILED)
+            match run_self_test() {
+                Ok(()) => ExitCode::from(EXIT_OK),
+                Err(e) => {
+                    eprintln!("self-test failed: {e}");
+                    ExitCode::from(EXIT_SELF_TEST_FAILED)
+                }
             }
-        },
+        }
+        CliAction::Run {
+            log_debug,
+            reset_settings,
+            portable,
+        } => {
+            let settings_path = match settings::resolve_settings_path(portable) {
+                Ok(p) => p,
+                Err(e) => {
+                    eprintln!("startup error: {e}");
+                    return ExitCode::from(EXIT_ENGINE_INIT_FAILED);
+                }
+            };
+
+            if reset_settings {
+                reset_settings_file(&settings_path);
+            }
+
+            let mut settings = UserSettings::load(&settings_path);
+            if log_debug {
+                settings.diagnostics.debug_logging = true;
+            }
+
+            let file_logging = log_debug || settings.diagnostics.debug_logging;
+            init_tracing(log_debug || settings.diagnostics.debug_logging, file_logging);
+
+            match run_gui(settings_path, settings) {
+                Ok(()) => ExitCode::from(EXIT_OK),
+                Err(BootError::EngineInit(msg)) => {
+                    eprintln!("engine init failed: {msg}");
+                    ExitCode::from(EXIT_ENGINE_INIT_FAILED)
+                }
+                Err(BootError::Other(e)) => {
+                    eprintln!("startup error: {e}");
+                    ExitCode::from(EXIT_ENGINE_INIT_FAILED)
+                }
+            }
+        }
     }
 }
 
@@ -97,17 +136,75 @@ impl<E: Into<anyhow::Error>> From<E> for BootError {
     }
 }
 
-/// Initialise `tracing` with WARN+ to stderr by default; respects
-/// `RUST_LOG` for fine-grained control. The file-sink path will be
-/// wired in CP-J (T088); for now `--log-debug` simply lowers the
-/// stderr level to DEBUG.
-fn init_tracing(log_debug: bool) {
-    let default = if log_debug { "debug" } else { "warn" };
+/// Initialise `tracing` with WARN+ to stderr by default and optional
+/// daily file logging under `%LOCALAPPDATA%\\chess-ai\\logs`.
+fn init_tracing(debug_filter: bool, file_logging: bool) {
+    let default = if debug_filter { "debug" } else { "warn" };
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default));
+    let stderr_layer = fmt::layer()
+        .with_target(false)
+        .with_writer(std::io::stderr)
+        .with_filter(LevelFilter::WARN);
+
+    if file_logging {
+        if let Some(appender) = make_file_appender() {
+            let _ = tracing_subscriber::registry()
+                .with(filter)
+                .with(stderr_layer)
+                .with(
+                    fmt::layer()
+                        .with_target(false)
+                        .with_ansi(false)
+                        .with_writer(appender)
+                        .with_filter(LevelFilter::DEBUG),
+                )
+                .try_init();
+            return;
+        }
+    }
+
     let _ = tracing_subscriber::registry()
         .with(filter)
-        .with(fmt::layer().with_target(false).with_writer(std::io::stderr))
+        .with(stderr_layer)
         .try_init();
+}
+
+fn make_file_appender() -> Option<tracing_appender::rolling::RollingFileAppender> {
+    let proj = directories::ProjectDirs::from("", "", "chess-ai")?;
+    let log_dir = proj.data_local_dir().join("logs");
+    if std::fs::create_dir_all(&log_dir).is_err() {
+        return None;
+    }
+
+    prune_old_log_files(&log_dir, 7);
+    Some(tracing_appender::rolling::daily(&log_dir, "chess-ai.log"))
+}
+
+fn prune_old_log_files(dir: &std::path::Path, keep: usize) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+
+    let mut files: Vec<PathBuf> = entries
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .map(|n| n.starts_with("chess-ai.log."))
+                .unwrap_or(false)
+        })
+        .collect();
+
+    files.sort();
+    if files.len() <= keep {
+        return;
+    }
+
+    let remove_count = files.len().saturating_sub(keep);
+    for old in files.into_iter().take(remove_count) {
+        let _ = std::fs::remove_file(old);
+    }
 }
 
 /// Move existing settings file out of the way for a clean restart per
@@ -131,15 +228,8 @@ fn reset_settings_file(path: &PathBuf) {
 }
 
 /// Normal GUI boot: load settings, spawn engine, run the egui app.
-fn run_gui(reset_settings: bool, portable: bool) -> Result<(), BootError> {
-    let settings_path = settings::resolve_settings_path(portable).map_err(BootError::Other)?;
+fn run_gui(settings_path: PathBuf, settings: UserSettings) -> Result<(), BootError> {
     info!(settings_path = %settings_path.display(), "resolved settings path");
-
-    if reset_settings {
-        reset_settings_file(&settings_path);
-    }
-
-    let settings = UserSettings::load(&settings_path);
     info!(?settings.engine, "settings loaded");
 
     let engine = EngineLink::spawn();
@@ -166,62 +256,7 @@ fn run_gui(reset_settings: bool, portable: bool) -> Result<(), BootError> {
 /// returned. The richer 1000-position rules suite + reproducibility
 /// determinism check is wired in CP-J (T093).
 fn run_self_test() -> anyhow::Result<()> {
-    use chess_core::{legal_moves, Position, STARTPOS_FEN};
-    use chess_engine::{Command, EngineConfig, Event, TimeControl};
-    use std::time::{Duration, Instant};
-
-    println!("chess-ai self-test starting…");
-    let engine = chess_engine::Engine::new();
-    let handle = engine.spawn();
-
-    let pos = Position::from_fen(STARTPOS_FEN)?;
-    handle.send(Command::SetPosition {
-        position: pos,
-        history: vec![],
-    })?;
-
-    let cfg = EngineConfig {
-        time_control: TimeControl::FixedDepth(4),
-        max_threads: 1,
-        ..EngineConfig::default()
-    };
-    handle.send(Command::StartSearch { config: cfg })?;
-
-    let started = Instant::now();
-    let mut best_move = None;
-    while started.elapsed() < Duration::from_secs(30) {
-        for event in handle.drain() {
-            match event {
-                Event::SearchComplete(result) => {
-                    best_move = Some(result.mv);
-                }
-                Event::SearchAborted => {
-                    anyhow::bail!("search was unexpectedly aborted");
-                }
-                _ => {}
-            }
-        }
-        if best_move.is_some() {
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(20));
-    }
-
-    let _ = handle.send(Command::Shutdown);
-
-    let mv = best_move.ok_or_else(|| anyhow::anyhow!("no SearchComplete in 30 s"))?;
-    let legal: Vec<_> = legal_moves(&pos).into_iter().collect();
-    if !legal.contains(&mv) {
-        anyhow::bail!(
-            "returned move {mv} is illegal at startpos",
-            mv = mv.to_long_algebraic()
-        );
-    }
-    println!(
-        "self-test ok: best move {} found at depth 4",
-        mv.to_long_algebraic()
-    );
-    Ok(())
+    self_test::run_self_test()
 }
 
 /// Top-level eframe app for CP-E (US1) onwards. Owns the [`EngineLink`]
@@ -235,6 +270,7 @@ fn run_self_test() -> anyhow::Result<()> {
 struct ChessApp {
     game: GameScreen,
     settings_screen: Option<SettingsScreen>,
+    about_screen: Option<AboutScreen>,
     engine: EngineLink,
     settings_path: PathBuf,
 }
@@ -244,6 +280,7 @@ impl ChessApp {
         Self {
             game: GameScreen::new(settings),
             settings_screen: None,
+            about_screen: None,
             engine,
             settings_path,
         }
@@ -260,6 +297,10 @@ impl eframe::App for ChessApp {
                     self.settings_screen = None;
                 }
             }
+        } else if let Some(screen) = self.about_screen.as_mut() {
+            if screen.update(ctx) {
+                self.about_screen = None;
+            }
         } else {
             self.game.update(ctx, &mut self.engine);
             if self.game.take_open_settings_request() {
@@ -267,6 +308,8 @@ impl eframe::App for ChessApp {
                     self.game.settings.clone(),
                     self.settings_path.clone(),
                 ));
+            } else if self.game.take_open_about_request() {
+                self.about_screen = Some(AboutScreen::new());
             }
         }
     }

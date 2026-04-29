@@ -29,6 +29,7 @@
 pub mod adapter;
 pub mod api;
 pub mod config;
+mod repro;
 mod worker;
 
 pub use adapter::AdapterError;

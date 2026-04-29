@@ -32,12 +32,12 @@ use clap::{ArgGroup, Parser};
     about = "chess-ai — single-binary native Windows chess",
     long_about = None,
     disable_version_flag = true,
-    disable_help_flag = false,
+    disable_help_flag = true,
     arg_required_else_help = false,
 )]
 #[command(group(
     ArgGroup::new("exit_actions")
-        .args(["version", "self_test"])
+        .args(["version", "help", "self_test"])
         .multiple(false)
 ))]
 pub struct Cli {
@@ -61,6 +61,10 @@ pub struct Cli {
     #[arg(long = "version", default_value_t = false)]
     pub version: bool,
 
+    /// Print help text and exit.
+    #[arg(long = "help", short = 'h', default_value_t = false)]
+    pub help: bool,
+
     /// Run a built-in 30-second sanity test and exit.
     #[arg(long = "self-test", default_value_t = false)]
     pub self_test: bool,
@@ -73,8 +77,15 @@ pub struct Cli {
 pub enum CliAction {
     /// Print the version line and exit 0.
     PrintVersion,
+    /// Print help text and exit 0.
+    PrintHelp,
     /// Run the self-test and exit 0/1.
-    RunSelfTest,
+    RunSelfTest {
+        /// Reset the on-disk settings before running self-test.
+        reset_settings: bool,
+        /// Use `<exe-dir>\settings.toml` instead of `%APPDATA%`.
+        portable: bool,
+    },
     /// Open the GUI normally, applying the given runtime overrides.
     Run {
         /// Force `[diagnostics] debug_logging = true` for this run.
@@ -93,8 +104,13 @@ impl Cli {
     pub fn action(&self) -> CliAction {
         if self.version {
             CliAction::PrintVersion
+        } else if self.help {
+            CliAction::PrintHelp
         } else if self.self_test {
-            CliAction::RunSelfTest
+            CliAction::RunSelfTest {
+                reset_settings: self.reset_settings,
+                portable: self.portable,
+            }
         } else {
             CliAction::Run {
                 log_debug: self.log_debug,
@@ -144,12 +160,24 @@ mod tests {
     #[test]
     fn parses_self_test_flag() {
         let cli = Cli::parse_from(["chess-ai", "--self-test"]);
-        assert_eq!(cli.action(), CliAction::RunSelfTest);
+        assert_eq!(
+            cli.action(),
+            CliAction::RunSelfTest {
+                reset_settings: false,
+                portable: false,
+            }
+        );
     }
 
     #[test]
     fn version_and_self_test_are_mutually_exclusive() {
         let result = Cli::try_parse_from(["chess-ai", "--version", "--self-test"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn version_and_help_are_mutually_exclusive() {
+        let result = Cli::try_parse_from(["chess-ai", "--version", "--help"]);
         assert!(result.is_err());
     }
 

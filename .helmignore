@@ -1,0 +1,15 @@
+*.swp
+*.tmp
+.DS_Store
+Thumbs.db
+.git/
+.vscode/
+.idea/
+*.log
+legacy/
+*.secret.yaml
+secrets/
+.kube/
+kubeconfig*
+*.key
+*.crt

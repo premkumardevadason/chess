@@ -24,6 +24,7 @@ use crate::settings::{
     parse_time_control_str, num_cpus_estimate, BoardOrientation, HumanColor, Theme,
     TimeControlParseError, UserSettings,
 };
+use crate::ui::theme::apply_egui_theme;
 
 /// Hard ceiling on the threads slider regardless of CPU count.
 const MAX_THREAD_CAP: u8 = 8;
@@ -103,6 +104,8 @@ impl SettingsScreen {
         ctx: &egui::Context,
         engine: &mut EngineLink,
     ) -> SettingsOutcome {
+        apply_egui_theme(ctx, self.working.ui.theme);
+
         // Esc closes the screen.
         let escape_pressed = ctx.input(|i| i.key_pressed(egui::Key::Escape));
 

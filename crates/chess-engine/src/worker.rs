@@ -31,6 +31,7 @@ use crossbeam_channel::{select, Receiver, Sender};
 use crate::adapter::{move_from_carp, move_to_carp, position_to_carp, AdapterError};
 use crate::api::{Command, Event};
 use crate::config::{EngineConfig, Mode, Score, SearchInfo, SearchResult, TimeControl};
+use crate::repro::normalize_config;
 
 /// Shared state between the API layer and the worker. The API holds a
 /// clone of `global_stop` so `EngineHandle::send(Command::Stop)` can flip
@@ -102,7 +103,8 @@ fn run(cmd_rx: Receiver<Command>, event_tx: Sender<Event>, shared: WorkerShared)
                 threads.resize(workers);
             }
             Command::StartSearch { config } => {
-                _last_config = config.clone();
+                let effective_config = normalize_config(&config);
+                _last_config = effective_config.clone();
                 let board = match current_carp_board.clone() {
                     Some(b) => b,
                     None => {
@@ -124,12 +126,25 @@ fn run(cmd_rx: Receiver<Command>, event_tx: Sender<Event>, shared: WorkerShared)
                     core_pos_now = core_pos_now.make_move(*hmv).0;
                 }
 
+                if effective_config.max_threads != config.max_threads {
+                    let _ = event_tx.send(Event::Warning(format!(
+                        "reproducible mode forced max_threads={} -> {}",
+                        config.max_threads, effective_config.max_threads
+                    )));
+                }
+                if effective_config.time_control != config.time_control {
+                    let _ = event_tx.send(Event::Warning(
+                        "reproducible mode normalized time control to deterministic bounds"
+                            .into(),
+                    ));
+                }
+
                 // Reset transposition table per search to enforce
                 // reproducibility when Mode::Reproducible.
-                if matches!(config.mode, Mode::Reproducible { .. }) {
+                if matches!(effective_config.mode, Mode::Reproducible { .. }) {
                     tt.clear();
                     threads.resize(0); // single-thread search
-                } else if let Some(target) = workers_for_config(&config) {
+                } else if let Some(target) = workers_for_config(&effective_config) {
                     threads.resize(target);
                 }
 
@@ -148,7 +163,7 @@ fn run(cmd_rx: Receiver<Command>, event_tx: Sender<Event>, shared: WorkerShared)
 
                 shared.global_stop.store(false, Ordering::SeqCst);
                 let started = Instant::now();
-                let tc = map_time_control(config.time_control);
+                let tc = map_time_control(effective_config.time_control);
 
                 // Run the search synchronously on this worker thread —
                 // Carp's ThreadPool::deploy_search blocks. To remain

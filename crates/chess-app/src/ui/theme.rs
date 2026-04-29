@@ -19,6 +19,8 @@
 use chess_core::{Color as PColor, PieceType};
 use egui::{Align2, Color32, FontId, Painter, Pos2, Rect, Stroke};
 
+use crate::settings::Theme;
+
 /// All colours used by the board, pieces, and overlays.
 ///
 /// Organised by their semantic role (board squares, highlights, piece
@@ -76,6 +78,72 @@ impl Palette {
         piece_outline: Color32::from_rgb(0x10, 0x10, 0x10),
         label: Color32::from_rgb(0x88, 0x88, 0x88),
     };
+
+    /// Dark board + dark chrome variant (T086).
+    pub const DARK: Self = Self {
+        light_square: Color32::from_rgb(0x96, 0xA5, 0x8A),
+        dark_square: Color32::from_rgb(0x4E, 0x61, 0x4B),
+        last_move: Color32::from_rgba_premultiplied(214, 196, 94, 120),
+        selection: Color32::from_rgba_premultiplied(84, 168, 120, 150),
+        legal_target: Color32::from_rgba_premultiplied(255, 255, 255, 70),
+        check_glow: Color32::from_rgba_premultiplied(230, 85, 85, 170),
+        panel_bg: Color32::from_rgb(0x17, 0x1B, 0x1F),
+        board_border: Color32::from_rgb(0x22, 0x2A, 0x24),
+        white_piece: Color32::from_rgb(0xF2, 0xF5, 0xEF),
+        black_piece: Color32::from_rgb(0x0E, 0x12, 0x14),
+        white_piece_text: Color32::from_rgb(0x10, 0x15, 0x12),
+        black_piece_text: Color32::from_rgb(0xF3, 0xF7, 0xF5),
+        piece_outline: Color32::from_rgb(0x08, 0x0A, 0x0B),
+        label: Color32::from_rgb(0xB7, 0xC0, 0xB4),
+    };
+
+    /// Accessibility-first high-contrast palette (T086).
+    pub const HIGH_CONTRAST: Self = Self {
+        light_square: Color32::from_rgb(0xF2, 0xF2, 0xF2),
+        dark_square: Color32::from_rgb(0x1F, 0x1F, 0x1F),
+        last_move: Color32::from_rgba_premultiplied(255, 215, 0, 170),
+        selection: Color32::from_rgba_premultiplied(0, 180, 255, 180),
+        legal_target: Color32::from_rgba_premultiplied(255, 0, 120, 170),
+        check_glow: Color32::from_rgba_premultiplied(255, 40, 40, 220),
+        panel_bg: Color32::from_rgb(0x00, 0x00, 0x00),
+        board_border: Color32::from_rgb(0xFF, 0xFF, 0xFF),
+        white_piece: Color32::from_rgb(0xFF, 0xFF, 0xFF),
+        black_piece: Color32::from_rgb(0x00, 0x00, 0x00),
+        white_piece_text: Color32::from_rgb(0x00, 0x00, 0x00),
+        black_piece_text: Color32::from_rgb(0xFF, 0xFF, 0xFF),
+        piece_outline: Color32::from_rgb(0xFF, 0x00, 0x80),
+        label: Color32::from_rgb(0xF0, 0xF0, 0xF0),
+    };
+}
+
+/// Select palette by persisted theme enum.
+pub fn palette_for(theme: Theme) -> Palette {
+    match theme {
+        Theme::Standard => Palette::STANDARD,
+        Theme::Dark => Palette::DARK,
+        Theme::HighContrast => Palette::HIGH_CONTRAST,
+    }
+}
+
+/// Apply egui visuals for the selected theme.
+pub fn apply_egui_theme(ctx: &egui::Context, theme: Theme) {
+    let mut visuals = match theme {
+        Theme::Standard => egui::Visuals::light(),
+        Theme::Dark => egui::Visuals::dark(),
+        Theme::HighContrast => egui::Visuals::dark(),
+    };
+
+    if matches!(theme, Theme::HighContrast) {
+        visuals.override_text_color = Some(Color32::WHITE);
+        visuals.widgets.noninteractive.bg_fill = Color32::from_rgb(0x00, 0x00, 0x00);
+        visuals.widgets.noninteractive.fg_stroke = Stroke::new(1.8, Color32::WHITE);
+        visuals.widgets.active.bg_fill = Color32::from_rgb(0xFF, 0xFF, 0xFF);
+        visuals.widgets.active.fg_stroke = Stroke::new(2.0, Color32::BLACK);
+        visuals.selection.bg_fill = Color32::from_rgb(0x00, 0x7A, 0xCC);
+        visuals.selection.stroke = Stroke::new(2.0, Color32::WHITE);
+    }
+
+    ctx.set_visuals(visuals);
 }
 
 /// SAN designator used as the on-piece glyph.
@@ -178,6 +246,15 @@ mod tests {
     #[test]
     fn standard_palette_distinguishes_squares() {
         assert_ne!(Palette::STANDARD.light_square, Palette::STANDARD.dark_square);
+    }
+
+    #[test]
+    fn alternate_palettes_distinguish_squares() {
+        assert_ne!(Palette::DARK.light_square, Palette::DARK.dark_square);
+        assert_ne!(
+            Palette::HIGH_CONTRAST.light_square,
+            Palette::HIGH_CONTRAST.dark_square
+        );
     }
 
     #[test]

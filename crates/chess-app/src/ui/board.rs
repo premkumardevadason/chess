@@ -23,7 +23,7 @@
 use chess_core::{Game, Move, Position, Promotion, Square};
 use egui::{FontId, Pos2, Rect, Response, Sense, Ui, Vec2};
 
-use crate::ui::theme::{draw_overlay, draw_piece, Palette};
+use crate::ui::theme::{draw_outline, draw_overlay, draw_piece, Palette};
 
 /// Board orientation as displayed on screen.
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
@@ -50,6 +50,8 @@ pub struct BoardResponse {
     /// Square the drag began on — set on `drag_started` and cleared
     /// on release.
     pub drag_origin: Option<Square>,
+    /// Updated keyboard-focused square (T087).
+    pub keyboard_focus: Option<Square>,
 }
 
 /// UI-side, *engine-independent* state for the board widget. Lives in
@@ -65,6 +67,8 @@ pub struct BoardState {
     pub last_move: Option<Move>,
     /// Active drag origin, cleared on release.
     pub drag_origin: Option<Square>,
+    /// Keyboard-focused square used by Tab/arrow navigation (T087).
+    pub keyboard_focus: Option<Square>,
     /// Whether the most recent click-click attempt was illegal — the
     /// game screen reads this to surface a transient toast.
     pub last_rejection: Option<String>,
@@ -404,17 +408,54 @@ impl<'a> BoardWidget<'a> {
 
         // Compute interaction response.
         let mut out = BoardResponse::default();
-        if !self.interactive {
-            return out;
-        }
-
         let pointer_sq = response
             .interact_pointer_pos()
             .or_else(|| response.hover_pos())
             .and_then(|pos| pos_to_square(pos, board_origin, tile, self.orientation));
 
         if response.clicked() {
+            response.request_focus();
             out.clicked = pointer_sq;
+            out.keyboard_focus = pointer_sq.or(self.state.keyboard_focus);
+        }
+
+        if self.interactive && response.has_focus() {
+            let mut focus = self
+                .state
+                .keyboard_focus
+                .or(pointer_sq)
+                .or_else(|| default_focus_square(self.game));
+
+            if let Some(current) = focus {
+                let mut next = current;
+                if ui.input(|i| i.key_pressed(egui::Key::ArrowLeft)) {
+                    next = shift_focus(current, self.orientation, egui::Key::ArrowLeft);
+                } else if ui.input(|i| i.key_pressed(egui::Key::ArrowRight)) {
+                    next = shift_focus(current, self.orientation, egui::Key::ArrowRight);
+                } else if ui.input(|i| i.key_pressed(egui::Key::ArrowUp)) {
+                    next = shift_focus(current, self.orientation, egui::Key::ArrowUp);
+                } else if ui.input(|i| i.key_pressed(egui::Key::ArrowDown)) {
+                    next = shift_focus(current, self.orientation, egui::Key::ArrowDown);
+                }
+
+                if next != current {
+                    focus = Some(next);
+                }
+
+                if ui.input(|i| i.key_pressed(egui::Key::Space)) && out.clicked.is_none() {
+                    out.clicked = focus;
+                }
+
+                if let Some(fs) = focus {
+                    let fr = square_rect(fs, self.orientation, board_origin, tile).shrink(tile * 0.06);
+                    draw_outline(&painter, fr, self.palette.selection, tile * 0.07);
+                    out.keyboard_focus = Some(fs);
+                }
+            }
+        }
+
+        if !self.interactive {
+            return out;
         }
 
         if response.drag_started() {
@@ -493,6 +534,49 @@ fn pos_to_square(
         Orientation::BlackAtBottom => (7 - col as u8, row as u8),
     };
     Some(Square::from_file_rank(file, rank))
+}
+
+fn default_focus_square(game: &Game) -> Option<Square> {
+    let side = game.current.side_to_move;
+    let preferred = match side {
+        chess_core::Color::White => Square::from_algebraic("e2"),
+        chess_core::Color::Black => Square::from_algebraic("e7"),
+    };
+    if let Some(sq) = preferred {
+        if game.current.piece_on(sq).map(|p| p.color) == Some(side) {
+            return Some(sq);
+        }
+    }
+    Some(game.current.king_square(side))
+}
+
+fn shift_focus(current: Square, orientation: Orientation, key: egui::Key) -> Square {
+    let (mut x, mut y) = square_to_screen_xy(current, orientation);
+    match key {
+        egui::Key::ArrowLeft => x -= 1,
+        egui::Key::ArrowRight => x += 1,
+        egui::Key::ArrowUp => y -= 1,
+        egui::Key::ArrowDown => y += 1,
+        _ => {}
+    }
+    x = x.clamp(0, 7);
+    y = y.clamp(0, 7);
+    screen_xy_to_square(x as u8, y as u8, orientation)
+}
+
+fn square_to_screen_xy(sq: Square, orientation: Orientation) -> (i32, i32) {
+    match orientation {
+        Orientation::WhiteAtBottom => (sq.file() as i32, 7 - sq.rank() as i32),
+        Orientation::BlackAtBottom => (7 - sq.file() as i32, sq.rank() as i32),
+    }
+}
+
+fn screen_xy_to_square(x: u8, y: u8, orientation: Orientation) -> Square {
+    let (file, rank) = match orientation {
+        Orientation::WhiteAtBottom => (x, 7 - y),
+        Orientation::BlackAtBottom => (7 - x, y),
+    };
+    Square::from_file_rank(file, rank)
 }
 
 /// Best-effort human-readable rejection reason for an illegal move
@@ -612,5 +696,15 @@ mod tests {
         let from = Square::from_algebraic("a7").unwrap();
         let to = Square::from_algebraic("a8").unwrap();
         assert!(detect_promotion_request(&pos, from, to));
+    }
+
+    #[test]
+    fn shift_focus_honours_orientation() {
+        let e2 = Square::from_algebraic("e2").unwrap();
+        let right_white = shift_focus(e2, Orientation::WhiteAtBottom, egui::Key::ArrowRight);
+        assert_eq!(right_white, Square::from_algebraic("f2").unwrap());
+
+        let right_black = shift_focus(e2, Orientation::BlackAtBottom, egui::Key::ArrowRight);
+        assert_eq!(right_black, Square::from_algebraic("d2").unwrap());
     }
 }

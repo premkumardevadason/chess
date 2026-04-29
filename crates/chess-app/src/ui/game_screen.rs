@@ -16,7 +16,9 @@
 
 use std::time::{Duration, Instant};
 
-use chess_core::{legal_moves, Color, DrawReason, Game, GameMode, GameResult, Move, PieceType};
+use chess_core::{
+    legal_moves, parse_san, Color, DrawReason, Game, GameMode, GameResult, Move, PieceType,
+};
 use chess_engine::{EngineConfig, Eval, Event, Score, SearchResult, StrengthPreset, TimeControl};
 use egui::{Align, Layout, RichText, Vec2};
 
@@ -27,7 +29,7 @@ use crate::ui::board::{
     ClickOutcome, Orientation,
 };
 use crate::ui::promotion::{show_promotion_modal, PromotionOutcome, PromotionRequest};
-use crate::ui::theme::{draw_mini_piece, Palette};
+use crate::ui::theme::{apply_egui_theme, draw_mini_piece, palette_for, Palette};
 
 /// Selected mode in the New Game modal (T072). Maps to either a
 /// `GameMode::HumanVsAi(_)` or `GameMode::AiVsAi` on commit.
@@ -81,11 +83,17 @@ pub struct GameScreen {
     /// settings screen (CP-F / US2) is responsible for re-flowing
     /// this value if the user changes it mid-session.
     pub settings: UserSettings,
+    /// Runtime Reproducible Mode toggle (T082). Controls whether
+    /// searches are started with `Mode::Reproducible` or `Mode::Normal`.
+    pub reproducible_mode: bool,
     /// Latched once per frame when the user clicks Settings… in the
     /// menu or presses Ctrl+, (T059). The host (`ChessApp`) drains
     /// this via [`GameScreen::take_open_settings_request`] and swaps
     /// to the [`crate::ui::SettingsScreen`].
     pub open_settings_requested: bool,
+    /// Latched when user opens Help ▸ About (T085). Drained by the
+    /// host app to swap to `AboutScreen`.
+    pub open_about_requested: bool,
     /// History-navigation cursor (T065). `None` ⇒ live game; `Some(n)`
     /// ⇒ viewing the position **after** `n` plies have been played
     /// (`0` = start position, `history.len()` = live).
@@ -124,6 +132,14 @@ pub struct GameScreen {
     /// only (T076). Used by `absorb_engine_event` to distinguish
     /// hints from game moves.
     last_search_analysis_only: bool,
+    /// Hidden SAN input toggle (T088).
+    san_entry_active: bool,
+    /// Buffer for SAN typing (e.g. "Nf3", "O-O").
+    san_buffer: String,
+    /// Request keyboard focus for SAN text field next frame.
+    san_focus_requested: bool,
+    /// Error highlight deadline for invalid SAN input.
+    san_error_until: Option<Instant>,
 }
 
 impl GameScreen {
@@ -136,7 +152,7 @@ impl GameScreen {
         Self {
             game: Game::new_game(GameMode::HumanVsAi(initial_color)),
             board_state: BoardState::default(),
-            palette: Palette::STANDARD,
+            palette: palette_for(settings.ui.theme),
             orientation: orientation_for(initial_color, &settings),
             promotion: None,
             confirm_new_game: false,
@@ -145,8 +161,10 @@ impl GameScreen {
             toast: None,
             toast_until: None,
             engine_searching: false,
+            reproducible_mode: settings.engine.reproducible_mode_default,
             settings,
             open_settings_requested: false,
+            open_about_requested: false,
             nav_index: None,
             pending_undo_after_abort: false,
             pending_redo_after_abort: false,
@@ -156,12 +174,18 @@ impl GameScreen {
             hint_result: None,
             hint_expires_at: None,
             last_search_analysis_only: false,
+            san_entry_active: false,
+            san_buffer: String::new(),
+            san_focus_requested: false,
+            san_error_until: None,
         }
     }
 
     /// Per-frame entry point. Drains engine events, renders all
     /// widgets, kicks the engine if it is the AI's turn.
     pub fn update(&mut self, ctx: &egui::Context, engine: &mut EngineLink) {
+        apply_egui_theme(ctx, self.settings.ui.theme);
+
         // Drain engine events first so the rest of the frame sees the
         // latest state.
         for event in engine.tick() {
@@ -190,12 +214,42 @@ impl GameScreen {
             self.request_redo(engine);
         }
 
+        // Reproducible-mode hotkey (T082). Ctrl+R toggles search mode.
+        let reproducible_hotkey = ctx.input(|i| {
+            i.modifiers.command_only() && i.key_pressed(egui::Key::R)
+        });
+        if reproducible_hotkey {
+            self.reproducible_mode = !self.reproducible_mode;
+            let label = if self.reproducible_mode {
+                "Reproducible"
+            } else {
+                "Default"
+            };
+            self.set_toast(format!("Search mode: {label}"));
+            if self.engine_searching {
+                engine.stop();
+            }
+        }
+
         // Hint hotkey (T076). H = request hint.
         let hint_hotkey = ctx.input(|i| {
             i.key_pressed(egui::Key::H) && !i.modifiers.any()
         });
         if hint_hotkey {
             self.request_hint(engine);
+        }
+
+        // SAN input hotkey (T088). Tab activates hidden SAN entry.
+        let san_hotkey = ctx.input(|i| i.key_pressed(egui::Key::Tab) && !i.modifiers.any());
+        if san_hotkey {
+            self.san_entry_active = true;
+            self.san_focus_requested = true;
+        }
+        let san_cancel_hotkey = ctx.input(|i| i.key_pressed(egui::Key::Escape) && !i.modifiers.any());
+        if san_cancel_hotkey && self.san_entry_active {
+            self.san_entry_active = false;
+            self.san_buffer.clear();
+            self.san_error_until = None;
         }
 
         // Top menu bar with File ▸ Settings… (T059).
@@ -209,6 +263,44 @@ impl GameScreen {
                         self.open_settings_requested = true;
                         ui.close_menu();
                     }
+                });
+
+                ui.menu_button("Help", |ui| {
+                    if ui.button("About").clicked() {
+                        self.open_about_requested = true;
+                        ui.close_menu();
+                    }
+                });
+
+                ui.separator();
+                if ui
+                    .button("Toggle Reproducible\tCtrl+R")
+                    .clicked()
+                {
+                    self.reproducible_mode = !self.reproducible_mode;
+                    let label = if self.reproducible_mode {
+                        "Reproducible"
+                    } else {
+                        "Default"
+                    };
+                    self.set_toast(format!("Search mode: {label}"));
+                    if self.engine_searching {
+                        engine.stop();
+                    }
+                }
+
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    let (text, color) = if self.reproducible_mode {
+                        ("Reproducible", egui::Color32::from_rgb(30, 120, 30))
+                    } else {
+                        ("Default", egui::Color32::from_rgb(60, 60, 60))
+                    };
+                    ui.label(
+                        RichText::new(text)
+                            .strong()
+                            .color(egui::Color32::WHITE)
+                            .background_color(color),
+                    );
                 });
             });
         });
@@ -234,29 +326,36 @@ impl GameScreen {
             .show(ctx, |ui| self.render_panel(ui, engine));
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.horizontal_wrapped(|ui| {
-                // When navigated, render against a synthetic past
-                // game (T065). Read-only — `interactive(false)`.
-                let nav_view = self.navigation_view();
-                let view_game = nav_view.as_ref().unwrap_or(&self.game);
-                let interactive = nav_view.is_none()
-                    && self.is_human_turn()
-                    && self.promotion.is_none();
-                let board = BoardWidget::new(
-                    view_game,
-                    &self.board_state,
-                    &self.palette,
-                    self.orientation,
-                )
-                .interactive(interactive)
-                .with_hint_move(self.hint_result.as_ref().map(|hr| hr.mv));
-                let resp = board.show(ui);
-                // Only honour click/drag when not navigating — past
-                // views are read-only per
-                // [contracts/ui-interactions.md §2.4].
-                if nav_view.is_none() {
-                    self.handle_board_response(resp);
-                }
+            // Center the board vertically and horizontally, and make it fill available space.
+            ui.vertical_centered(|ui| {
+                ui.with_layout(Layout::top_down(Align::Center), |ui| {
+                    // Calculate the largest possible square size for the board.
+                    let avail = ui.available_size();
+                    let side = avail.x.min(avail.y).max(128.0); // Use a larger minimum for usability
+                    let nav_view = self.navigation_view();
+                    let view_game = nav_view.as_ref().unwrap_or(&self.game);
+                    let interactive = nav_view.is_none()
+                        && self.is_human_turn()
+                        && self.promotion.is_none();
+                    let board = BoardWidget::new(
+                        view_game,
+                        &self.board_state,
+                        &self.palette,
+                        self.orientation,
+                    )
+                    .interactive(interactive)
+                    .with_hint_move(self.hint_result.as_ref().map(|hr| hr.mv));
+                    // Allocate the board with the computed size
+                    let resp = ui.allocate_ui_with_layout(
+                        Vec2::splat(side),
+                        Layout::centered_and_justified(egui::Direction::TopDown),
+                        |ui| board.show(ui)
+                    ).inner;
+                    // Only honour click/drag when not navigating — past views are read-only
+                    if nav_view.is_none() {
+                        self.handle_board_response(resp);
+                    }
+                });
             });
         });
 
@@ -294,6 +393,12 @@ impl GameScreen {
             if Instant::now() >= deadline {
                 self.hint_result = None;
                 self.hint_expires_at = None;
+            }
+        }
+
+        if let Some(deadline) = self.san_error_until {
+            if Instant::now() >= deadline {
+                self.san_error_until = None;
             }
         }
 
@@ -460,6 +565,42 @@ impl GameScreen {
                 if ui.button("Stop thinking").clicked() {
                     engine.stop();
                 }
+            }
+
+            ui.add_space(8.0);
+            ui.separator();
+            ui.add_space(6.0);
+            if self.san_entry_active {
+                ui.label(RichText::new("SAN Input").strong());
+                let has_error = self
+                    .san_error_until
+                    .map(|d| Instant::now() < d)
+                    .unwrap_or(false);
+                ui.scope(|ui| {
+                    if has_error {
+                        let err_fill = egui::Color32::from_rgb(120, 24, 24);
+                        ui.visuals_mut().widgets.inactive.bg_fill = err_fill;
+                        ui.visuals_mut().widgets.hovered.bg_fill = err_fill;
+                        ui.visuals_mut().widgets.active.bg_fill = err_fill;
+                    }
+
+                    let resp = ui.add(
+                        egui::TextEdit::singleline(&mut self.san_buffer)
+                            .hint_text("e4, Nf3, O-O")
+                            .id_source("san_input_field"),
+                    );
+                    if self.san_focus_requested {
+                        resp.request_focus();
+                        self.san_focus_requested = false;
+                    }
+                    if resp.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                        self.submit_san_input();
+                        self.san_focus_requested = true;
+                    }
+                });
+                ui.label(RichText::new("Enter: play SAN  Esc: close input").small().weak());
+            } else {
+                ui.label(RichText::new("Press Tab to enter SAN move").small().weak());
             }
         });
 
@@ -802,6 +943,10 @@ impl GameScreen {
     }
 
     fn handle_board_response(&mut self, resp: BoardResponse) {
+        if let Some(focus) = resp.keyboard_focus {
+            self.board_state.keyboard_focus = Some(focus);
+        }
+
         // Click handling (click-click flow, T036).
         if let Some(sq) = resp.clicked {
             if !self.is_human_turn() || self.promotion.is_some() || self.game.result().is_some() {
@@ -888,6 +1033,27 @@ impl GameScreen {
         }
     }
 
+    fn submit_san_input(&mut self) {
+        if !self.is_human_turn() || self.game.result().is_some() {
+            return;
+        }
+        let raw = self.san_buffer.trim();
+        if raw.is_empty() {
+            return;
+        }
+        match parse_san(&self.game.current, raw) {
+            Ok(mv) => {
+                self.san_error_until = None;
+                self.try_play_human_move(mv);
+                self.san_buffer.clear();
+            }
+            Err(_) => {
+                self.san_error_until = Some(Instant::now() + Duration::from_secs(2));
+                self.set_toast(format!("Invalid SAN: {raw}"));
+            }
+        }
+    }
+
     fn tick_engine(&mut self, engine: &mut EngineLink) {
         if self.game.result().is_some() {
             return;
@@ -927,7 +1093,13 @@ impl GameScreen {
             _ => self.settings.engine.default_strength,
         };
         EngineConfig {
-            mode: chess_engine::Mode::Normal,
+            mode: if self.reproducible_mode {
+                chess_engine::Mode::Reproducible {
+                    seed: 0xDEAD_BEEF_CAFE_BABEu64,
+                }
+            } else {
+                chess_engine::Mode::Normal
+            },
             time_control: self.settings.engine_time_control(),
             strength,
             max_threads: self.settings.engine.max_threads,
@@ -1068,6 +1240,12 @@ impl GameScreen {
         std::mem::replace(&mut self.open_settings_requested, false)
     }
 
+    /// True if the user requested the About screen this frame.
+    /// Consumes the flag so the host only switches once.
+    pub fn take_open_about_request(&mut self) -> bool {
+        std::mem::replace(&mut self.open_about_requested, false)
+    }
+
     /// Adopt updated settings handed back by the settings screen.
     /// Re-applies any view-side state derived from settings (e.g.,
     /// board orientation in `Auto` mode). The settings file itself is
@@ -1079,6 +1257,7 @@ impl GameScreen {
             GameMode::AiVsAi => Color::White,
         };
         self.orientation = orientation_for(me, &settings);
+        self.palette = palette_for(settings.ui.theme);
         self.settings = settings;
     }
 
