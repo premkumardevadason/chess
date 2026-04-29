@@ -205,6 +205,8 @@ pub struct BoardWidget<'a> {
     /// `false` blocks pointer interaction (engine is thinking, game is
     /// over, navigating history, etc.).
     interactive: bool,
+    /// Optional hint move to render as an arrow overlay (T077).
+    hint_move: Option<Move>,
 }
 
 impl<'a> BoardWidget<'a> {
@@ -221,12 +223,19 @@ impl<'a> BoardWidget<'a> {
             palette,
             orientation,
             interactive: true,
+            hint_move: None,
         }
     }
 
     /// Disable pointer interaction (still renders).
     pub fn interactive(mut self, on: bool) -> Self {
         self.interactive = on;
+        self
+    }
+
+    /// Set the optional hint move to render as an arrow overlay (T077).
+    pub fn with_hint_move(mut self, hint_move: Option<Move>) -> Self {
+        self.hint_move = hint_move;
         self
     }
 
@@ -301,6 +310,31 @@ impl<'a> BoardWidget<'a> {
                     painter.circle_filled(center, tile * 0.12, self.palette.legal_target);
                 }
             }
+        }
+
+        // Hint arrow overlay (T077). Draw semi-transparent arrow from
+        // source to destination square.
+        if let Some(hint_mv) = self.hint_move {
+            let from_rect = square_rect(hint_mv.from(), self.orientation, board_origin, tile);
+            let to_rect = square_rect(hint_mv.to(), self.orientation, board_origin, tile);
+            let from_center = from_rect.center();
+            let to_center = to_rect.center();
+            
+            // Draw arrow shaft (semi-transparent green line)
+            let arrow_color = egui::Color32::from_rgba_unmultiplied(100, 200, 100, 150);
+            let arrow_stroke = egui::Stroke::new(tile * 0.08, arrow_color);
+            painter.line_segment([from_center, to_center], arrow_stroke);
+            
+            // Draw arrow head at destination
+            let direction = (to_center - from_center).normalized();
+            let perpendicular = Vec2::new(-direction.y, direction.x);
+            let arrow_size = tile * 0.15;
+            let head_base = to_center - direction * arrow_size;
+            let head_left = head_base + perpendicular * (arrow_size * 0.5);
+            let head_right = head_base - perpendicular * (arrow_size * 0.5);
+            
+            painter.line_segment([to_center, head_left], arrow_stroke);
+            painter.line_segment([to_center, head_right], arrow_stroke);
         }
 
         // Check / mate glow on king-square (T040).

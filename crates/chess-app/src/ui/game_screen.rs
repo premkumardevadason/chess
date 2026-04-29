@@ -17,7 +17,7 @@
 use std::time::{Duration, Instant};
 
 use chess_core::{legal_moves, Color, DrawReason, Game, GameMode, GameResult, Move, PieceType};
-use chess_engine::{EngineConfig, Eval, Event, Score, StrengthPreset, TimeControl};
+use chess_engine::{EngineConfig, Eval, Event, Score, SearchResult, StrengthPreset, TimeControl};
 use egui::{Align, Layout, RichText, Vec2};
 
 use crate::engine_link::{render_status, EngineLink, EngineStatus};
@@ -113,6 +113,17 @@ pub struct GameScreen {
     /// the modal is open; the contents are committed by
     /// `start_new_game(...)` when the user clicks "Start".
     new_game_dialog: Option<NewGameDialogState>,
+    /// Most recent hint result from `Command::StartSearch` with
+    /// `analysis_only=true` (T076). Auto-clears 5s after arrival or
+    /// on next user click. Used by board overlay (T077) + right panel
+    /// (T078).
+    hint_result: Option<SearchResult>,
+    /// Deadline for clearing the current hint (T077).
+    hint_expires_at: Option<Instant>,
+    /// Tracks whether the most recent `StartSearch` was for analysis
+    /// only (T076). Used by `absorb_engine_event` to distinguish
+    /// hints from game moves.
+    last_search_analysis_only: bool,
 }
 
 impl GameScreen {
@@ -142,6 +153,9 @@ impl GameScreen {
             ai_strengths: None,
             paused: false,
             new_game_dialog: None,
+            hint_result: None,
+            hint_expires_at: None,
+            last_search_analysis_only: false,
         }
     }
 
@@ -174,6 +188,14 @@ impl GameScreen {
         }
         if redo_hotkey {
             self.request_redo(engine);
+        }
+
+        // Hint hotkey (T076). H = request hint.
+        let hint_hotkey = ctx.input(|i| {
+            i.key_pressed(egui::Key::H) && !i.modifiers.any()
+        });
+        if hint_hotkey {
+            self.request_hint(engine);
         }
 
         // Top menu bar with File ▸ Settings… (T059).
@@ -226,7 +248,8 @@ impl GameScreen {
                     &self.palette,
                     self.orientation,
                 )
-                .interactive(interactive);
+                .interactive(interactive)
+                .with_hint_move(self.hint_result.as_ref().map(|hr| hr.mv));
                 let resp = board.show(ui);
                 // Only honour click/drag when not navigating — past
                 // views are read-only per
@@ -266,6 +289,14 @@ impl GameScreen {
             self.render_game_over_modal(ctx);
         }
 
+        // Clear expired hints (T076).
+        if let Some(deadline) = self.hint_expires_at {
+            if Instant::now() >= deadline {
+                self.hint_result = None;
+                self.hint_expires_at = None;
+            }
+        }
+
         // Trigger engine if appropriate.
         self.tick_engine(engine);
 
@@ -294,6 +325,32 @@ impl GameScreen {
         ui.add_space(6.0);
         ui.label(RichText::new("Engine").strong());
         ui.label(render_status(engine.status()));
+
+        // Hint result display (T078).
+        if let Some(result) = &self.hint_result {
+            ui.add_space(10.0);
+            ui.separator();
+            ui.add_space(6.0);
+            ui.label(RichText::new("Hint").strong());
+            
+            // Display evaluation using existing helper.
+            ui.label(format!("Eval: {}", format_score(result.info.score)));
+            
+            // Display principal variation (first few moves).
+            if !result.info.pv.is_empty() {
+                let pv_str = result.info.pv.iter()
+                    .take(5)  // Show first 5 moves
+                    .map(|m| m.to_string())
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                ui.label(format!("PV: {}", pv_str));
+            }
+            
+            // Display search depth if available.
+            if result.info.depth > 0 {
+                ui.label(format!("Depth: {}", result.info.depth));
+            }
+        }
 
         // Captured pieces tray (T041a).
         ui.add_space(10.0);
@@ -384,6 +441,18 @@ impl GameScreen {
                 let label = if self.paused { "Resume" } else { "Pause" };
                 if ui.button(label).clicked() {
                     self.toggle_paused(engine);
+                }
+            }
+            // Hint button — visible only during human's turn (T076).
+            if self.is_human_turn() && self.game.result().is_none() {
+                if ui
+                    .add_enabled(
+                        !self.engine_searching && self.hint_result.is_none(),
+                        egui::Button::new("Hint (H)"),
+                    )
+                    .clicked()
+                {
+                    self.request_hint(engine);
                 }
             }
             ui.add_space(4.0);
@@ -809,6 +878,9 @@ impl GameScreen {
                 self.board_state.last_move = Some(mv);
                 self.board_state.last_rejection = None;
                 self.engine_searching = false;
+                // Clear any active hint when the human makes a move (T076).
+                self.hint_result = None;
+                self.hint_expires_at = None;
             }
             Err(e) => {
                 self.set_toast(e.to_string());
@@ -860,6 +932,7 @@ impl GameScreen {
             strength,
             max_threads: self.settings.engine.max_threads,
             tt_size_mib: 16,
+            analysis_only: false,
         }
     }
 
@@ -873,11 +946,40 @@ impl GameScreen {
         }
     }
 
+    /// Request a hint (T076): issue `StartSearch` with
+    /// `analysis_only=true` and `hint_time_ms` budget. Only callable
+    /// during the human's turn and while no hint is already pending.
+    fn request_hint(&mut self, engine: &mut EngineLink) {
+        if !self.is_human_turn() {
+            self.set_toast("Cannot request hint when it is the AI's turn".to_string());
+            return;
+        }
+        if self.engine_searching || self.hint_result.is_some() {
+            self.set_toast("Hint already pending".to_string());
+            return;
+        }
+        let mut cfg = self.engine_config_for_play();
+        cfg.analysis_only = true;
+        cfg.time_control = TimeControl::PerMove(std::time::Duration::from_millis(
+            self.settings.engine.hint_time_ms as u64,
+        ));
+        self.last_search_analysis_only = true;
+        let history: Vec<Move> = self.game.history.iter().map(|r| r.move_played).collect();
+        engine.set_position(self.game.start_position, history);
+        engine.start_search(cfg);
+    }
+
     fn absorb_engine_event(&mut self, event: Event) {
         match event {
             Event::SearchComplete(result) => {
                 self.engine_searching = false;
-                if !self.is_human_turn() && self.game.result().is_none() {
+                if self.last_search_analysis_only {
+                    // Analysis-only search: store as hint, don't apply move (T076/T079).
+                    self.hint_result = Some(result);
+                    self.hint_expires_at = Some(Instant::now() + std::time::Duration::from_secs(5));
+                    self.last_search_analysis_only = false;
+                } else if !self.is_human_turn() && self.game.result().is_none() {
+                    // Game move: apply to board.
                     if let Err(e) = self.game.make_move(result.mv) {
                         self.set_toast(format!("engine returned illegal move: {e}"));
                     } else {

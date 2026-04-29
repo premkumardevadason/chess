@@ -85,6 +85,10 @@ pub struct EngineConfig {
     pub max_threads: u8,
     /// Transposition-table size in MiB.
     pub tt_size_mib: usize,
+    /// `true` if this search is for analysis/hints only (do not apply the
+    /// resulting move to the game). Used by the UI to disable auto-play
+    /// on `SearchComplete` per [T079].
+    pub analysis_only: bool,
 }
 
 impl Default for EngineConfig {
@@ -95,6 +99,7 @@ impl Default for EngineConfig {
             strength: StrengthPreset::default(),
             max_threads: 1,
             tt_size_mib: 16,
+            analysis_only: false,
         }
     }
 }
