@@ -539,6 +539,18 @@ impl GameScreen {
                 self.confirm_resign = true;
             }
             ui.add_space(4.0);
+            // Swap Sides — visible only in Human-vs-AI mode while the game
+            // is in progress (T106). Cancels any in-flight engine search,
+            // flips the user's colour and the board orientation, and
+            // immediately schedules a new search if it is now the AI's turn.
+            if matches!(self.game.mode, GameMode::HumanVsAi(_))
+                && self.game.result().is_none()
+            {
+                if ui.button("Swap Sides").clicked() {
+                    self.swap_sides(engine);
+                }
+            }
+            ui.add_space(4.0);
             // Pause / Resume — visible only in AI-vs-AI mode (T074).
             if matches!(self.game.mode, GameMode::AiVsAi)
                 && self.game.result().is_none()
@@ -1116,6 +1128,39 @@ impl GameScreen {
         if self.paused && engine.status().is_thinking() {
             engine.stop();
         }
+    }
+
+    /// Swap sides during a Human-vs-AI game (T106 / FR-012).
+    ///
+    /// Cancels any in-flight engine search, flips the user's colour
+    /// inside `GameMode::HumanVsAi`, flips the board orientation
+    /// (respecting `BoardOrientation::Auto` from settings), clears
+    /// transient board view state (selection, hint), and lets the
+    /// next `tick_engine` call start a search if it is now the AI's
+    /// turn. No-op outside Human-vs-AI mode or after the game ends.
+    fn swap_sides(&mut self, engine: &mut EngineLink) {
+        let GameMode::HumanVsAi(current) = self.game.mode else {
+            return;
+        };
+        if self.game.result().is_some() {
+            return;
+        }
+        if engine.status().is_thinking() {
+            engine.stop();
+        }
+        let new_color = current.opp();
+        self.game.mode = GameMode::HumanVsAi(new_color);
+        self.orientation = orientation_for(new_color, &self.settings);
+        // Clear ephemeral interaction state so the new perspective
+        // starts cleanly. Keep history / move list intact.
+        self.board_state.selected = None;
+        self.board_state.legal_targets.clear();
+        self.board_state.drag_origin = None;
+        self.hint_result = None;
+        self.hint_expires_at = None;
+        self.last_search_analysis_only = false;
+        self.engine_searching = false;
+        self.set_toast(format!("You now play {:?}", new_color));
     }
 
     /// Request a hint (T076): issue `StartSearch` with

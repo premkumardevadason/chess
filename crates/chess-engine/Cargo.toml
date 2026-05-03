@@ -22,5 +22,22 @@ thiserror         = { workspace = true }
 # core search code itself does no I/O — see contracts/engine-api.md §3.5.
 serde             = { workspace = true }
 
+[features]
+# When enabled, `tests/no_io.rs` performs a source-level audit that
+# verifies the engine crate does not reference any `std::fs` or
+# `std::net` APIs. Treated as panicking shims at the source level —
+# any forbidden symbol causes the test to fail. See
+# contracts/engine-api.md §3.5 and SC-007.
+no-io-audit = []
+
 [dev-dependencies]
 anyhow = { workspace = true }
+criterion = { workspace = true }
+
+[[bench]]
+name    = "nnue"
+harness = false
+
+[[bench]]
+name    = "search"
+harness = false

@@ -22,3 +22,8 @@ cozy-chess = "0.3"
 # `insta` is the snapshot-testing harness used by the move-list snapshot
 # (T069). The `yaml` feature is not required; default features are fine.
 insta      = "1"
+criterion  = { workspace = true }
+
+[[bench]]
+name    = "movegen"
+harness = false
