@@ -4,5 +4,7 @@ alwaysApply: true
 
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
-shell commands, and other important information, read the current plan
+shell commands, and other important information, read the current plan:
+`specs/002-rust-cpp26-rewrite/plan.md` (branch `002-rust-cpp26-rewrite`).
+Design first: `hld.md`, `lld.md` (UML). Then: `research.md`, `data-model.md`, `quickstart.md`, `contracts/`.
 <!-- SPECKIT END -->
